@@ -19,7 +19,13 @@ HERE = Path(__file__).resolve().parent
 SRC = HERE / "robot_sources"
 OUT = HERE / "robot_import"
 PREFIX = OUT / "ament_prefix"
-XACRO = Path("/opt/ros/humble/bin/xacro")
+#: How to run xacro. ROS 2's own binary when a ROS install is present;
+#: otherwise the `xacro` PyPI package in the active env, whose only missing
+#: dependency (`ament_index_python`, not on PyPI) is supplied by _ament_shim.
+#: Override either with the XACRO_BIN / XACRO_PYTHON environment variables.
+XACRO = Path(os.environ.get("XACRO_BIN", "/opt/ros/humble/bin/xacro"))
+XACRO_PYTHON = os.environ.get("XACRO_PYTHON", "/usr/bin/python3")
+AMENT_SHIM = HERE / "_ament_shim"
 
 
 def register_package(name: str, source: Path) -> None:
@@ -36,24 +42,35 @@ def register_package(name: str, source: Path) -> None:
 
 def xacro(source: Path, target: Path, extra_env: dict[str, str] | None = None) -> None:
     if not XACRO.is_file():
-        raise RuntimeError(f"ROS 2 xacro is missing: {XACRO}")
+        raise RuntimeError(
+            f"xacro is missing: {XACRO}. Either install ROS 2 Humble, or "
+            f"`pip install xacro` in this env and set XACRO_BIN/XACRO_PYTHON "
+            f"to it (the shim in {AMENT_SHIM.name} supplies ament_index_python)."
+        )
     env = os.environ.copy()
     # ROS Humble's xacro is packaged for Ubuntu's Python 3.10.  A caller's
     # Conda Python (currently 3.14 in this workspace) otherwise intercepts
     # the console entry point and cannot find ROS package metadata.
     for key in ("PYTHONHOME", "PYTHONPATH", "CONDA_PREFIX", "CONDA_DEFAULT_ENV"):
         env.pop(key, None)
-    env["PYTHONPATH"] = ":".join(
-        [
-            "/opt/ros/humble/local/lib/python3.10/dist-packages",
-            "/opt/ros/humble/lib/python3.10/site-packages",
-        ]
-    )
+    if XACRO_PYTHON == "/usr/bin/python3":
+        # A ROS 2 install: use its own interpreter's package tree.
+        env["PYTHONPATH"] = ":".join(
+            [
+                "/opt/ros/humble/local/lib/python3.10/dist-packages",
+                "/opt/ros/humble/lib/python3.10/site-packages",
+            ]
+        )
+    else:
+        # The env's own xacro. Keep its site-packages (the caller's env is the
+        # one that has it) and prepend the shim so `$(find pkg)` resolves.
+        env.pop("PYTHONHOME", None)
+        env["PYTHONPATH"] = str(AMENT_SHIM)
     env["AMENT_PREFIX_PATH"] = f"{PREFIX}:/opt/ros/humble:" + env.get("AMENT_PREFIX_PATH", "")
     env.update(extra_env or {})
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("w", encoding="utf-8") as stream:
-        subprocess.run(["/usr/bin/python3", str(XACRO), str(source)], check=True, env=env, stdout=stream)
+        subprocess.run([XACRO_PYTHON, str(XACRO), str(source)], check=True, env=env, stdout=stream)
 
 
 def replace_package_uri(urdf: Path, package: str, package_root: Path) -> None:
@@ -138,26 +155,47 @@ def importer_config(name: str, urdf: Path, wheel_links=None, wheel_joints=None) 
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     resolved = OUT / "resolved_urdf"
+    # Created here rather than relied on as a side effect of the first xacro()
+    # call: with the FANUC source absent that call is skipped, and the next
+    # writer found no directory.
+    resolved.mkdir(parents=True, exist_ok=True)
     configs = OUT / "import_configs"
     configs.mkdir(parents=True, exist_ok=True)
 
+    # Which upstream checkouts are actually present. The sources are large and
+    # gitignored, and a run only needs the robots its task uses -- the FANUC
+    # mesh source alone is ~614 MB and is only used by the checkpoint arms of
+    # the H* tasks -- so each robot is prepared only if its source is there.
+    have = {
+        "v4_fanuc_crx10ial": (SRC / "fanuc_description").is_dir(),
+        "v4_ridgeback_ur5": (SRC / "ridgeback_base").is_dir()
+        and (SRC / "ridgeback_manipulation").is_dir()
+        and (SRC / "ur_description_ros1").is_dir(),
+        "v4_crazyflie_cf2x": (SRC / "crazyswarm2").is_dir(),
+        "v4_jackal": (SRC / "jackal").is_dir(),
+    }
+    for name, present in have.items():
+        print(f"V4_OG_IMPORT_SOURCE={name}:{'present' if present else 'ABSENT (skipped)'}")
+
     # ROS package overlays required by the official xacro files.
-    register_package("fanuc_crx_description", SRC / "fanuc_description" / "fanuc_crx_description")
+    if have["v4_fanuc_crx10ial"]:
+        register_package("fanuc_crx_description", SRC / "fanuc_description" / "fanuc_crx_description")
     register_package("ridgeback_description", SRC / "ridgeback_base" / "ridgeback_description")
     register_package("ridgeback_ur_description", SRC / "ridgeback_manipulation" / "ridgeback_ur_description")
     # The Ridgeback integration is ROS1-era and requires this matching ROS1 UR5 xacro.
     register_package("ur_description", SRC / "ur_description_ros1" / "ur_description")
 
-    xacro(
-        SRC / "fanuc_description" / "fanuc_crx_description" / "robot" / "crx10ia_l.urdf.xacro",
-        resolved / "fanuc_crx10ial.urdf",
-    )
-    replace_package_uri(
-        resolved / "fanuc_crx10ial.urdf",
-        "fanuc_crx_description",
-        SRC / "fanuc_description" / "fanuc_crx_description",
-    )
-    sanitize_mesh_filenames(resolved / "fanuc_crx10ial.urdf")
+    if have["v4_fanuc_crx10ial"]:
+        xacro(
+            SRC / "fanuc_description" / "fanuc_crx_description" / "robot" / "crx10ia_l.urdf.xacro",
+            resolved / "fanuc_crx10ial.urdf",
+        )
+        replace_package_uri(
+            resolved / "fanuc_crx10ial.urdf",
+            "fanuc_crx_description",
+            SRC / "fanuc_description" / "fanuc_crx_description",
+        )
+        sanitize_mesh_filenames(resolved / "fanuc_crx10ial.urdf")
     # Same principle for Ridgeback: omit optional Gazebo/accessory xacros that
     # depend on legacy ROS1 lidar packages. The physical base and UR5 remain.
     ridgeback_src = SRC / "ridgeback_base" / "ridgeback_description" / "urdf" / "ridgeback.urdf.xacro"
@@ -242,7 +280,7 @@ def main() -> None:
     )
     sanitize_mesh_filenames(resolved / "jackal.urdf")
 
-    specs = {
+    all_specs = {
         "v4_jackal": importer_config(
             "v4_jackal", resolved / "jackal.urdf",
             ["front_left_wheel_link", "front_right_wheel_link", "rear_left_wheel_link", "rear_right_wheel_link"],
@@ -256,6 +294,7 @@ def main() -> None:
         "v4_crazyflie_cf2x": importer_config("v4_crazyflie_cf2x", resolved / "crazyflie_cf2x.urdf"),
         "v4_fanuc_crx10ial": importer_config("v4_fanuc_crx10ial", resolved / "fanuc_crx10ial.urdf"),
     }
+    specs = {name: cfg for name, cfg in all_specs.items() if have.get(name)}
     for name, config in specs.items():
         with (configs / f"{name}.yaml").open("w", encoding="utf-8") as stream:
             # JSON is valid YAML and avoids requiring a host-Python PyYAML

@@ -1,0 +1,86 @@
+# Primitives-style config for the imported Clearpath Ridgeback + UR5.
+#
+# The shape mirrors OmniGibson's own `r1_primitives.yaml` because
+# `build_multi_robot_config` takes its env/scene skeleton from here and uses
+# `robots[0]` as the per-robot template. Only the robot entry differs.
+#
+# Three settings below are what a *suction* end effector needs, and each was
+# found by loading the robot rather than by reading. OmniGibson's manipulation
+# path assumes a finger gripper in four places; this config answers three of
+# them (the fourth, an empty-list dtype in `gripper_control_idx`, was a real bug
+# and is fixed in robot.py).
+env:
+  action_frequency: 30
+  physics_frequency: 120
+  device: null
+  automatic_reset: false
+  flatten_action_space: false
+  flatten_obs_space: false
+  use_external_obs: false
+  external_sensors: null
+
+render:
+  viewer_width: 1280
+  viewer_height: 720
+
+scene:
+  type: InteractiveTraversableScene
+  scene_model: Rs_int
+  trav_map_resolution: 0.1
+  default_erosion_radius: 0.0
+  trav_map_with_objects: true
+  num_waypoints: 1
+  waypoint_resolution: 0.2
+  load_object_categories: null
+  not_load_object_categories: null
+  load_room_types: null
+  load_room_instances: null
+  load_task_relevant_only: false
+  seg_map_resolution: 1.0
+  scene_source: OG
+  include_robots: false
+
+robots:
+  - model: v4_ridgeback_ur5
+    obs_modalities: [rgb]
+    include_sensor_names: null
+    exclude_sensor_names: null
+    scale: 1.0
+    self_collisions: true
+    action_normalize: false
+    action_type: continuous
+    # Not "physical": that branch of `is_grasping` reads a gripper controller
+    # this robot has none of. "sticky" takes the `_ag_obj_in_hand` branch, which
+    # is the one the symbolic primitives drive through `_establish_grasp`.
+    grasping_mode: sticky
+    # OmniGibson otherwise runs its own assisted-grasp handling every physics
+    # step, and that too reads `gripper_<arm>`. The symbolic layer calls
+    # `_establish_grasp` and `release_grasp_immediately` itself, which is
+    # exactly the case this flag is documented for.
+    disable_grasp_handling: true
+    sensor_config:
+      VisionSensor:
+        sensor_kwargs:
+          image_height: 128
+          image_width: 128
+    controller_config:
+      # Wheel joints, not the six virtual joints of a holonomic base: this is a
+      # real four-wheel base and `is_holonomic_base` is False for it. Navigation
+      # here is a teleport either way -- the controller is what holds position
+      # between primitives.
+      base:
+        name: JointController
+        motor_type: position
+        command_input_limits: null
+        use_delta_commands: false
+        use_impedances: false
+      arm_0:
+        name: JointController
+        motor_type: position
+        command_input_limits: null
+        use_delta_commands: false
+        use_impedances: false
+
+objects: []
+task:
+  type: DummyTask

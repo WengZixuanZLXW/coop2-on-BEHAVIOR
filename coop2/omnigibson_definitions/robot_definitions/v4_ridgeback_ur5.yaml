@@ -19,3 +19,16 @@ manipulation:
     "0": ["ur_arm_shoulder_pan_joint", "ur_arm_shoulder_lift_joint", "ur_arm_elbow_joint", "ur_arm_wrist_1_joint", "ur_arm_wrist_2_joint", "ur_arm_wrist_3_joint"]
   eef_link_names:
     "0": ur_arm_tool0
+  # The V4 end effector is a suction cup, so this arm has no fingers. It must
+  # still be declared: `finger_link_names` falls back to `{}` when absent, and
+  # `finger_links` then raises KeyError('0') during initialization. An empty
+  # list is the honest answer and is supported -- `_refresh_rigid_contact_view`
+  # returns early when no finger paths exist.
+  #
+  # Nothing is lost for our purposes: the symbolic grasp primitive never uses
+  # the finger-contact path. It teleports the object to the end effector and
+  # welds a FixedJoint via `_establish_grasp`, which needs only `eef_links`.
+  finger_link_names:
+    "0": []
+  finger_joint_names:
+    "0": []

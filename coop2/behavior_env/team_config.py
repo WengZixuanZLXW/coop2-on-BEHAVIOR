@@ -69,6 +69,7 @@ __all__ = [
     "known_robot_models",
     "load_team_layout",
     "parse_team_layout",
+    "register_imported_robot_models",
     "register_robot_model",
     "robot_model_config_path",
 ]
@@ -102,6 +103,40 @@ BUILTIN_ROBOT_MODELS = ("R1", "R1Pro", "Tiago")
 _ROBOT_MODELS: Dict[str, Tuple[str, Optional[str]]] = {
     model.lower(): (model, None) for model in BUILTIN_ROBOT_MODELS
 }
+
+
+#: Where configs for robots imported into this project live. Anything named
+#: ``<model>_primitives.yaml`` here is registered under ``<model>`` at import,
+#: so a team layout can name it without also naming a path.
+IMPORTED_ROBOT_CONFIG_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "robot_configs"
+)
+
+
+def register_imported_robot_models(directory: Optional[str] = None) -> List[str]:
+    """Register every ``<model>_primitives.yaml`` in @directory. Returns the names.
+
+    A robot that does not ship with BEHAVIOR needs exactly one thing from us --
+    that config -- so dropping the file in is the whole installation step. Run
+    at import, and silent when the directory does not exist: the configs are
+    useless without their USD assets, which are large and not committed.
+    """
+    directory = IMPORTED_ROBOT_CONFIG_DIR if directory is None else directory
+    registered: List[str] = []
+    if not os.path.isdir(directory):
+        return registered
+    for entry in sorted(os.listdir(directory)):
+        if not entry.endswith("_primitives.yaml"):
+            continue
+        model = entry[: -len("_primitives.yaml")]
+        try:
+            register_robot_model(model, os.path.join(directory, entry))
+        except ValueError:
+            # Already registered with this exact path, or with a different one
+            # a caller set deliberately. Either way theirs wins.
+            continue
+        registered.append(model)
+    return registered
 
 
 def register_robot_model(name: str, config_path: Optional[str] = None) -> str:
@@ -439,3 +474,8 @@ def homogeneous_layout(
             entry["team"] = f"team_{index // team_size}"
         payload["robots"].append(entry)
     return parse_team_layout(payload)
+
+
+# Imported robots are registered at import time, so a team layout can name one
+# without also naming its config path. See register_imported_robot_models.
+register_imported_robot_models()

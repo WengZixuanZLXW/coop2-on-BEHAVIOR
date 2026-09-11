@@ -2829,7 +2829,15 @@ class Robot(USDObject, GymObservable):
         """
         assert self.is_manipulation
         return {
-            arm: th.tensor([list(self.joints.keys()).index(name) for name in self.finger_joint_names[arm]])
+            # dtype is explicit because these are used as indices and the list
+            # is legitimately empty for a robot with no fingers -- a suction
+            # gripper, say. th.tensor([]) is float32, and indexing a tensor with
+            # it raises "tensors used as indices must be long, int, byte or
+            # bool". Non-empty cases are unaffected: joint indices are ints.
+            arm: th.tensor(
+                [list(self.joints.keys()).index(name) for name in self.finger_joint_names[arm]],
+                dtype=th.int,
+            )
             for arm in self.arm_names
         }
 
