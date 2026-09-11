@@ -501,6 +501,41 @@ def format_coop2_repair_instruction(messages: Optional[List[Dict]]) -> str:
 # Complete Prompt Building
 # ============================================================================
 
+def format_plan_history(history: List[Dict[str, Any]], limit: int = 5) -> str:
+    """The agent's own finished plans: what it tried, why, and how it ended.
+
+    Without this every call starts from a blank slate: the model re-proposes
+    the plan that just failed, because nothing in the prompt says it failed --
+    or worse, the reason it failed (a teammate holds the target, there is no
+    floor space around it) is invisible and it fails the same way again.
+
+    Only finished plans appear. A plan that was interrupted and resumed is the
+    same plan still running, and showing it as an outcome would report a robot
+    as having done something it is in fact still doing.
+    """
+    if not history:
+        return ""
+    lines = ["YOUR FINISHED PLANS (most recent last):"]
+    for entry in history[-limit:]:
+        mark = "DONE" if entry.get("succeeded") else "FAILED"
+        lines.append(
+            f"  #{entry.get('plan_id')} [{mark}] {entry.get('specification', '')}"
+        )
+        reasoning = (entry.get("reasoning") or "").strip()
+        if reasoning:
+            lines.append(f"      you chose it because: {reasoning}")
+        reason = (entry.get("reason") or "").strip()
+        if reason and not entry.get("succeeded"):
+            # One line. A primitive's failure text runs to several sentences
+            # with a dict of diagnostics appended, and five of those would be
+            # longer than the room listing they are meant to inform.
+            reason = " ".join(reason.split())
+            if len(reason) > 200:
+                reason = reason[:197] + "..."
+            lines.append(f"      it failed because: {reason}")
+    return "\n".join(lines)
+
+
 def build_team_system_prompt(
     team_name: str,
     member_ids: List[str],
@@ -595,6 +630,7 @@ def build_observation_prompt(
     coop_config: Optional[str] = None,
     symbolic_view: Optional[str] = None,
     target_hints: Optional[str] = None,
+    plan_history: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     """
     Build the observation/user prompt for plan generation.
@@ -665,6 +701,14 @@ def build_observation_prompt(
     elif target_hints:
         parts.append("YOU CAN DO:")
         parts.append(target_hints)
+        parts.append("")
+
+    # What this agent already tried, and how it ended. Before the room listing
+    # would be wrong -- the model should decide against the world as it is now,
+    # and consult its own record second.
+    history_str = format_plan_history(plan_history or [])
+    if history_str:
+        parts.append(history_str)
         parts.append("")
 
     # Memory (recent events)

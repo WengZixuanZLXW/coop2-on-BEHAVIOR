@@ -160,10 +160,34 @@ def _holding(observation: SymbolicObservation) -> Optional[EntityObservation]:
     return None
 
 
+def is_off_task(entity, observation: SymbolicObservation) -> bool:
+    """Is @entity something the activity never mentions?
+
+    The scene holds far more than the task does: `coop_nine_apples_hall` is
+    about 9 apples, 9 chairs and a table, and the hall it is set in also
+    contains 34 spotlights, pictures, bookcases and light switches. All of it
+    was listed, each with its verbs, which both buried the task's own objects
+    and invited plans against them -- a measured run spent attempts on
+    `electric_switch_wseglt_8` and `picture_zsirgc_0`, and failed with
+    NO_SPACE_AROUND_TARGET on both.
+
+    Never off-task: robots (teammates have to stay visible) and whatever is
+    being held (it is out of every room, and hiding it would hide the only verb
+    that puts it down). And when the activity declares nothing at all -- no
+    BDDL task in this run -- nothing is off-task, so the view is unchanged.
+    """
+    if not observation.task_entity_ids:
+        return False
+    if entity.is_robot or entity.held_by:
+        return False
+    return entity.entity_id not in observation.task_entity_ids
+
+
 def target_hints(
     observation: SymbolicObservation,
     interaction_radius: Optional[Union[float, Callable[[EntityObservation], Optional[float]]]] = None,
     include_structural: bool = False,
+    only_task_objects: bool = True,
 ) -> List[ActionHint]:
     """Every primitive the agent could legally issue right now.
 
@@ -185,6 +209,8 @@ def target_hints(
         if entity.is_robot:
             continue
         if not include_structural and is_structural(entity):
+            continue
+        if only_task_objects and is_off_task(entity, observation):
             continue
 
         distance = None
@@ -249,6 +275,7 @@ def render_symbolic_view(
     interaction_radius: Optional[Union[float, Callable[[EntityObservation], Optional[float]]]] = None,
     max_facts: int = 25,
     include_structural: bool = False,
+    only_task_objects: bool = True,
 ) -> str:
     """The scene as prose for the prompt.
 
@@ -275,7 +302,8 @@ def render_symbolic_view(
     # spotlights and 9 chairs that doubled the longest part of the prompt while
     # forcing the reader to join the two lists by id.
     hints = target_hints(observation, interaction_radius=interaction_radius,
-                         include_structural=include_structural)
+                         include_structural=include_structural,
+                         only_task_objects=only_task_objects)
     verbs_for: Dict[str, str] = {}
     note_for: Dict[str, str] = {}
     by_target: Dict[str, List[ActionHint]] = {}
@@ -295,6 +323,8 @@ def render_symbolic_view(
         visible = [e for e in entities if not e.is_robot or e.name != observation.agent_id]
         if not include_structural:
             visible = [e for e in visible if not is_structural(e)]
+        if only_task_objects:
+            visible = [e for e in visible if not is_off_task(e, observation)]
         if not visible:
             continue
         lines.append(f"\n{room or 'elsewhere'}:")
@@ -314,7 +344,11 @@ def render_symbolic_view(
                 printed.add(entity.entity_id)
             lines.append("  - " + "  ".join(bits))
 
-    shown_ids = {e.entity_id for e in observation.entities.values() if include_structural or not is_structural(e)}
+    shown_ids = {
+        e.entity_id for e in observation.entities.values()
+        if (include_structural or not is_structural(e))
+        and not (only_task_objects and is_off_task(e, observation))
+    }
     facts = [f for f in observation.facts if all(arg in shown_ids for arg in f.args)]
     if facts:
         lines.append("\nRelations:")

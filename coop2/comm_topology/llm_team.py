@@ -68,7 +68,7 @@ from coop2.cognitive.agent import LLMClient
 from coop2.cognitive.agent.base_llm_agent import BaseLLMAgent
 from coop2.cognitive.agent.cognitive_agent import parse_plan_response
 from coop2.cognitive.agent.llm_client import InterruptDecision
-from coop2.cognitive.agent.prompts import build_team_system_prompt
+from coop2.cognitive.agent.prompts import build_team_system_prompt, format_plan_history
 from coop2.cognitive.action.action import SymbolicAction
 from coop2.cognitive.agent.agent import AgentState
 from coop2.cognitive.plan import SymbolicPlan
@@ -975,6 +975,12 @@ class TeamBrain:
         plan = member.plan
         if plan is not None:
             lines.append(f"Its last plan: {plan.specification} [{plan.status.value}]")
+        # Per robot, not per team: each robot finished its own plans for its own
+        # reasons, and a merged list would leave the model to guess which of
+        # four robots a failure belonged to.
+        history = format_plan_history(getattr(member, "plan_history", []))
+        if history:
+            lines.append(history)
         return "\n".join(lines)
 
     def _build_team_prompt(self, members: List["LLMTeamAgent"]) -> List[Dict[str, str]]:

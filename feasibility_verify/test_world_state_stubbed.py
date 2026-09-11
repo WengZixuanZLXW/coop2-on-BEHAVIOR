@@ -291,6 +291,42 @@ def main() -> int:
         ws.BehaviorWorldState._token_cache = None
     ok(f"{fact} -- character for character what an activity definition writes")
 
+    print("test 7c: the view shows what the activity declares, not what the scene holds")
+    obs = world.observation_for("agent_0")
+    everything = {e.entity_id for e in obs.entities.values()}
+    assert not obs.task_entity_ids, "no BDDL task adopted -> no opinion"
+    # No opinion means no filtering: a run without a BDDL task sees the scene
+    # exactly as it did before any of this existed.
+    unfiltered = sv.render_symbolic_view(obs)
+    assert all(i in unfiltered for i in everything if not i.startswith("agent")), unfiltered
+
+    # Now the activity declares only the apples. The hall's spotlights,
+    # pictures and light switches are still in the scene, and a measured run
+    # spent plan attempts on them; they are no longer in the prompt.
+    task_ids = {i for i in everything if i.startswith("apple")}
+    assert task_ids, everything
+    obs.task_entity_ids = set(task_ids)
+    filtered = sv.render_symbolic_view(obs)
+    for off_task in everything - task_ids:
+        if off_task.startswith("agent"):
+            continue
+        if off_task == "apple.n.01_2":
+            continue  # held; see below
+        assert off_task not in filtered, f"{off_task} is not in the activity but was shown"
+    for on_task in task_ids:
+        assert on_task in filtered, f"{on_task} is in the activity but was dropped"
+
+    # What the agent holds survives the filter whatever the activity says: it
+    # is out of every room, so dropping it would hide the only verb that puts
+    # it down.
+    held = sv._holding(obs)
+    obs.task_entity_ids = {"nothing_at_all"}
+    assert held.entity_id in sv.render_symbolic_view(obs), "the held object vanished"
+    hints = {h.target_id for h in sv.target_hints(obs)}
+    assert held.entity_id in hints, "no verb left for the thing in the gripper"
+    obs.task_entity_ids = set()
+    ok("off-task objects dropped, held object and teammates kept, no task -> unchanged")
+
     print("test 8: target_hints is the LLM's list of legal actions")
     obs = world.observation_for("agent_0")
     hints = {(h.primitive, h.target_id) for h in sv.target_hints(obs)}

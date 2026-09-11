@@ -75,6 +75,16 @@ class Agent(ABC):
         
         # Memory: stores recent messages and plans in chronological order
         self.memory = AgentMemory(max_size=memory_size)
+
+        # What became of each plan this agent finished: one entry per plan that
+        # reached a terminal status, newest last. Kept here rather than read out
+        # of `memory`, which is a ring buffer shared with message traffic -- a
+        # chatty round evicts the plan events, and a history that silently
+        # forgets is worse in a prompt than no history at all.
+        #
+        # Only SUCCESS and FAILED are recorded. An interrupted plan that the
+        # agent resumes is the same plan still running, not an outcome.
+        self.plan_history: List[Dict[str, Any]] = []
     
     def shutdown(self):
         """Signal agent to stop waiting and terminate."""
@@ -361,8 +371,27 @@ class Agent(ABC):
         self.buffer_senders = {}
         self._committed_plan = None
         self.plan_timeline = []
+        self.plan_history = []
         self.memory.clear()
     
+    def record_plan_outcome(self, plan, succeeded: bool, reason: str = "", env_step: int = None):
+        """Record how @plan ended, for this agent's own history.
+
+        Called once per plan, at the moment it reaches SUCCESS or FAILED. An
+        interrupt is not an outcome: the plan either resumes (still the same
+        plan) or is replaced, and neither is something the agent *did*.
+        """
+        if plan is None:
+            return
+        self.plan_history.append({
+            "plan_id": getattr(plan, "plan_id", None),
+            "specification": str(getattr(plan, "specification", "")),
+            "reasoning": str((getattr(plan, "metadata", None) or {}).get("reasoning", "")),
+            "succeeded": bool(succeeded),
+            "reason": str(reason or ""),
+            "env_step": self.env_step if env_step is None else env_step,
+        })
+
     def send_message(self, recipients: Union[str, List[str]], content: Any, metadata: Optional[Dict] = None):
         """
         Send a message to other agents via the message broker.

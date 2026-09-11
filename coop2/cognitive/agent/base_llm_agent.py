@@ -248,6 +248,7 @@ class BaseLLMAgent(Agent):
             coop_config=coop_config,
             symbolic_view=self.symbolic_view,
             target_hints=self.target_hints,
+            plan_history=getattr(self, "plan_history", None),
         )
         return [
             {"role": "system", "content": system_prompt},

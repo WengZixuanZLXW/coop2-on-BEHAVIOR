@@ -121,6 +121,10 @@ class SymbolicObservation:
     goal_status: Optional[Dict[str, Any]] = None
     last_action_id: Optional[str] = None
     last_error: Optional[str] = None
+    #: Ids the activity's own BDDL definition declares, from its object_scope.
+    #: Empty when the run has no BDDL task, and empty means "no opinion": the
+    #: view then shows everything, as it did before this existed.
+    task_entity_ids: Set[str] = field(default_factory=set)
 
     def by_room(self) -> Dict[Optional[str], List[EntityObservation]]:
         grouped: Dict[Optional[str], List[EntityObservation]] = {}
@@ -185,6 +189,10 @@ class BehaviorWorldState:
         # same object even as objects appear or move.
         self._ids: Dict[str, str] = {}
         self._counts: Dict[str, int] = {}
+        #: The subset of _ids that came from the activity definition rather
+        #: than from fallback numbering. What the task is *about*, as opposed
+        #: to what the scene happens to contain.
+        self.task_entity_ids: Set[str] = set()
         # Per-agent memory of rooms visited, so an agent keeps knowing about a
         # room it has already been in (PORTING_PLAN 3.1).
         self._seen_rooms: Dict[str, Set[str]] = {name: set() for name in self.robot_names}
@@ -273,6 +281,7 @@ class BehaviorWorldState:
                 # `grasped` cannot be evaluated at runtime anyway.
                 continue
             self._ids[name] = instance_name
+            self.task_entity_ids.add(instance_name)
             # Keep the fallback counter past anything the scope already used,
             # so an object outside the scope cannot be handed an id the task
             # has already bound to something else.
@@ -717,4 +726,5 @@ class BehaviorWorldState:
             goal_status=goal_status,
             last_action_id=last_action_id,
             last_error=last_error,
+            task_entity_ids=set(self.task_entity_ids),
         )

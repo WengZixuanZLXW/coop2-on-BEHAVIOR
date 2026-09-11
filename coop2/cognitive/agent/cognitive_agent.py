@@ -327,7 +327,13 @@ def parse_plan_response(
         actions=actions,
         plan_id=plan_id,
         agent_id=agent_id,
-        created_at_step=env_step
+        created_at_step=env_step,
+        # Why the model chose this, kept for the agent's own history. It was
+        # being dropped here: the model explained every plan and the
+        # explanation was discarded at the door, so nothing downstream -- the
+        # next prompt least of all -- could say why a robot had done what it
+        # just did.
+        metadata={"reasoning": getattr(llm_response, "reasoning", "") or ""},
     )
 
 

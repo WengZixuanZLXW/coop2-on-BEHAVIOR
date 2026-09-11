@@ -556,9 +556,17 @@ class PlanningEnvWrapper:
                                         failure_reason=goal_failure_reason,
                                         env_step=self._current_step,
                                     )
+                                if hasattr(agent, "record_plan_outcome"):
+                                    agent.record_plan_outcome(
+                                        plan, False, goal_failure_reason, self._current_step,
+                                    )
                             else:
                                 plan.complete_success(self._current_step)
                                 self.logger.log_plan_completed(plan, self._current_step, True)
+                                if hasattr(agent, "record_plan_outcome"):
+                                    agent.record_plan_outcome(
+                                        plan, True, "", self._current_step,
+                                    )
                             executor.needs_new_plan = True
                             # Transition agent to R (reasoning) state when plan completes
                             if agent_id in self.agents and self.agents[agent_id] is not None:
@@ -584,6 +592,12 @@ class PlanningEnvWrapper:
                                 failed_action=str(current_action),
                                 failure_reason=failure_reason,
                                 env_step=self._current_step,
+                            )
+                        if hasattr(agent, "record_plan_outcome"):
+                            agent.record_plan_outcome(
+                                plan, False,
+                                f"{current_action.action_type}: {failure_reason}",
+                                self._current_step,
                             )
                         executor.needs_new_plan = True
                         # Transition agent to R (reasoning) state when plan fails
