@@ -73,6 +73,11 @@ def main() -> int:
     parser.add_argument("--hold", action="store_true",
                         help="With --gui, keep stepping so the window stays "
                              "responsive until Ctrl-C")
+    parser.add_argument("--view", type=str, default=None, metavar="AGENT",
+                        help="Print the symbolic view this robot is given -- the "
+                             "actual prompt text. The cheapest way to see whether "
+                             "the task is even stateable: a destination the agent "
+                             "cannot see is one it cannot name.")
     parser.add_argument("--focus", type=str, default=None, metavar="AGENT",
                         help="Frame --shot tightly on one robot instead of the "
                              "whole group. A 7 cm drone is invisible in a shot "
@@ -155,6 +160,15 @@ def main() -> int:
             print(f"{name:<28} {getattr(obj, 'name', '?'):<22} "
                   f"({position[0]:+.3f}, {position[1]:+.3f}, {position[2]:+.3f})    "
                   f"{_room_of(env, position)}")
+
+    if args.view:
+        info = getattr(env, "_last_info", None) or {}
+        entry = info.get(args.view) or {}
+        view = entry.get("symbolic_view")
+        if view:
+            print(f"\n=== WHAT {args.view} IS TOLD ===\n{view}")
+        else:
+            print(f"\nno symbolic view for {args.view!r}; have {sorted(info)}")
 
     task = getattr(env.env, "task", None)
     if task is not None and hasattr(task, "compiled_task"):

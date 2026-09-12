@@ -703,6 +703,19 @@ class BehaviorWorldState:
             if entity.name == agent_id:
                 entities[entity_id] = entity
                 continue
+            if entity_id in self.task_entity_ids:
+                # An object the activity names is always shown, wherever it is.
+                # The agent is asked to satisfy a goal written in terms of these
+                # ids, so one it cannot see is one it cannot name -- and a goal
+                # whose destination lies in another room then cannot be stated
+                # at all. Measured on v4_s1_v4_ll, whose goal is to carry a box
+                # to the bedroom floor: the robot in the child's room was shown
+                # its teammates and the box and nothing else, and the model said
+                # so itself -- "the bedroom floor destination is not yet visible
+                # from the child's room" -- then planned to place the box on top
+                # of itself, every round, until the budget ran out.
+                entities[entity_id] = entity
+                continue
             if not visible_rooms or not entity.rooms:
                 # No seg map, or an entity the map cannot place: showing it is
                 # better than hiding it, since hiding makes it unmentionable

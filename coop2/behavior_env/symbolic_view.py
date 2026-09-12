@@ -208,7 +208,11 @@ def target_hints(
     for entity in sorted(observation.entities.values(), key=lambda e: e.entity_id):
         if entity.is_robot:
             continue
-        if not include_structural and is_structural(entity):
+        if (not include_structural and is_structural(entity)
+                and entity.entity_id not in observation.task_entity_ids):
+            # Structural unless the activity names it. A floor the goal names is
+            # a destination the agent has to be able to navigate to and place
+            # on, so it needs its verbs like anything else.
             continue
         if only_task_objects and is_off_task(entity, observation):
             continue
@@ -322,7 +326,14 @@ def render_symbolic_view(
     for room, entities in sorted(observation.by_room().items(), key=lambda kv: (kv[0] is None, kv[0] or "")):
         visible = [e for e in entities if not e.is_robot or e.name != observation.agent_id]
         if not include_structural:
-            visible = [e for e in visible if not is_structural(e)]
+            # An entity the activity declares survives this filter. Floors are
+            # structural and normally noise, but a floor the goal names is the
+            # destination -- dropping it leaves the agent unable to say where it
+            # is taking anything.
+            visible = [
+                e for e in visible
+                if not is_structural(e) or e.entity_id in observation.task_entity_ids
+            ]
         if only_task_objects:
             visible = [e for e in visible if not is_off_task(e, observation)]
         if not visible:
@@ -346,7 +357,8 @@ def render_symbolic_view(
 
     shown_ids = {
         e.entity_id for e in observation.entities.values()
-        if (include_structural or not is_structural(e))
+        if (include_structural or not is_structural(e)
+            or e.entity_id in observation.task_entity_ids)
         and not (only_task_objects and is_off_task(e, observation))
     }
     facts = [f for f in observation.facts if all(arg in shown_ids for arg in f.args)]

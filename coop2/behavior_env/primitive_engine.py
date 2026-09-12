@@ -475,7 +475,16 @@ class MultiAgentPrimitiveEngine:
         Note this reads ``robot._ag_obj_in_hand[arm]``, so each controller only
         ever sees its **own** hand. There is no cross-agent "who holds what"
         view at this layer; build it from these values one layer up.
+
+        A robot with no arm holds nothing, and says so rather than raising. A
+        heterogeneous team can contain one -- a carrier base, which navigates and
+        nothing else -- and ``_ag_obj_in_hand`` does not exist on a robot that is
+        not a manipulator, so asking it took the whole episode down with an
+        AttributeError at the end of that robot's first primitive.
         """
+        robot = self.robots_by_id.get(agent_id)
+        if robot is not None and not getattr(robot, "is_manipulation", False):
+            return None
         return self.controllers[agent_id]._get_obj_in_hand()
 
     def held_objects(self) -> Dict[str, Optional[str]]:
