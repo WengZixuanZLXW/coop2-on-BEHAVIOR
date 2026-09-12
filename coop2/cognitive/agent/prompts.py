@@ -57,8 +57,15 @@ Rules that decide whether an action succeeds:
     - agent_1  (teammate)  [carrier, carrying box.n.01_1]  -> unload_from
 
   The cargo has no line of its own and cannot be grasped where it sits.
-  unload_from(agent_1) is the only way to get it into your hand, and you have
-  to be within reach of the carrier to do it.
+  unload_from(agent_1) takes it off that carrier's back and into your hand;
+  load_onto(agent_1) puts what you are holding onto it. Both name the carrier,
+  both need you within reach of it, and unload_from is the only way to get
+  cargo back.
+- **If you are the carrier, you have no arm.** navigate_to and wait are the
+  only actions you can perform: no grasp, no place, no release, no load_onto or
+  unload_from -- those are done *to* you by a robot that has a hand. Your own
+  cargo appears as "On your back:", and you cannot put it down yourself. Your
+  job is to drive to where an arm is waiting.
 - Refer to objects only by the ids in the room listing, which are the objects
   in the room you are standing in. They look like apple.n.01_1. Never invent or
   guess one. An entry marked "blocked" is in that room but currently
@@ -116,8 +123,15 @@ Rules that decide whether an action succeeds:
     - agent_1  (teammate)  [carrier, carrying box.n.01_1]  -> unload_from
 
   The cargo has no line of its own and cannot be grasped where it sits.
-  unload_from(agent_1) is the only way to get it into an arm's hand, and the
-  two robots have to be within reach of each other.
+  unload_from(agent_1) takes it off that carrier's back and into the acting
+  robot's hand; load_onto(agent_1) puts what that robot holds onto it. Both
+  name the carrier, both need the two robots within reach of each other, and
+  unload_from is the only way to get cargo back.
+- **A carrier has no arm**, so give it navigate_to and wait and nothing else:
+  no grasp, no place, no release, no load_onto or unload_from -- those are done
+  *to* it by a robot that has a hand. Its own section lists its load on an
+  "On your back:" line, and it cannot put that down itself. Its job is to drive
+  to where an arm is waiting, which is the whole reason a task needs two of them.
 - Refer to objects only by the ids in that robot's own room listing, which are
   the objects in the room it is standing in. They look like apple.n.01_1. Never
   invent one, and never give one robot an id that appeared only under another

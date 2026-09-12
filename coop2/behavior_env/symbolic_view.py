@@ -221,6 +221,12 @@ def target_hints(
     # LLM round trip to discover, and the discovery is not even reusable: the
     # constraint depends on what the robot is holding at the time.
     grounded = bool(me is not None and me.base_locked_while_holding and held is not None)
+    # A carrier has no arm at all: navigate_to and wait, nothing more. Every
+    # other verb here needs a hand -- to hold, to put down, to reach a switch,
+    # and load_onto/unload_from are hand verbs too, performed *on* a carrier by
+    # something that has one. Offering them to a robot with no gripper is the
+    # same defect as offering navigate_to to a locked base, one layer along.
+    armless = bool(me is not None and me.is_carrier)
 
     def _reach(entity) -> tuple:
         """(distance, in_range, far_note) for @entity."""
@@ -248,7 +254,8 @@ def target_hints(
             # place cargo can go. Both verbs are gated on reach, like every
             # other manipulation: the engine gates them on GATE_CARRY and the
             # two have to agree or the prompt promises what the engine refuses.
-            if not entity.is_carrier or (me is not None and entity.entity_id == me.entity_id):
+            if (armless or not entity.is_carrier
+                    or (me is not None and entity.entity_id == me.entity_id)):
                 continue
             distance, in_range, _far = _reach(entity)
             if not grounded:
@@ -264,15 +271,12 @@ def target_hints(
                 ))
                 continue
             if held is not None and entity.carrying is None:
-                hints.append(ActionHint("load_onto", entity.entity_id, entity.name,
-                                        f"puts {held.entity_id} on its back"))
+                hints.append(ActionHint("load_onto", entity.entity_id, entity.name))
             elif entity.carrying is not None and held is None:
-                # The cargo's id is already on this line, under [carrier, ...].
-                hints.append(ActionHint("unload_from", entity.entity_id, entity.name,
-                                        "takes it into your hand"))
+                hints.append(ActionHint("unload_from", entity.entity_id, entity.name))
             elif entity.carrying is not None:
                 hints.append(ActionHint("blocked", entity.entity_id, entity.name,
-                                        f"carrying {entity.carrying}; your hand is full too"))
+                                        "your hand is full"))
             continue
         if (not include_structural and is_structural(entity)
                 and entity.entity_id not in observation.task_entity_ids):
@@ -302,6 +306,10 @@ def target_hints(
             hints.append(
                 ActionHint("unreachable", entity.entity_id, entity.name, far_note)
             )
+            continue
+
+        if armless:
+            # navigate_to is already emitted above; nothing below it is legal.
             continue
 
         if entity.held_by is None and held is None and not entity.is_fixed:
@@ -368,18 +376,17 @@ def render_symbolic_view(
         # Its own cargo, which the room listing cannot show it: a robot is
         # filtered out of its own listing, so without this the carrier is the
         # one agent that cannot see what it is carrying.
-        lines.append(f"On your back: {me.carrying} -- you have no arm to put it "
-                     "down; an arm must take it with unload_from(you)")
+        lines.append(f"On your back: {me.carrying}")
     if held is None:
         lines.append("Holding: nothing")
     else:
         line = f"Holding: {held.entity_id} ({held.category})"
         if me is not None and me.base_locked_while_holding:
-            # Say it here, because the consequence is an *absence* further down
-            # -- no navigate_to on anything -- and an absence explains nothing.
-            line += ("  -- your base is locked while your arm is loaded: you "
-                     "cannot navigate_to anything until you put it down or "
-                     "load_onto a carrier")
+            # The state, not the lecture: what it means is in the system
+            # prompt. Said here at all because the consequence is an *absence*
+            # further down -- no navigate_to on anything -- and an absence
+            # explains nothing on its own.
+            line += "  [your base is locked while loaded: no navigate_to]"
         lines.append(line)
 
     # What can be done to a thing belongs on the line that names the thing.

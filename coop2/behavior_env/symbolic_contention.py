@@ -441,6 +441,34 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
             {"held object": held.name},
         )
 
+    def _require_arm(self, verb: str) -> None:
+        """Refuse a hand verb to a robot that has no hand.
+
+        A carrier is defined by not being able to manipulate -- that is what
+        makes it a carrier rather than a second arm. Without this the refusal
+        still happens but somewhere useless: `load_onto` reports "you are not
+        holding anything to load" (true, and not the reason), and `_grasp`
+        fails inside the parent on an arm that is not there. The prompt does not
+        offer these verbs to a carrier; this is the half that makes that promise
+        safe to rely on.
+        """
+        try:
+            from coop2.behavior_env.carrier import is_carrier  # noqa: PLC0415
+
+            armless = is_carrier(self.robot)
+        except Exception:  # noqa: BLE001 - a scene with no carrier support
+            armless = False
+        if not armless:
+            return
+        raise self._error(
+            "NO_ARM",
+            f"You have no arm, so you cannot {verb}. You can navigate_to and "
+            f"wait. Cargo is put on your back and taken off it by a robot that "
+            f"does have one -- load_onto({self.robot.name}) and "
+            f"unload_from({self.robot.name}), performed by that robot.",
+            {},
+        )
+
     def _require_carrier(self, carrier, verb: str):
         """@carrier must be a robot that carries cargo, and within reach."""
         from coop2.behavior_env.carrier import is_carrier  # noqa: PLC0415
@@ -471,6 +499,7 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
         """Put what this robot is holding onto @carrier's back."""
         from coop2.behavior_env.carrier import carried_by, load_onto  # noqa: PLC0415
 
+        self._require_arm("load onto a carrier")
         self._require_carrier(carrier, "load onto")
         held = self._get_obj_in_hand()
         if held is None:
@@ -495,6 +524,7 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
         """Take what is riding on @carrier into this robot's hand."""
         from coop2.behavior_env.carrier import carried_by, unload_from  # noqa: PLC0415
 
+        self._require_arm("unload from a carrier")
         self._require_carrier(carrier, "unload from")
         if self._get_obj_in_hand() is not None:
             raise self._error(
@@ -557,6 +587,7 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
     # scene. A rejected primitive therefore costs 0 ticks and moves nothing.
 
     def _grasp(self, obj):
+        self._require_arm("grasp")
         self._require_not_held_by_self(obj)
         self._require_unclaimed(obj, "grasp")
         self._require_near(obj, "grasp", GATE_GRASP)
@@ -586,6 +617,7 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
         filter) -- which reads as a crowding problem and is really a missing
         object. ``keep_still()`` is upstream's own helper for exactly this.
         """
+        self._require_arm("place onto")
         self._require_unclaimed(obj, "place onto")
         self._require_near(obj, "place onto", GATE_PLACE)
 
@@ -631,12 +663,14 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
 
     def _open_or_close(self, obj, should_open):
         verb = "open" if should_open else "close"
+        self._require_arm(verb)
         self._require_unclaimed(obj, verb)
         self._require_near(obj, verb, GATE_OPEN_CLOSE)
         yield from super()._open_or_close(obj, should_open)
 
     def _toggle(self, obj, value):
         verb = "toggle on" if value else "toggle off"
+        self._require_arm(verb)
         self._require_unclaimed(obj, verb)
         self._require_near(obj, verb, GATE_TOGGLE)
         yield from super()._toggle(obj, value)

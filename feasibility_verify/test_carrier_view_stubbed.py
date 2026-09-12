@@ -49,9 +49,11 @@ def main() -> int:
     assert ("place_on_top", "floor.n.01_1") in got, sorted(got)
     assert ("release", BOX) in got
     text = sv.render_symbolic_view(holding, interaction_radius=1.5)
-    # The consequence is an absence, and an absence explains nothing.
-    assert "base is locked" in text and "load_onto a carrier" in text, text
-    print("  ok: no navigate_to anywhere, and the Holding line says why")
+    # The state, not the lecture: what it means is the system prompt's job. Said
+    # here at all because the consequence is an absence, and an absence explains
+    # nothing on its own.
+    assert "base is locked while loaded" in text and "no navigate_to" in text, text
+    print("  ok: no navigate_to anywhere, and the Holding line names the state")
 
     print("\ntest 2: the same robot with an empty hand drives normally")
     empty = scene("agent_0", box_held_by=None)
@@ -109,12 +111,23 @@ def main() -> int:
     assert "Holding: nothing" in text, text
     # A robot is filtered out of its own listing, so without this the carrier is
     # the one agent that cannot see what it is carrying.
-    assert f"On your back: {BOX}" in text and "unload_from(you)" in text, text
+    assert f"On your back: {BOX}" in text, text
     got = verbs(own)
-    assert not [v for v in got if v[0] in ("release", "place_on_top")], sorted(got)
+    # No arm at all: navigate_to and wait, nothing more. Every other verb needs
+    # a hand, load_onto and unload_from included -- those are done *to* a
+    # carrier by something that has one.
+    assert {v[0] for v in got} <= {"navigate_to", "unreachable"}, sorted(got)
     assert ("navigate_to", "floor.n.01_1") in got, "a carrier's whole job is driving"
-    assert ("load_onto", "agent_1") not in got, "cannot load onto itself"
-    print("  ok: it drives, and is offered neither its own back nor an arm's verbs")
+    print("  ok: a carrier is offered driving and nothing that needs a hand")
+
+    print("\ntest 7b: an armless robot is offered nothing to manipulate anywhere")
+    free_box = scene("agent_1", box_held_by=None)
+    got = verbs(free_box)
+    assert ("grasp", BOX) not in got, sorted(got)
+    assert {v[0] for v in got} <= {"navigate_to", "unreachable"}, sorted(got)
+    # And the arm beside it still gets everything.
+    assert ("grasp", BOX) in verbs(scene("agent_0", box_held_by=None))
+    print("  ok: the constraint is the robot's, not the scene's")
 
     print("\ntest 8: the full handoff is expressible at every step")
     # A -> B -> C -> D, each state offering exactly the next move of

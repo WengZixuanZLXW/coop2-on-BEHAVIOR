@@ -34,7 +34,13 @@ def ok(message: str) -> None:
 #: differently in the two descriptions (one speaks to a robot, the other about
 #: robots), so only the load-bearing token is matched.
 SHARED_RULES = ("TOO_FAR", "unreachable", "held by", "room listing",
-                "ticks per metre", "navigate_to", "wait")
+                "ticks per metre", "navigate_to", "wait",
+                # The carrier rules. Two robots that cannot do each other's job
+                # is the premise of a whole activity, and the two descriptions
+                # state it in different persons -- so they drift silently unless
+                # every load-bearing token is required of both.
+                "BASE_LOCKED", "load_onto", "unload_from", "carrier",
+                "no arm", "On your back:", "within reach")
 
 
 def main() -> int:
