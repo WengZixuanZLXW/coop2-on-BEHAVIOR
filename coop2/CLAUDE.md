@@ -14,9 +14,9 @@ This file is only the operational summary.
 
 | layer | package | status |
 |---|---|---|
-| L6 experiment (runners, grid, metrics) | `coop2/experiment/` | **GPU-verified with a stub LLM** (M7 steps 1–2) |
-| L5 comm_topology (individual/chain/centralized) | `coop2/comm_topology/` | **copied verbatim, exercised by M7** (individual) |
-| L4 cognitive/agent (FSM, memory, broker, prompts, LLM) | `coop2/cognitive/agent/` | **BDDL vocabulary aligned, FSM GPU-verified** (M7) |
+| L6 experiment (runners, grid, metrics) | `coop2/experiment/` | **all three runners GPU-verified against a real LLM**; `inspect_scene.py` loads a scene without an episode |
+| L5 comm_topology (individual/chain/centralized) | `coop2/comm_topology/` | **all three exercised at 9 and 12 robots**; `llm_team.py` makes a *team* the unit of every topology |
+| L4 cognitive/agent (FSM, memory, broker, prompts, LLM) | `coop2/cognitive/agent/` | **BDDL vocabulary aligned, FSM GPU-verified**; prompt scoped to the activity's objects, with plan history |
 | L3 cognitive/plan (plan lifecycle, PlanningEnvWrapper) | `coop2/cognitive/plan/` | **GPU-verified driving the facade** (2026-09-06) |
 | L2 cognitive/action (symbolic action → primitive) | `coop2/cognitive/action/behavior_action.py` | **rewritten, GPU-verified** (M5) |
 | L1a world model | `coop2/behavior_env/world_state.py` | **done, CPU-tested + GPU-verified** (M4) |
@@ -28,57 +28,62 @@ This file is only the operational summary.
 | L1 facade | `coop2/behavior_env/coop_env.py` | **done, GPU-verified** (M5) |
 | L0 N-robot env config + startup ritual | `coop2/behavior_env/env_setup.py` | **done, GPU-verified** 2026-09-05 |
 | — repair shim, viz stub | `coop2/_repair_shim/`, `coop2/cognitive/viz/` | **done** (no-op by design) |
-| BDDL task + cached instance | `bddl3/.../coop_two_apples_pomaria/`, `feasibility_verify/{sample,verify}_coop_task_instance.py` | **done, GPU-verified** 2026-09-07 |
+| BDDL tasks + cached instances | `bddl3/.../{coop_two_apples_pomaria,coop_nine_apples_hall,v4_s1_v4_ll}/`, `feasibility_verify/sample_*.py` | **three activities, all GPU-verified**; two and nine apples solve, v4_s1_v4_ll solves at env_step 504 |
+| Robots from outside BEHAVIOR | `coop2/robot_configs/`, `coop2/team_layouts/` | **Ridgeback+UR5 and Crazyflie imported from upstream URDFs** (2026-09-11) |
 | M9 wiring (BehaviorTask + `check_goal` termination) | `coop2/behavior_env/coop_env.py` | **done**, commits `e4d28a98`…`5fda3d28` |
 
 ## Where we are (2026-09-11)
 
-Twelve robots as three teams of four run all three topologies on
-`coop_nine_apples_hall` for 8000 steps without stalling. The 2026-09-11 section
-below has the numbers, the defects found getting there, and why that table is
-already stale.
+Three BDDL activities run end to end. `coop_two_apples_pomaria` and
+`v4_s1_v4_ll` reach their goals; `coop_nine_apples_hall` is the hard one and
+gets 6 of 9 apples in 8000 steps. Twelve robots as three teams of four, and
+nine as three teams of three, run all three topologies without stalling.
+
+**Two lines of work are open**, and neither is a milestone from
+PORTING_PLAN.md section 7:
+
+* **What the agent is shown.** The prompt is now scoped to the activity's own
+  objects, carries the agent's plan history, and states the task in the ids it
+  is written in. See "What the agent is shown" below -- including the change
+  that fixed one task by breaking the premise the benchmark rests on, and how it
+  was undone.
+* **Heterogeneous robots.** V4's Ridgeback+UR5 and Crazyflie are imported from
+  their own upstream URDFs, which is the first real exercise of the robot-model
+  registry. See "Third activity: v4_s1_v4_ll".
 
 **Anything measured before 2026-09-11 is not comparable to anything measured
-after**, on three counts, each enough on its own: the travel charge halved
+after**, on four counts, each enough on its own: the travel charge halved
 (60 -> 30 ticks/m), every robot but two was shown to the others under another
-robot's name, and the prompt's object listing changed shape. Re-run rather than
-compare across that line.
+robot's name, the prompt's object listing changed shape, and the listing is now
+scoped to the activity. Re-run rather than compare across that line. Every
+results table in this file that predates it has been removed for that reason;
+what was learned *from* those runs is kept in the sections that explain it.
 
-What is left: **M7 step 3** (more seeds per topology for the metrics table) and
-**M8** (decentralized topology). Note `build_results_table.py` cannot read these
-runs: it skips any folder without `team_score.json`, which the runners do not
-write while `team_score.enabled` is False -- post-episode code that only runs
-after a full GPU episode, the same defect class as the rest of that file.
+Still on the plan and not started: **M7 step 3** (>=3 seeds per topology for the
+metrics table) and **M8** (decentralized topology). Note
+`build_results_table.py` cannot read these runs: it skips any folder without
+`team_score.json`, which the runners do not write while `team_score.enabled` is
+False -- post-episode code that only runs after a full GPU episode, the same
+defect class as the rest of that file.
 
-## The two-apple baseline (2026-09-08, evening)
+## M9 is wired, and the scene it runs in
 
-**All three topologies solve the BDDL activity.** `individual`,
-`broadcast_chain` and `centralized` each reached `coop_two_apples_pomaria`'s goal
-at seed 0 with 2 agents and `--steps 4000`: `check_goal` fired at env_step 1303,
-1303 and 1278 respectively, `{'satisfied': [0], 'unsatisfied': []}`. Runs take
-about two minutes each. Reproduce with the command in "Commands" below.
+`coop_env` loads OmniGibson's `BehaviorTask` from the cached instance when
+`bddl_activity` is set, and `compiled_task.check_goal` is the **only** authority
+over `terminated`. M1-M6 and M9 passed; acceptance criteria are in
+PORTING_PLAN.md section 7.
 
-| topology | goal @ step | plans | succeeded | primitives | primitive ticks | messages | LLM calls | tokens |
-|---|---|---|---|---|---|---|---|---|
-| individual | 1303 | 4 | 1 | 6 | 2278 | 0 | 4 | 13731 |
-| broadcast_chain | 1303 | 4 | 1 | 6 | 2278 | 3 | 6 | 22328 |
-| centralized | 1278 | 4 | 1 | 6 | 1924 | 6 | 7 | 19669 |
+The two-apple task is on `Pomaria_1_int`/`living_room_0` because that is where
+the two-armchair + coffee-table layout exists. The earlier target was
+`house_single_floor`; `Rs_int` was measured unusable, 96.2 % of sampled base
+poses reject.
 
-`centralized` finishes the manipulation in 1924 primitive ticks against 2278 for
-the other two, and pays 6 messages and the highest API latency for it -- which is
-the trade COOP2 exists to measure. One seed proves nothing about the ordering;
-that is what M7 step 3's remaining seeds are for.
-
-**M1-M6 passed. M7 steps 1-2 passed.** M9 is wired: `coop_env` loads
-OmniGibson's `BehaviorTask` from the cached instance when `bddl_activity` is set,
-and `compiled_task.check_goal` is the *only* authority over `terminated`.
-Acceptance criteria are in PORTING_PLAN.md section 7.
-
-**Scene note:** the earlier target was `house_single_floor` (Rs_int measured
-unusable, 96.2 % of sampled base poses reject). The BDDL task is on
-`Pomaria_1_int`/`living_room_0` because that is where the two-armchair +
-coffee-table layout exists; revisit if N=9 needs more floor area than that room
-has.
+*(The 2026-09-08 and 2026-09-09 per-topology result tables were here. They were
+measured at 60 ticks/m, on the one-floor template, before the team layer and
+before the naming and prompt fixes -- four independent reasons they cannot be
+compared with anything current, so they are gone rather than misleading. The
+findings they produced are in the sections below, which is where they were
+load-bearing.)*
 
 ## The bug that made the activity look unsolvable (2026-09-08)
 
@@ -123,18 +128,7 @@ that differs, and `wake()` plus one step flips `OnTop` to True with the object
 not having moved. Three geometric hypotheses were proposed and all three were
 measured wrong before this one was measured right.
 
-## Seed 3, one run per topology (2026-09-09)
-
-| topology | end_step | goal | plans | ok / fail / cut | Y_plan | msgs | API | tokens |
-|---|---|---|---|---|---|---|---|---|
-| broadcast_chain | 1956 | **solved** | 3 | 1 / 0 / 2 | 1.00 | 1 | 3 | 10 819 |
-| centralized | 2094 | **solved** | 3 | 1 / 0 / 2 | 1.00 | 2 | 4 | 11 360 |
-| individual | 3174 | not solved | 5 | 1 / 2 / 2 | 0.33 | 0 | 5 | 17 847 |
-
-Four seeds now: individual 2/4, centralized 4/4, broadcast_chain 4/4. Still not
-enough to separate topology from seed noise, but individual is the only one that
-has ever failed, and both of its failures are physics, not coordination --
-`place_on_top[EXECUTION]` at seeds 1 and 3.
+## Two things the seed-3 runs left behind (2026-09-09)
 
 ### `--steps` is not the budget: `--time-limit-seconds` defaults to 120
 
@@ -372,9 +366,13 @@ Notes worth keeping:
   chairs 4.7-43.0 m from the table (nine round trips = 550 m ~ 33 000 travel
   ticks at 30 ticks/m -- 33 000 at the 60 it was measured at), and `place_robots`
   starts the team ~47-53 m away because
-  it clusters around wherever the first pose lands. Budget accordingly -- of the
-  order of 60 000 steps, against 4 000 for the two-apple Pomaria task -- or
-  re-sample for a tighter draw, or centre the furniture deliberately.
+  it clusters around wherever the first pose lands.
+
+  That estimate was "of the order of 60 000 steps". **Measured instead: 8000
+  steps gets 6 of 9 apples** with 9 or 12 robots (2026-09-11 sections below), so
+  the parallelism is worth more than the per-robot round trips cost. The task is
+  still unsolved at that budget -- it is the hard one of the three, and it is
+  meant to be.
 
 ## Heterogeneous robots and one-LLM-per-team (2026-09-10)
 
@@ -515,19 +513,19 @@ matching the plan's TaskSpecification. Written as `holding(<self>)` that appende
 a run's plan log. Holds are constructed directly now, and the test asserts a hold
 has exactly one action rather than only checking the first.
 
-### 3. gpt-5.6-terra when the team prompt is too much for luna
+### 3. The model is a flag, and the runs must agree on it
 
-No code change -- `--model gpt-5.6-terra`. Both models honour the team schema
-(probed directly). On four robots, same seed and task, terra allocated both
-apples correctly on its first team call where luna needed a second round:
+No code change -- `--model gpt-5.6-terra`. Both terra and luna honour the team
+schema (probed directly). A 2026-09-10 pair of runs had terra allocating both
+apples on its first team call where luna needed two rounds; that comparison is
+not repeated here because it predates the naming and prompt fixes, and one seed
+was never a ranking anyway.
 
-| model | goal @ step | holds | team LLM calls |
-|---|---|---|---|
-| gpt-5.6-luna | 1203 | 8 | 2 |
-| gpt-5.6-terra | **358** | 2 | **1** |
-
-One seed, so this is not a ranking -- but the mechanism behind the gap is
-visible, not inferred: one planning round against two.
+What survives is operational: `AZURE_OPENAI_MODEL=gpt-5.6-luna` is pinned in
+`.env` so a forgotten `--model` cannot silently fall back to the code default
+(`gpt-5.2-chat`), and **runs before 2026-09-11 are a mix of luna and terra**.
+`llm_usage.json` records which. Align that column before any cross-topology
+comparison means anything.
 
 ## Twelve robots, three teams, 8000 steps (2026-09-11)
 
@@ -728,28 +726,185 @@ loudly. ``test_symbolic_contention`` now reads ``prompts.py`` and fails if the
 two part -- by reading the source rather than importing it, since that file
 stubs OmniGibson out and ``prompts.py`` keeps the literal on purpose.
 
-### The sweep, and what it is worth
+### The sweep, and why its table is not here
 
-Three topologies, 12 robots as 3 teams of 4, ``coop_nine_apples_hall``, 8000
-steps, seed 0, gpt-5.6-luna. No stalls, no tracebacks, all three ran the full
-budget and none reached the BDDL goal.
+Three topologies, 12 robots as 3 teams of 4, `coop_nine_apples_hall`, 8000
+steps, seed 0. No stalls, no tracebacks, all three ran the full budget and none
+reached the goal; `individual` got the most apples on that one seed, so
+communication bought nothing measurable. The numbers are omitted because they
+predate the naming fix and the prompt work in the sections that follow, both of
+which change what the model is shown.
 
-| topology | apples | plans | ok | fail | holds | idle % | LLM | msgs | tokens |
-|---|---|---|---|---|---|---|---|---|---|
-| individual | **8/9** | 120 | 82 | 27 | 54 | 26.4 | 29 | 0 | 363 269 |
-| centralized | 6/9 | 156 | 89 | 57 | 76 | 27.3 | 93 | 42 | 859 999 |
-| broadcast_chain | 6/9 | 142 | 64 | 48 | 68 | 36.9 | 55 | 24 | 694 682 |
+What survives the change and is worth carrying forward:
 
-One seed, and communication bought nothing here -- but **this table is already
-stale**: it predates the robot-naming fix, the prompt merge and the travel-rate
-correction, all of which change what the model is shown. Treat it as the
-"before" of that change and re-run for the real one. The idle column is the team
-barrier's price, and it is honest now rather than drawn as work.
+* **The team barrier costs about a fifth of every robot's steps**, and it is now
+  drawn and logged as idling rather than as work. The cleanest pair in the file
+  is `broadcast_chain` at 12 robots and at 9, both post-naming-fix, same task,
+  budget and seed:
 
-Model pinning: ``AZURE_OPENAI_MODEL=gpt-5.6-luna`` is in ``.env``. Runs before
-2026-09-11 are a mix of luna and terra (``llm_usage.json`` records which), and
-that column has to be aligned before any cross-topology comparison means
-anything.
+  | | 12 robots (3x4) | 9 robots (3x3) |
+  |---|---|---|
+  | apples | 6/9 | 6/9 |
+  | idle | 23.7 % | 21.9 % |
+  | work plans | 183 (66 ok / 30 failed / 87 cut) | 125 (65 / 38 / 22) |
+  | LLM calls | 55 | 55 |
+  | tokens | 706 467 | **483 052** |
+
+  Three more robots bought no apples and cost 32 % more tokens. The idle
+  difference is small enough to be noise at one seed -- an earlier reading of
+  36.9 % came from a *pre-fix* run and does not belong in this comparison. What
+  is not noise is the interrupted count: 87 plans cut short against 22, i.e. the
+  bigger team spends much more of its planning being overtaken by events.
+* **The chain's ordering holds under load.** 11/11 cascade rounds ordered at 12
+  robots, 6/6 at 9, exactly one relay per team per round including rounds where
+  every robot resumed, and the 30 s backstop never fired.
+* Every hold is filed now: the timeline's gap inference finds **0** unrecorded
+  idling in post-fix runs, which is the check that the logging fix holds.
+
+## What the agent is shown (2026-09-11, evening)
+
+Three changes to the prompt, and one of them had to be undone the same evening.
+
+### The scene listing was the whole scene
+
+`coop_nine_apples_hall` is about 9 apples, 9 chairs and a table; the hall also
+holds 34 spotlights, pictures, bookcases and light switches, and every one was
+listed with its verbs. That buried the task's own objects and invited plans
+against the rest -- measured runs spent attempts on `electric_switch_wseglt_8`
+and `picture_zsirgc_0`, both failing NO_SPACE_AROUND_TARGET.
+
+The activity's `object_scope` now rides on the observation as
+`task_entity_ids`, and the view drops what the activity never mentions -- from
+the room listing, the verbs and the relations alike, so all three agree on what
+exists. Teammates and whatever is held are never dropped (a held object is out
+of every room, and hiding it would hide the only verb that puts it down), and an
+empty scope means "no opinion", so a run without a BDDL task is unchanged.
+
+### Every call started from a blank slate
+
+The agent was told the world and its current plan, never what it had already
+tried, so it re-proposed plans that had just failed with the reason nowhere in
+front of it. The pieces existed and the chain was broken twice:
+`parse_plan_response` discarded the model's `reasoning` at the door, and
+`AgentMemory` is a ring buffer shared with message traffic, so a chatty round
+evicts the plan events -- a history that silently forgets is worse in a prompt
+than none. Outcomes go in a dedicated `agent.plan_history` now, recorded where a
+plan actually terminates. An interrupt is excluded *structurally* rather than
+filtered: only the SUCCESS and FAILED transitions record anything, so an
+interrupt-and-resume cannot produce an entry for a plan still running.
+
+### Making the destination visible fixed one task and broke the benchmark
+
+To solve `v4_s1_v4_ll` the agent needed to name a floor in another room, so one
+commit made every object the activity declares visible from anywhere. It worked,
+and it dissolved the premise the whole benchmark rests on -- an agent sees the
+room it is standing in and no other. The cost was not confined to that task:
+`coop_nine_apples_hall` declares 21 objects, so all nine apples, all nine chairs
+and the table would have been visible to every agent from step 0, and the
+exploration problem the activity exists to pose would have disappeared.
+
+**The agent never needed to see the destination. It needed to be able to *name*
+it.** Those are different, and only the second is required to write
+`ontop(packing_box.n.02_1, floor.n.01_2)`. So the room listing is strictly local
+again and the goal is stated in the ids it is written in:
+
+```
+childs_room_0:
+  - agent_1  (teammate)
+  - floor.n.01_1  -> navigate_to
+  - packing_box.n.02_1  -> grasp, navigate_to
+
+YOUR TASK, in the ids it is written in:
+  ontop(packing_box.n.02_1, floor.n.01_2)   [floor.n.01_2 is in the bedroom]
+```
+
+`inroom` is part of the activity definition, so repeating it discloses nothing
+the task had not already stated. The one structural exemption that stays is a
+task floor in the agent's *own* room, which it is standing on. It also solves
+faster than the version that broke the premise -- env_step 377 against 504, five
+plans against six. **Telling an agent its task is better information than making
+it infer the destination from a room listing.**
+
+## Third activity: v4_s1_v4_ll, and robots from outside BEHAVIOR (2026-09-11)
+
+`bddl3/bddl/activity_definitions/v4_s1_v4_ll/` -- three robots move a packing
+box from a child's room to a bedroom floor. Solved at **env_step 504 of 2500**,
+six plans, by the Ridgeback's suction arm; the four failures are OBJECT_CLAIMED,
+which is contention working -- three robots went for one box and one got it.
+
+The task was the easy half. What it cost was everything that has to be true
+first.
+
+**The robots are imported from their own upstream URDFs** through BEHAVIOR's
+official importer, which is the first exercise of the "robot models are a
+registry, not a fixed list" extension point above. Two of the three can grasp,
+because the symbolic grasp teleports the object to the end effector and welds a
+FixedJoint -- which is what a suction cup is. The finger-contact path it never
+uses was the only thing in the way.
+
+Facts worth keeping, each found by loading the robot rather than by reading:
+
+* A ~30 line `ament_index_python` shim makes the import pipeline run without
+  ROS. pip's `xacro` resolves `$(find pkg)` through that module, which ships
+  only with ROS 2 and is not on PyPI; the shim reads the exact ament index
+  layout `register_package` already builds.
+* **Three of the four armless-robot failures are configuration**, and are in
+  `coop2/robot_configs/v4_ridgeback_ur5_primitives.yaml`: no fingers declared,
+  `grasping_mode: sticky`, `disable_grasp_handling: true` -- the documented
+  switch for a caller that drives grasps itself, which the symbolic layer does.
+* The fourth is a real OmniGibson bug, fixed in `robot.py`: joint index tensors
+  are built from a list comprehension, and an empty list yields **float32**,
+  which cannot index. An empty list is legitimate for a robot with no fingers.
+  Four sibling properties have the same latent issue; only the one that fires is
+  touched.
+* **The Crazyflie needed five separate things.** `use_holonomic_joints` (the
+  non-holonomic branch of `_get_robot_pose_from_2d_pose` forces z to 0.0, and a
+  drone needs the altitude DOF), a `holonomic_base + locomotion` controller
+  group, a zero-joint arm whose body is the suction face, `default_joint_pos`
+  per virtual joint, and the float32 index fix above. It then loaded, was
+  correctly placed and sized, and **rendered nothing**: OmniGibson hides the eef
+  link of every manipulation robot on principle, because on a normal arm that
+  link is a massless frame -- naming the body as the end effector hid the whole
+  drone. It has its own `bottom_suction_mount` 1.5 cm below the belly now, which
+  is what V4's own wrapper adds and for the same reason.
+* **Re-import a wheeled base holonomic.** Navigation here is a teleport, and a
+  real four-wheel base does not survive one: the wheels arrive intersecting the
+  floor and PhysX ejects the robot. Every wheel joint fixed, base driven through
+  six virtual joints, suspension rocker in the same list -- left drivable it is a
+  joint with no controller and the load fails outright.
+* **A UR5 at all-zeros stands straight out horizontally** and knocks furniture
+  over on arrival. Measured with the base at the origin: all-zeros is
+  1.356 x 1.0 x 1.000 m; folded back is 1.000 x 1.0 x 1.134, i.e. down to the
+  chassis's own footprint, and leaves the end effector behind the base rather
+  than in front of it.
+* **Layouts carry `scale`**, because size is part of a layout and not a property
+  of a model. V4 stages its three robots within half a metre of each other,
+  which only fits because it shrinks them to 0.5/0.7/0.6. Loaded full size two
+  overlapped, `place_robots` relocated them by 0.8 m and 1.9 m, and the
+  relocation shoved the box 1.4 m across the room.
+
+**A robot stands on a floor, not around it.** Navigating to a floor asked the
+robot to stand 3.3-3.9 m from its centre -- the target's own half-diagonal,
+right for a table and wrong for a surface spanning a room, since the ring lies
+outside the room the floor is the floor of. 187 of 200 candidates rejected,
+NO_SPACE_AROUND_TARGET every time. This is not a corner case: navigating to a
+room's floor is the only way to say "take this to the bedroom", and with the
+destination finally nameable the model wrote exactly the right plan and could
+not execute it. A surface the robot stands on is sampled *within* rather than
+around; the room filter and traversability check are unchanged.
+
+**The scene instance reproduces the one V4 authored**: the box pinned to V4's
+coordinate rather than sampled, 84 objects removed (19 pictures, 16 light
+switches, 10 doors, the sofa, five armchairs), two moved, the box at 8 g. The
+filter list is a **separate USD layer** the staging scenes reference -- easy to
+miss by reading only their own edit block, which is how the count first came out
+8 instead of 89. Beds, coffee table, shelf and fridge stay: they are BDDL
+supports.
+
+**`coop2/experiment/inspect_scene.py`** loads all of it and stops -- no agents,
+no LLM, no plan loop -- and prints where each robot was asked to be against where
+it ended up. It found three defects in its first three runs, none of which cost
+an episode.
 
 ## Open defects
 
@@ -780,7 +935,13 @@ and in the code comment at the site. What is still true:
    it -- a 552 s call that returned nothing showed up only as
    `total_llm_errors: 1`. The 100 s timeout caps the damage; it does not make
    it visible.
-5. **`coop2_trace.json` is always empty.** `plan_env_wrapper` logs
+5. **`load_onto` / `unload_from` do not exist.** `v4_s1_v4_ll` stages a
+   base-locked arm and an armless carrier, so the cooperation it is built around
+   is "put the box on your teammate and let them drive". The action set has no
+   word for cargo on a robot, so the task is solved around the intended route
+   instead of through it. This is the most interesting thing the third activity
+   asks for and the one thing it cannot yet be asked.
+6. **`coop2_trace.json` is always empty.** `plan_env_wrapper` logs
    `plan_committed` events into the repair shim's `Coop2TraceLogger`, whose
    `log()` discards them. Harmless while repair is unported -- nothing reads
    the file -- but the events are gone, and `plan_logs.json` does not carry the
@@ -825,6 +986,23 @@ OMNIGIBSON_HEADLESS=1 python -u -m coop2.experiment.run_broadcast_chain \
   --model gpt-5.6-luna --llm-quiet --no-video
 # Do NOT wrap this in `conda run`: it buffers stdout until the process exits, so
 # an hour-long run is unmonitorable. Call the env's python directly.
+# --agents 9 --team-size 3 is the cheaper shape: same 6/9 apples, 30 % fewer
+# tokens, 22 % idle against 37 %.
+
+# A layout of imported robots -- V4's Ridgeback+UR5, Jackal and Crazyflie. The
+# layout beats --agents, and carries each robot's model, position and scale.
+python -u -m coop2.experiment.run_individual \
+  --team-config coop2/team_layouts/v4_s1_v4_ll.json \
+  --scene Merom_1_int --room childs_room_0 --bddl-activity v4_s1_v4_ll \
+  --steps 2500 --seed 0 --time-limit-seconds 0 \
+  --model gpt-5.6-luna --llm-quiet --no-video
+
+# Load a scene and stop: no agents, no LLM, no plan loop. Prints where each
+# robot was asked to be against where it ended up, and --shot saves a picture.
+# Reach for this before spending an episode on a new scene or a new robot.
+python -u -m coop2.experiment.inspect_scene \
+  --scene Merom_1_int --room childs_room_0 --bddl-activity v4_s1_v4_ll \
+  --team-config coop2/team_layouts/v4_s1_v4_ll.json --shot /tmp/scene.png
 
 # Delete run folders (dry run by default; --yes to actually delete).
 python coop2/runs/clean_runs.py
