@@ -18,6 +18,17 @@
     "only the Ridgeback's UR5 and the Crazyflie's belly suction cup can grasp.",
     "The Jackal has no arm at all -- navigate_to and wait, nothing more -- and V4",
     "uses it as a carrier, a role this action set has no word for yet.",
+    "agent_0 is base-locked while holding, which is what V4 states on its own",
+    "Ridgeback prim (v4:base_locked_while_holding). It can pick the box up but",
+    "not carry it anywhere, so the only route to the bedroom is through agent_1:",
+    "",
+    "    agent_0  grasp(box) -> load_onto(agent_1)",
+    "    agent_1  navigate_to(floor.n.01_2)",
+    "    agent_0  navigate_to(floor.n.01_2) -> unload_from(agent_1) -> place_on_top",
+    "",
+    "agent_1 is a carrier by inference: it has no arm, so cargo on its back is the",
+    "only way it can move anything. agent_2, the drone, has a suction cup and is",
+    "not base-locked -- it is the alternative route, and the team has to choose.",
     "",
     "Two teams, so chain and centralized have inter-team traffic to carry;",
     "individual ignores the split."
@@ -32,7 +43,8 @@
       ],
       "team": "alpha",
       "_v4_prim": "ridgeback_franka_s1_m5",
-      "scale": 0.5
+      "scale": 0.5,
+      "base_locked_while_holding": true
     },
     {
       "name": "agent_1",

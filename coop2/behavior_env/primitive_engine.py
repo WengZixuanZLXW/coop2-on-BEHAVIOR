@@ -87,6 +87,9 @@ __all__ = [
     "PrimitiveOutcome",
     "MultiAgentPrimitiveEngine",
     "WAIT",
+    "LOAD_ONTO",
+    "UNLOAD_FROM",
+    "LOCAL_PRIMITIVES",
 ]
 
 
@@ -133,6 +136,28 @@ class _WaitPrimitive:
 
 
 WAIT = _WaitPrimitive()
+
+
+class _LocalPrimitive:
+    """Stands in for an enum member upstream does not have, like _WaitPrimitive.
+
+    LOAD_ONTO and UNLOAD_FROM move an object between a gripper and a carrier
+    robot's back. Upstream has no such primitive -- its set is written for one
+    robot acting alone -- and the engine dispatches these to our controller the
+    same way it dispatches WAIT.
+    """
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return self.name
+
+
+LOAD_ONTO = _LocalPrimitive("LOAD_ONTO")
+UNLOAD_FROM = _LocalPrimitive("UNLOAD_FROM")
+#: Primitives our controller implements itself, by the method of the same name.
+LOCAL_PRIMITIVES = {LOAD_ONTO.name: "load_onto", UNLOAD_FROM.name: "unload_from"}
 
 
 class ReasonCode:
@@ -518,8 +543,11 @@ class MultiAgentPrimitiveEngine:
         """
         return {robot.name: self.idle_action(robot) for robot in self.robots}
 
-    def resolve_target(self, target: Any) -> Tuple[Optional[Any], Optional[str]]:
+    def resolve_target(self, target: Any, allow_robot: bool = False) -> Tuple[Optional[Any], Optional[str]]:
         """Resolve a target given as a name or an object handle.
+
+        @allow_robot is for the carry primitives, whose target *is* another
+        robot. Everything else still refuses one, for the reason below.
 
         Returns:
             ``(object_or_None, error_message_or_None)``
@@ -533,9 +561,12 @@ class MultiAgentPrimitiveEngine:
                 return None, f"No object named {target!r} in the scene."
         # StarterSemanticActionPrimitives._grasp only checks
         # isinstance(obj, USDObject), and Robot satisfies that -- so guard
-        # here. There is no in-sim handover primitive; agent-to-agent transfer
-        # has to be modelled symbolically.
-        if isinstance(obj, Robot):
+        # here: grasping a teammate is not a thing, and the error it would
+        # otherwise produce is unrecognisable.
+        #
+        # LOAD_ONTO and UNLOAD_FROM are the exception, and the only one. Their
+        # target is a carrier robot, which is the whole point of them.
+        if isinstance(obj, Robot) and not allow_robot:
             return None, f"{getattr(obj, 'name', obj)!r} is a robot; primitives cannot take a robot as a target."
         return obj, None
 
@@ -588,7 +619,9 @@ class MultiAgentPrimitiveEngine:
                 "call has_active() first, or abort() it."
             )
 
-        obj, error = self.resolve_target(target)
+        obj, error = self.resolve_target(
+            target, allow_robot=getattr(primitive, "name", None) in LOCAL_PRIMITIVES
+        )
         target_name = obj.name if obj is not None else (target if isinstance(target, str) else None)
         primitive_name = primitive.name
 
@@ -608,7 +641,13 @@ class MultiAgentPrimitiveEngine:
                 ),
             )
 
-        if primitive_name == WAIT.name:
+        if primitive_name in LOCAL_PRIMITIVES:
+            # Like WAIT: not in upstream's primitive set, so apply_ref cannot
+            # dispatch it. Unlike WAIT, the target is another *robot*.
+            generator = getattr(
+                self.controllers[agent_id], LOCAL_PRIMITIVES[primitive_name]
+            )(obj)
+        elif primitive_name == WAIT.name:
             # Not in upstream's primitive set, so apply_ref cannot dispatch it;
             # our controller implements it directly. Everything downstream --
             # ticking, abort, outcomes, decision_count -- is unchanged, which

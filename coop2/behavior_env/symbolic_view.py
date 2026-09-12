@@ -154,8 +154,18 @@ class ActionHint:
 
 
 def _holding(observation: SymbolicObservation) -> Optional[EntityObservation]:
+    """What this agent has **in a hand**, which is not the same as attached.
+
+    Cargo reports `held_by` as its carrier, deliberately: everyone else has to
+    see the box as unavailable, or they grasp what already has a cargo joint on
+    it. But the carrier itself is not holding it -- it has no arm at all -- and
+    reading it as held offered the Jackal `place_on_top` and `release`, two
+    verbs it cannot perform, for an object it cannot let go of.
+    """
+    me = observation.entities.get(_agent_entity_id(observation))
+    cargo = me.carrying if me is not None else None
     for entity in observation.entities.values():
-        if entity.held_by == observation.agent_id:
+        if entity.held_by == observation.agent_id and entity.entity_id != cargo:
             return entity
     return None
 
@@ -205,8 +215,64 @@ def target_hints(
     held = _holding(observation)
     hints: List[ActionHint] = []
 
+    # A locked base cannot drive, so it must not be offered navigate_to. The
+    # engine already refuses (`_require_base_free_to_move` -> BASE_LOCKED), but
+    # a verb the prompt offers and the engine refuses costs a whole plan and an
+    # LLM round trip to discover, and the discovery is not even reusable: the
+    # constraint depends on what the robot is holding at the time.
+    grounded = bool(me is not None and me.base_locked_while_holding and held is not None)
+
+    def _reach(entity) -> tuple:
+        """(distance, in_range, far_note) for @entity."""
+        distance = None
+        if me is not None:
+            distance = ((entity.position[0] - me.position[0]) ** 2
+                        + (entity.position[1] - me.position[1]) ** 2) ** 0.5
+        radius = interaction_radius(entity) if callable(interaction_radius) else interaction_radius
+        in_range = radius is None or distance is None or distance <= radius
+        return distance, in_range, ("" if in_range else
+                                    f"too far ({distance:.1f} m) -- navigate_to first")
+
+    riding = {e.carrying for e in observation.entities.values()
+              if e.is_carrier and e.carrying}
+
     for entity in sorted(observation.entities.values(), key=lambda e: e.entity_id):
+        if entity.entity_id in riding:
+            # Cargo is reachable through its carrier and through nothing else --
+            # not grasp, which would weld a second joint, and not navigate_to,
+            # which aims at where it happens to be sitting on a robot that is
+            # about to drive off. Its verbs live on the carrier's line.
+            continue
         if entity.is_robot:
+            # A teammate is not a target -- except a carrier, which is the one
+            # place cargo can go. Both verbs are gated on reach, like every
+            # other manipulation: the engine gates them on GATE_CARRY and the
+            # two have to agree or the prompt promises what the engine refuses.
+            if not entity.is_carrier or (me is not None and entity.entity_id == me.entity_id):
+                continue
+            distance, in_range, _far = _reach(entity)
+            if not grounded:
+                hints.append(ActionHint(
+                    "navigate_to", entity.entity_id, entity.name,
+                    "" if in_range else f"{distance:.1f} m away",
+                ))
+            if not in_range:
+                hints.append(ActionHint(
+                    "unreachable", entity.entity_id, entity.name,
+                    f"too far ({distance:.1f} m)"
+                    + ("" if not grounded else " -- and your base is locked"),
+                ))
+                continue
+            if held is not None and entity.carrying is None:
+                hints.append(ActionHint("load_onto", entity.entity_id, entity.name,
+                                        f"puts {held.entity_id} on its back"))
+            elif entity.carrying is not None and held is None:
+                # The cargo's id is already on this line, under [carrier, ...].
+                hints.append(ActionHint("unload_from", entity.entity_id, entity.name,
+                                        "takes it into your hand"))
+            elif entity.carrying is not None:
+                hints.append(ActionHint("blocked", entity.entity_id, entity.name,
+                                        f"carrying {entity.carrying}; your hand is full too"))
             continue
         if (not include_structural and is_structural(entity)
                 and entity.entity_id not in observation.task_entity_ids):
@@ -217,16 +283,15 @@ def target_hints(
         if only_task_objects and is_off_task(entity, observation):
             continue
 
-        distance = None
-        if me is not None:
-            distance = ((entity.position[0] - me.position[0]) ** 2 + (entity.position[1] - me.position[1]) ** 2) ** 0.5
-        radius = interaction_radius(entity) if callable(interaction_radius) else interaction_radius
-        in_range = radius is None or distance is None or distance <= radius
-        far_note = "" if in_range else f"too far ({distance:.1f} m) -- navigate_to first"
-
-        hints.append(
-            ActionHint("navigate_to", entity.entity_id, entity.name, "" if in_range else f"{distance:.1f} m away")
-        )
+        distance, in_range, far_note = _reach(entity)
+        if grounded:
+            far_note = (f"too far ({distance:.1f} m) -- and your base is locked "
+                        f"while you hold {held.entity_id}" if not in_range else far_note)
+        else:
+            hints.append(
+                ActionHint("navigate_to", entity.entity_id, entity.name,
+                           "" if in_range else f"{distance:.1f} m away")
+            )
         if not in_range:
             # Say it, rather than leaving it to be inferred from the absence of
             # the other verbs. A line that reads "navigate_to [5.7 m away]" and
@@ -287,6 +352,7 @@ def render_symbolic_view(
     constraint is defined on, and it is how a person would describe a house.
     """
     lines: List[str] = []
+    me = observation.entities.get(_agent_entity_id(observation))
     header = f"Step {observation.step}"
     if observation.max_steps:
         header += f"/{observation.max_steps}"
@@ -298,7 +364,23 @@ def render_symbolic_view(
     lines.append(header)
 
     held = _holding(observation)
-    lines.append(f"Holding: {held.entity_id} ({held.category})" if held else "Holding: nothing")
+    if me is not None and me.carrying:
+        # Its own cargo, which the room listing cannot show it: a robot is
+        # filtered out of its own listing, so without this the carrier is the
+        # one agent that cannot see what it is carrying.
+        lines.append(f"On your back: {me.carrying} -- you have no arm to put it "
+                     "down; an arm must take it with unload_from(you)")
+    if held is None:
+        lines.append("Holding: nothing")
+    else:
+        line = f"Holding: {held.entity_id} ({held.category})"
+        if me is not None and me.base_locked_while_holding:
+            # Say it here, because the consequence is an *absence* further down
+            # -- no navigate_to on anything -- and an absence explains nothing.
+            line += ("  -- your base is locked while your arm is loaded: you "
+                     "cannot navigate_to anything until you put it down or "
+                     "load_onto a carrier")
+        lines.append(line)
 
     # What can be done to a thing belongs on the line that names the thing.
     # These used to be two sections, so every object appeared twice -- once
@@ -322,9 +404,18 @@ def render_symbolic_view(
         verbs_for[target_id] = ", ".join(status + sorted(primitives - set(status)))
         note_for[target_id] = next((h.note for h in target_hint_list if h.note), "")
 
+    # A carrier and its cargo are one line, because they are one thing to act
+    # on: the box's id, where it is and how to get it back are all facts about
+    # the robot it is riding, and splitting them across two lines asked the
+    # reader to join them by id for no gain.
+    riding = {e.carrying for e in observation.entities.values()
+              if e.is_carrier and e.carrying}
+
     printed: set = set()
     for room, entities in sorted(observation.by_room().items(), key=lambda kv: (kv[0] is None, kv[0] or "")):
-        visible = [e for e in entities if not e.is_robot or e.name != observation.agent_id]
+        visible = [e for e in entities
+                   if e.entity_id not in riding
+                   and (not e.is_robot or e.name != observation.agent_id)]
         if not include_structural:
             visible = [
                 e for e in visible
@@ -339,6 +430,15 @@ def render_symbolic_view(
             bits = [entity.entity_id]
             if entity.is_robot:
                 bits.append("(teammate)")
+                if entity.is_carrier:
+                    # The verbs are on the line already, gated on reach and on
+                    # what each side is holding. What they cannot say is what is
+                    # already up there, and a carrier with a box on it and one
+                    # without look identical otherwise.
+                    bits.append(f"[carrier, carrying {entity.carrying}]"
+                                if entity.carrying else "[carrier, empty]")
+                if entity.base_locked_while_holding:
+                    bits.append("[base locks while holding]")
             if entity.held_by:
                 bits.append(f"held by {entity.held_by}")
             active = [name for name, value in sorted(entity.states.items()) if value]

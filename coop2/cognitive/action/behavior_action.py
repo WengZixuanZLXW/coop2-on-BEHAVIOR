@@ -58,6 +58,13 @@ BEHAVIOR_ACTION_TO_PRIMITIVE = {
     # any agent is reasoning, so a wait that costs no ticks stops the world
     # instead of letting a teammate finish.
     "wait": "WAIT",
+    # Not upstream primitives either: our controller implements both, and the
+    # engine dispatches them the way it dispatches WAIT. They exist because a
+    # robot whose base locks while it holds something cannot deliver what it
+    # picks up -- it has to hand the object to a carrier and take it back at the
+    # far end, which is the division of labour the V4 tasks are built on.
+    "load_onto": "LOAD_ONTO",
+    "unload_from": "UNLOAD_FROM",
 }
 
 #: Actions with no physical effect. They must still be first-class: COOP2's
@@ -93,6 +100,9 @@ BEHAVIOR_ACTION_SCHEMA = {
     "toggle_on": [{"type": "entity_id", "field": "target"}],
     "toggle_off": [{"type": "entity_id", "field": "target"}],
     "wait": [{"type": "int", "field": "ticks"}],
+    # The target is a *robot*, not an object: the id of the carrier.
+    "load_onto": [{"type": "entity_id", "field": "target"}],
+    "unload_from": [{"type": "entity_id", "field": "target"}],
 }
 
 
@@ -184,6 +194,10 @@ class BehaviorActionExecutor:
             from coop2.behavior_env.primitive_engine import WAIT  # noqa: PLC0415
 
             return WAIT
+        if primitive_name in ("LOAD_ONTO", "UNLOAD_FROM"):
+            from coop2.behavior_env import primitive_engine  # noqa: PLC0415
+
+            return getattr(primitive_engine, primitive_name)
         from omnigibson.action_primitives.symbolic_semantic_action_primitives import (  # noqa: PLC0415
             SymbolicSemanticActionPrimitiveSet,
         )

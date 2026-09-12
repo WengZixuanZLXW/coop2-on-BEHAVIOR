@@ -101,6 +101,20 @@ class ToggleOffAction(BaseModel):
     target: str = Field(description=_TARGET)
 
 
+class LoadOntoAction(BaseModel):
+    """Put what you are holding onto a carrier robot's back."""
+
+    action_type: Literal["load_onto"] = "load_onto"
+    target: str = Field(..., description="Carrier robot to load onto, e.g. agent_1")
+
+
+class UnloadFromAction(BaseModel):
+    """Take what a carrier robot is carrying into your gripper."""
+
+    action_type: Literal["unload_from"] = "unload_from"
+    target: str = Field(..., description="Carrier robot to unload from, e.g. agent_1")
+
+
 class WaitAction(BaseModel):
     """Hold position, letting time pass so a teammate can finish.
 
@@ -130,6 +144,8 @@ LLMAction = Union[
     CloseAction,
     ToggleOnAction,
     ToggleOffAction,
+    LoadOntoAction,
+    UnloadFromAction,
     WaitAction,
 ]
 

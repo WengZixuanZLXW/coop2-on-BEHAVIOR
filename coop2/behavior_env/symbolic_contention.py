@@ -56,6 +56,7 @@ __all__ = [
     "GATE_GRASP",
     "GATE_OPEN_CLOSE",
     "GATE_PLACE",
+    "GATE_CARRY",
     "GATE_TOGGLE",
 ]
 
@@ -64,8 +65,13 @@ GATE_GRASP = "grasp"
 GATE_PLACE = "place"
 GATE_OPEN_CLOSE = "open_close"
 GATE_TOGGLE = "toggle"
+#: Loading onto and unloading from a carrier robot gate on reach like any
+#: other manipulation.
+GATE_CARRY = "carry"
 
-DEFAULT_GATED_PRIMITIVES = frozenset({GATE_GRASP, GATE_PLACE, GATE_OPEN_CLOSE, GATE_TOGGLE})
+DEFAULT_GATED_PRIMITIVES = frozenset(
+    {GATE_GRASP, GATE_PLACE, GATE_OPEN_CLOSE, GATE_TOGGLE, GATE_CARRY}
+)
 
 #: Headroom between the navigation sampler's upper bound and the interaction
 #: radius. Without it a pose sampled exactly at the far edge of the annulus
@@ -265,7 +271,24 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
                         return robot
                 except Exception:  # noqa: BLE001 - non-manipulation robots
                     break
-        return None
+        return self._carrier_of(obj)
+
+    def _carrier_of(self, obj):
+        """The carrier @obj is riding on, or None.
+
+        A hand is not the only way to have an object. Cargo is welded to a
+        carrier's base, so no gripper reports it and every gate that asks
+        "is anyone holding this" would answer no -- and then a grasp welds a
+        second joint to an object that already has one, which is the silent
+        corruption `_grasp`'s claim check exists to stop. Taking cargo back is
+        `unload_from`, and it has to be the only way.
+        """
+        try:
+            from coop2.behavior_env.carrier import carrier_holding  # noqa: PLC0415
+
+            return carrier_holding(obj, self._peer_robots())
+        except Exception:  # noqa: BLE001 - a scene with no carrier support
+            return None
 
     def _base_xy(self) -> Tuple[float, float]:
         position = self.robot.get_position_orientation()[0]
@@ -344,6 +367,18 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
         # The holder's name is the agent id the cognitive layer knows it by,
         # and this prose goes straight into the prompt -- it is the main way a
         # decentralized agent finds out it needs to negotiate.
+        #
+        # Cargo says something different, because the remedy is different: a
+        # box on a carrier's back is not going to be released, it is going to
+        # be unloaded, and by the robot that wants it.
+        if self._carrier_of(obj) is holder:
+            raise self._error(
+                "OBJECT_CLAIMED",
+                f"{obj.name} is riding on {holder.name}'s back, so you cannot "
+                f"{verb} it. Take it with unload_from({holder.name}) instead -- "
+                "you have to be within reach of the carrier.",
+                {"target object": obj.name, "carried by": holder.name},
+            )
         raise self._error(
             "OBJECT_CLAIMED",
             f"{obj.name} is currently held by {holder.name}, so you cannot {verb} it. "
@@ -380,6 +415,108 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
         for _ in range(held):
             yield self._hold_action()
 
+    # -- carrying ----------------------------------------------------------
+
+    def _require_base_free_to_move(self) -> None:
+        """Refuse to drive while holding, for a robot whose base locks.
+
+        A suction arm on a mobile base cannot do both at once: V4 states this
+        outright (`v4:base_locked_while_holding`), and it is what makes its
+        tasks need more than one robot. Without it the robot that picks the box
+        up also delivers it, and the team is one worker and some spectators.
+
+        Only robots that declare the constraint are affected, so nothing that
+        worked before changes.
+        """
+        if not getattr(self.robot, "base_locked_while_holding", False):
+            return
+        held = self._get_obj_in_hand()
+        if held is None:
+            return
+        raise self._error(
+            "BASE_LOCKED",
+            f"You cannot drive while holding {held.name}: your base is locked "
+            f"whenever your arm is loaded. Put it down, or load it onto a "
+            f"carrier robot with load_onto, and let the carrier drive.",
+            {"held object": held.name},
+        )
+
+    def _require_carrier(self, carrier, verb: str):
+        """@carrier must be a robot that carries cargo, and within reach."""
+        from coop2.behavior_env.carrier import is_carrier  # noqa: PLC0415
+
+        if not getattr(carrier, "is_robot", False) and carrier not in self._peer_robots():
+            raise self._error(
+                "INVALID_TARGET",
+                f"{getattr(carrier, 'name', carrier)} is not a robot, so there is "
+                f"nothing to {verb}.",
+                {"target object": getattr(carrier, "name", str(carrier))},
+            )
+        if not is_carrier(carrier):
+            raise self._error(
+                "INVALID_TARGET",
+                f"{carrier.name} has an arm of its own and carries things in it, "
+                f"not on its back.",
+                {"target object": carrier.name},
+            )
+        if carrier is self.robot:
+            raise self._error(
+                "INVALID_TARGET",
+                "You cannot load onto yourself.",
+                {"target object": carrier.name},
+            )
+        self._require_near(carrier, verb, GATE_CARRY)
+
+    def load_onto(self, carrier):
+        """Put what this robot is holding onto @carrier's back."""
+        from coop2.behavior_env.carrier import carried_by, load_onto  # noqa: PLC0415
+
+        self._require_carrier(carrier, "load onto")
+        held = self._get_obj_in_hand()
+        if held is None:
+            raise self._error(
+                "PRE_CONDITION_ERROR",
+                "You are not holding anything to load.",
+                {"target object": carrier.name},
+            )
+        riding = carried_by(carrier)
+        if riding is not None:
+            raise self._error(
+                "PRE_CONDITION_ERROR",
+                f"{carrier.name} is already carrying {riding.name}.",
+                {"target object": carrier.name, "carrying": riding.name},
+            )
+        for arm in self.robot.arm_names:
+            self.robot.release_grasp_immediately(arm=arm)
+        load_onto(carrier, held)
+        yield from self._settle_robot()
+
+    def unload_from(self, carrier):
+        """Take what is riding on @carrier into this robot's hand."""
+        from coop2.behavior_env.carrier import carried_by, unload_from  # noqa: PLC0415
+
+        self._require_carrier(carrier, "unload from")
+        if self._get_obj_in_hand() is not None:
+            raise self._error(
+                "PRE_CONDITION_ERROR",
+                "Your gripper is already full.",
+                {"target object": carrier.name},
+            )
+        riding = carried_by(carrier)
+        if riding is None:
+            raise self._error(
+                "PRE_CONDITION_ERROR",
+                f"{carrier.name} is not carrying anything.",
+                {"target object": carrier.name},
+            )
+        unload_from(carrier)
+        # The same weld a grasp makes, now on this robot's own end effector.
+        eef_position = self.robot.get_eef_position(self.arm)
+        riding.set_position_orientation(position=eef_position)
+        self.robot._establish_grasp(riding, riding.root_link_name, self.arm,
+                                    eef_position, "FixedJoint")
+        yield from self._settle_robot()
+
     def travel_ticks(self, distance: float) -> int:
         """Hold-position ticks charged for travelling ``distance`` metres."""
         ticks = int(round(max(0.0, distance) * self.travel_ticks_per_meter))
@@ -400,6 +537,7 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
         Measuring here rather than in the engine also means the distance is
         read before the teleport for free.
         """
+        self._require_base_free_to_move()
         start_x, start_y = self._base_xy()
         distance = math.hypot(float(pose_2d[0]) - start_x, float(pose_2d[1]) - start_y)
         ticks = self.travel_ticks(distance)

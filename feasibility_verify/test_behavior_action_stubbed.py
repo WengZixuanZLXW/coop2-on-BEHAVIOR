@@ -157,10 +157,18 @@ def main() -> int:
         # physics while any agent reasons, so a wait costing no ticks stops the
         # world instead of letting a teammate finish.
         "wait",
+        # Neither is upstream's either, and both take a *robot* as their target:
+        # a robot whose base locks while it holds something cannot deliver what
+        # it picks up, so it hands the object to a carrier and takes it back at
+        # the far end. That handoff is the only way a V4 task needs more than
+        # one robot.
+        "load_onto", "unload_from",
     }
     assert module.COMMUNICATION_ACTIONS == ("noop",), module.COMMUNICATION_ACTIONS
     assert module.BEHAVIOR_ACTION_SCHEMA["wait"] == [{"type": "int", "field": "ticks"}]
-    ok("10 primitives incl. wait; noop is the only action with no primitive")
+    for verb in ("load_onto", "unload_from"):
+        assert module.BEHAVIOR_ACTION_SCHEMA[verb] == [{"type": "entity_id", "field": "target"}], verb
+    ok("12 primitives incl. wait and the two handoffs; noop alone has no primitive")
 
     print("test 2: execute() assigns and returns without advancing anything")
     engine = FakeEngine()

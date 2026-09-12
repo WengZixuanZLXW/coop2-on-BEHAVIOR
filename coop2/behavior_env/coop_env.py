@@ -264,6 +264,8 @@ class CooperativeBehaviorEnv:
         self.env = og.Environment(configs=config)
         self._enforce_controller_config(config)
 
+        self._apply_robot_capabilities()
+
         # Placement before prepare_robots: config poses are placeholders and
         # nothing has stepped yet, so moving here is free.
         import os as _os  # noqa: PLC0415
@@ -714,6 +716,29 @@ class CooperativeBehaviorEnv:
         # Symbolic only: every robot is configured with obs_modalities=[] so it
         # drops out of the observation space entirely. Agents read info.
         return {agent_id: {} for agent_id in self.agent_names}
+
+    def _apply_robot_capabilities(self) -> None:
+        """Stamp the layout's capability flags onto the live robots.
+
+        These are task constraints, not properties of a model: the same
+        Ridgeback is base-locked in a V4 task and free in a task that does not
+        ask for a handoff. So they ride on the layout and are applied here, and
+        the primitives read them off the robot.
+        """
+        if self.team_layout is None:
+            return
+        by_name = {spec.name: spec for spec in self.team_layout.robots}
+        for agent_id, robot in zip(self.agent_names, self.env.robots):
+            spec = by_name.get(agent_id)
+            if spec is None:
+                continue
+            robot.base_locked_while_holding = bool(spec.base_locked_while_holding)
+            if spec.carrier is not None:
+                robot.is_carrier = bool(spec.carrier)
+        locked = [s.name for s in self.team_layout.robots if s.base_locked_while_holding]
+        if locked:
+            print(f"[setup] base locked while holding: {', '.join(locked)}"
+                  f" -- they must hand cargo to a carrier to move it")
 
     def _goal_terms(self) -> Optional[str]:
         """The activity's goal in BDDL's own ids, plus which room each is in.

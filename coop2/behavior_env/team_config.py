@@ -194,6 +194,16 @@ class RobotSpec:
     position: Optional[Tuple[float, float, float]] = None
     #: Room *instance* to sample a pose in, or None when ``position`` decides.
     room: Optional[str] = None
+    #: Locks this robot's base whenever its gripper is loaded, so it cannot
+    #: deliver what it picks up. V4 states it outright on the Ridgeback
+    #: (``v4:base_locked_while_holding``), and it is what makes its tasks need
+    #: more than one robot: the arm loads a carrier, the carrier drives.
+    #: Default off, so nothing that worked before changes.
+    base_locked_while_holding: bool = False
+    #: Declares this robot a carrier -- cargo rides on its back. Inferred for a
+    #: robot with no arm, which has no other way to move anything, so this is
+    #: only needed to override that.
+    carrier: Optional[bool] = None
     #: Uniform size multiplier, or None to use whatever the model's config says.
     #:
     #: Part of a layout, not a property of the robot: a scene is authored with
@@ -364,6 +374,16 @@ def _parse_robot(entry: Any, index: int) -> RobotSpec:
     if team is not None and (not isinstance(team, str) or not team.strip()):
         raise ValueError(f"{where} ({name}): 'team' must be a non-empty string")
 
+    base_locked = entry.get("base_locked_while_holding", False)
+    if not isinstance(base_locked, bool):
+        raise ValueError(
+            f"{where} ({name}): 'base_locked_while_holding' must be true or false, "
+            f"got {base_locked!r}"
+        )
+    carrier = entry.get("carrier")
+    if carrier is not None and not isinstance(carrier, bool):
+        raise ValueError(f"{where} ({name}): 'carrier' must be true or false, got {carrier!r}")
+
     scale = entry.get("scale")
     if scale is not None:
         if isinstance(scale, bool) or not isinstance(scale, (int, float)):
@@ -379,6 +399,8 @@ def _parse_robot(entry: Any, index: int) -> RobotSpec:
         position=position,
         room=room,
         scale=scale,
+        base_locked_while_holding=base_locked,
+        carrier=carrier,
     )
 
 
@@ -422,6 +444,8 @@ def _resolve_teams(
             RobotSpec(
                 name=spec.name, model=spec.model, team=team,
                 position=spec.position, room=spec.room, scale=spec.scale,
+                base_locked_while_holding=spec.base_locked_while_holding,
+                carrier=spec.carrier,
             )
         )
 

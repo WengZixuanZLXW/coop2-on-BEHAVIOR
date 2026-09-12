@@ -45,6 +45,20 @@ Rules that decide whether an action succeeds:
 - Objects are exclusive. If a teammate is holding something, your grasp fails
   with "held by <agent>". Going after a target a teammate already has costs you
   the whole trip for nothing.
+- You may not be able to drive while your gripper is loaded. Some robots' bases
+  lock the moment they pick something up, and navigate_to then fails with
+  BASE_LOCKED. If that is you, you cannot deliver what you pick up: load it
+  onto a carrier robot with load_onto, let the carrier drive, and take it back
+  at the far end with unload_from. A carrier is a robot with no arm of its own
+  -- cargo rides on its back. Both actions name the *carrier* as their target
+  and need the two robots within reach of each other.
+- A carrier and what it is carrying are ONE line in the room listing:
+
+    - agent_1  (teammate)  [carrier, carrying box.n.01_1]  -> unload_from
+
+  The cargo has no line of its own and cannot be grasped where it sits.
+  unload_from(agent_1) is the only way to get it into your hand, and you have
+  to be within reach of the carrier to do it.
 - Refer to objects only by the ids in the room listing, which are the objects
   in the room you are standing in. They look like apple.n.01_1. Never invent or
   guess one. An entry marked "blocked" is in that room but currently
@@ -88,6 +102,22 @@ Rules that decide whether an action succeeds:
 - Objects are exclusive, including between your own robots. If anyone is
   holding something, a grasp for it fails with "held by <agent>". Sending two
   robots after one target costs the loser the whole trip for nothing.
+- A robot may be unable to drive while its gripper is loaded. Some bases lock
+  the moment the robot picks something up, and navigate_to then fails with
+  BASE_LOCKED; such a robot cannot deliver what it picks up. Have it load the
+  object onto a carrier robot with load_onto, let the carrier drive, and have
+  an arm take it back at the far end with unload_from. A carrier is a robot
+  with no arm of its own -- cargo rides on its back. Both actions name the
+  *carrier* as their target and need the two robots within reach of each other.
+  This is a division of labour, not a detour: it is why a task can need more
+  than one of your robots.
+- A carrier and what it is carrying are ONE line in that robot's room listing:
+
+    - agent_1  (teammate)  [carrier, carrying box.n.01_1]  -> unload_from
+
+  The cargo has no line of its own and cannot be grasped where it sits.
+  unload_from(agent_1) is the only way to get it into an arm's hand, and the
+  two robots have to be within reach of each other.
 - Refer to objects only by the ids in that robot's own room listing, which are
   the objects in the room it is standing in. They look like apple.n.01_1. Never
   invent one, and never give one robot an id that appeared only under another

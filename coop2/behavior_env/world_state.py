@@ -64,6 +64,26 @@ def is_definitely_grasping(state) -> bool:
         return False
 
 
+def _carried_by(robot):
+    """What @robot has on its back, or None."""
+    try:
+        from coop2.behavior_env.carrier import carried_by  # noqa: PLC0415
+
+        return carried_by(robot)
+    except Exception:  # noqa: BLE001 - no carrier support in a stub scene
+        return None
+
+
+def _is_carrier(robot) -> bool:
+    """Does @robot carry cargo on its back? Mirrors carrier.is_carrier."""
+    try:
+        from coop2.behavior_env.carrier import is_carrier  # noqa: PLC0415
+
+        return bool(is_carrier(robot))
+    except Exception:  # noqa: BLE001 - never let the observation fail on this
+        return False
+
+
 @dataclass
 class EntityObservation:
     """One object or robot, as the cognitive layer sees it."""
@@ -78,6 +98,19 @@ class EntityObservation:
     held_by: Optional[str] = None
     is_robot: bool = False
     is_fixed: bool = False
+    #: This robot carries cargo on its back. Shown, because a teammate that can
+    #: be loaded is the difference between a task being doable and not, and
+    #: "which of my teammates is a carrier" is not otherwise in the observation
+    #: -- the prompt can say a carrier is a robot with no arm, but whether a
+    #: robot has an arm is not something the agent is told.
+    is_carrier: bool = False
+    #: What this carrier has on its back, as an entity id. The agent cannot
+    #: reason about `unload_from` without it: a carrier with nothing on it and
+    #: one loaded look identical otherwise, and only one of them can be
+    #: unloaded.
+    carrying: Optional[str] = None
+    #: This robot cannot drive while its gripper is loaded.
+    base_locked_while_holding: bool = False
 
     @property
     def room(self) -> Optional[str]:
@@ -429,6 +462,17 @@ class BehaviorWorldState:
                     confirmed = True
                 if confirmed:
                     held[candidate.name] = robot.name
+
+        # Cargo riding a carrier's back counts as held, and has to: nothing
+        # else stops the object reading as free. It is not in any gripper, so
+        # the loop above cannot see it, and an agent shown a free box welds a
+        # second FixedJoint onto one that already has a cargo joint -- the
+        # two-joint corruption the contention layer exists to prevent. Held by
+        # the carrier is also simply true: the box goes where the carrier goes.
+        for robot in self.robots:
+            riding = _carried_by(robot)
+            if riding is not None:
+                held[riding.name] = robot.name
         return held
 
     # -- stepping ----------------------------------------------------------
@@ -504,6 +548,14 @@ class BehaviorWorldState:
                 rooms=[room] if room else [],
                 position=tuple(float(v) for v in position),
                 is_robot=True,
+                is_carrier=_is_carrier(robot),
+                carrying=(
+                    self.entity_id_for(riding)
+                    if (riding := _carried_by(robot)) is not None else None
+                ),
+                base_locked_while_holding=bool(
+                    getattr(robot, "base_locked_while_holding", False)
+                ),
             )
 
         for obj in self.scene.objects:
