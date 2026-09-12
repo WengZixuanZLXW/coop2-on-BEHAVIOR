@@ -119,6 +119,8 @@ class CooperativeBehaviorEnv:
         #: just wants to *look* at the scene -- inspect_scene -- had no way to
         #: ask for it, and og.sim.viewer_camera came back None.
         self.want_viewer_camera = want_viewer_camera
+        #: Rendered once; "" means "asked and there is no BDDL goal".
+        self._goal_terms_cache: Optional[str] = None
         # Recording and a live viewport cannot share the camera. A scene gets one
         # viewer camera, so MultiViewRecorder captures its N views by moving that
         # camera to each robot, rendering, and putting it back -- several times a
@@ -713,13 +715,61 @@ class CooperativeBehaviorEnv:
         # drops out of the observation space entirely. Agents read info.
         return {agent_id: {} for agent_id in self.agent_names}
 
+    def _goal_terms(self) -> Optional[str]:
+        """The activity's goal in BDDL's own ids, plus which room each is in.
+
+        Built once and cached. This is what the agent was *asked* for, not what
+        it can see: the room listing stays strictly local, and this adds no
+        information about what is in any other room -- only the name of the
+        thing the goal names, and where it will have to go to reach it.
+
+        Without it a cross-room goal cannot be expressed at all. Measured on
+        v4_s1_v4_ll, whose goal is to carry a box to the bedroom floor: the
+        robot was shown only the room it stood in, could not name the
+        destination, and `_ensure_task_terminal_action` -- having no reference
+        in the specification -- produced `place_on_top(the box itself)`, every
+        round, for sixteen plans.
+        """
+        if self._goal_terms_cache is not None:
+            return self._goal_terms_cache or None
+        task = getattr(self.env, "task", None)
+        # `task.compiled_task.conditions`, which is what BehaviorTask itself
+        # reads (behavior_task.py: `self.compiled_task.conditions.parsed_goal_conditions`).
+        compiled = getattr(task, "compiled_task", None)
+        conditions = getattr(compiled, "conditions", None) if compiled else None
+        goal = getattr(conditions, "parsed_goal_conditions", None) if conditions else None
+        if not goal:
+            self._goal_terms_cache = ""
+            return None
+
+        rooms = {}
+        for clause in (getattr(conditions, "parsed_initial_conditions", None) or []):
+            # `inroom <obj> <room type>` is part of the activity definition, so
+            # saying it here reveals nothing the task did not already state.
+            if isinstance(clause, list) and len(clause) == 3 and clause[0] == "inroom":
+                rooms[clause[1]] = clause[2]
+
+        lines = []
+        for clause in goal:
+            if not isinstance(clause, list) or not clause:
+                continue
+            predicate, args = clause[0], clause[1:]
+            where = "; ".join(
+                f"{a} is in the {rooms[a]}" for a in args if a in rooms
+            )
+            lines.append(f"{predicate}({', '.join(str(a) for a in args)})"
+                         + (f"   [{where}]" if where else ""))
+        self._goal_terms_cache = "\n  ".join(lines)
+        return self._goal_terms_cache or None
+
     def _build_info(self) -> Dict[str, Any]:
         from coop2.behavior_env.symbolic_view import render_symbolic_view, target_hints  # noqa: PLC0415
 
         info: Dict[str, Any] = {}
         for agent_id in self.agent_names:
             observation = self.world.observation_for(
-                agent_id, max_steps=self.length, env_step=self.engine.env_step
+                agent_id, max_steps=self.length, env_step=self.engine.env_step,
+                goal_terms=self._goal_terms(),
             )
             # Resolve the radius per entity, not once from a probe object. The
             # gate is per-object (a table's radius exceeds an apple's), so a

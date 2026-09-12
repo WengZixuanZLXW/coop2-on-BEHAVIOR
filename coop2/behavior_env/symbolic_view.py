@@ -326,10 +326,6 @@ def render_symbolic_view(
     for room, entities in sorted(observation.by_room().items(), key=lambda kv: (kv[0] is None, kv[0] or "")):
         visible = [e for e in entities if not e.is_robot or e.name != observation.agent_id]
         if not include_structural:
-            # An entity the activity declares survives this filter. Floors are
-            # structural and normally noise, but a floor the goal names is the
-            # destination -- dropping it leaves the agent unable to say where it
-            # is taking anything.
             visible = [
                 e for e in visible
                 if not is_structural(e) or e.entity_id in observation.task_entity_ids
@@ -382,6 +378,11 @@ def render_symbolic_view(
 
     if observation.last_error:
         lines.append(f"\nLast action failed: {observation.last_error}")
+    if observation.goal_terms:
+        # What the agent was asked for, in the ids the request is written in.
+        # Not part of the room listing above, because it is not something the
+        # agent can see -- it is what it was told to do.
+        lines.append(f"\nYOUR TASK, in the ids it is written in:\n  {observation.goal_terms}")
     if observation.goal_status:
         lines.append(f"\nGoal: {observation.goal_status}")
     return "\n".join(lines)

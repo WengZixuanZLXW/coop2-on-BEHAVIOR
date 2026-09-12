@@ -121,6 +121,17 @@ class SymbolicObservation:
     goal_status: Optional[Dict[str, Any]] = None
     last_action_id: Optional[str] = None
     last_error: Optional[str] = None
+    #: The activity's goal, in its own terms, e.g.
+    #: ``ontop(packing_box.n.02_1, floor.n.01_2)  [floor.n.01_2 is in bedroom]``.
+    #:
+    #: Task knowledge, not perception. An agent knows what it was asked to do
+    #: and can name the objects the request is written in; that is not the same
+    #: as seeing into the room one of them is in, and it tells it nothing about
+    #: what else is there. Without it a goal whose destination lies in another
+    #: room cannot be stated at all -- the agent has no id to navigate to and
+    #: `_ensure_task_terminal_action` falls back to naming the carried object
+    #: itself.
+    goal_terms: Optional[str] = None
     #: Ids the activity's own BDDL definition declares, from its object_scope.
     #: Empty when the run has no BDDL task, and empty means "no opinion": the
     #: view then shows everything, as it did before this existed.
@@ -673,6 +684,7 @@ class BehaviorWorldState:
         env_step: Optional[int] = None,
         include_seen_rooms: bool = False,
         goal_status: Optional[Dict[str, Any]] = None,
+        goal_terms: Optional[str] = None,
         last_action_id: Optional[str] = None,
         last_error: Optional[str] = None,
     ) -> SymbolicObservation:
@@ -703,19 +715,6 @@ class BehaviorWorldState:
             if entity.name == agent_id:
                 entities[entity_id] = entity
                 continue
-            if entity_id in self.task_entity_ids:
-                # An object the activity names is always shown, wherever it is.
-                # The agent is asked to satisfy a goal written in terms of these
-                # ids, so one it cannot see is one it cannot name -- and a goal
-                # whose destination lies in another room then cannot be stated
-                # at all. Measured on v4_s1_v4_ll, whose goal is to carry a box
-                # to the bedroom floor: the robot in the child's room was shown
-                # its teammates and the box and nothing else, and the model said
-                # so itself -- "the bedroom floor destination is not yet visible
-                # from the child's room" -- then planned to place the box on top
-                # of itself, every round, until the budget ran out.
-                entities[entity_id] = entity
-                continue
             if not visible_rooms or not entity.rooms:
                 # No seg map, or an entity the map cannot place: showing it is
                 # better than hiding it, since hiding makes it unmentionable
@@ -737,6 +736,7 @@ class BehaviorWorldState:
             entities=entities,
             facts=self.facts(entities),
             goal_status=goal_status,
+            goal_terms=goal_terms,
             last_action_id=last_action_id,
             last_error=last_error,
             task_entity_ids=set(self.task_entity_ids),
