@@ -1,0 +1,50 @@
+{
+  "_comment": [
+    "As v4_s1_v4_ll.json, with all three robots in ONE team.",
+    "",
+    "The split in the original is deliberate -- two teams give chain and",
+    "centralized inter-team traffic to carry. This variant removes that so the",
+    "handoff can be watched without it: one brain sees all three robots in one",
+    "prompt and allocates the whole Ridgeback -> Jackal -> Ridgeback chain in a",
+    "single call, rather than two brains negotiating it through messages.",
+    "",
+    "Everything else -- models, positions, scales, base_locked_while_holding --",
+    "is copied unchanged, so this differs from the original in exactly one field."
+  ],
+  "robots": [
+    {
+      "name": "agent_0",
+      "model": "v4_ridgeback_ur5",
+      "position": [
+        -1.1703,
+        0.4624
+      ],
+      "team": "alpha",
+      "_v4_prim": "ridgeback_franka_s1_m5",
+      "scale": 0.5,
+      "base_locked_while_holding": true
+    },
+    {
+      "name": "agent_1",
+      "model": "v4_jackal",
+      "position": [
+        -0.8904,
+        -0.035
+      ],
+      "team": "alpha",
+      "_v4_prim": "jackal_s1_m5",
+      "scale": 0.7
+    },
+    {
+      "name": "agent_2",
+      "model": "v4_crazyflie_cf2x",
+      "position": [
+        -1.2314,
+        0.0176
+      ],
+      "team": "alpha",
+      "_v4_prim": "crazyflie_s1_m5",
+      "scale": 0.6
+    }
+  ]
+}

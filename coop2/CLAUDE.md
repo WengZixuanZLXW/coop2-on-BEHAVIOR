@@ -906,6 +906,90 @@ no LLM, no plan loop -- and prints where each robot was asked to be against wher
 it ended up. It found three defects in its first three runs, none of which cost
 an episode.
 
+## Carrying, and the sequencing problem it exposed (2026-09-12)
+
+`v4_s1_v4_ll` stages a base-locked arm and an armless carrier so that moving a
+box needs both. Both constraints are enforced now, on both sides -- the engine
+refuses, and the listing does not offer what the engine would refuse, which is
+the half that makes the other worth having.
+
+### The two constraints
+
+**A locked base cannot drive while loaded.** `_require_base_free_to_move`
+raises BASE_LOCKED (it already did), and `target_hints` now emits no
+`navigate_to` at all while such a robot is holding something. The Holding line
+says `[your base is locked while loaded: no navigate_to]`, because the
+consequence is an *absence* and an absence explains nothing on its own. An
+out-of-range target's "unreachable" note says the base is locked too, or it
+reads as "navigate_to first" and there is no navigate_to to take.
+
+**A carrier has no arm.** That is what makes it a carrier rather than a second
+arm, so `navigate_to` and `wait` are the only verbs it gets. `load_onto` and
+`unload_from` are hand verbs too -- they are performed *on* a carrier by
+something that has one. `_require_arm` gates grasp, place, open, close, toggle
+and both carry verbs with NO_ARM; without it the refusal still happened
+somewhere useless (`load_onto` reported "you are not holding anything to load",
+which is true and is not the reason).
+
+### Cargo has to be visibly unavailable
+
+A load is a FixedJoint from the carrier's base to the object -- the same thing
+a grasp is, on a different link, which is why it survives the carrier driving
+off. But no gripper reports it, so every "is anyone holding this" answered no,
+and an agent shown a free box welds a *second* joint onto one that already has
+one. `held_objects` covers cargo now, `holder_of` follows it through
+`carrier_holding`, and OBJECT_CLAIMED names `unload_from` rather than telling
+the agent to ask for a release that is not coming.
+
+That change had to be unpicked once: reading cargo as held made the Jackal think
+it was holding the box, and offered it `place_on_top` and `release` -- two verbs
+it has no arm to perform, for an object it cannot let go of. `_holding` means
+"in a hand"; a carrier sees its load on an `On your back:` line instead.
+
+A carrier and its cargo are **one line**, because they are one thing to act on:
+
+    - agent_1  (teammate)  [carrier, carrying packing_box.n.02_1]  -> navigate_to, unload_from
+
+The cargo has no line and no verbs of its own. What the verbs *mean* is in
+ENV_DESCRIPTION / TEAM_ENV_DESCRIPTION -- the listing carries state, the system
+prompt carries meaning, once rather than on every line of every robot's section.
+
+### What two runs showed
+
+Same task, same seed, same everything but the team split:
+
+| | teams | goal | what happened |
+|---|---|---|---|
+| `individual_agents3_..._032648` | alpha=(ridgeback, jackal), bravo=(drone) | **env_step 1662** | the full handoff ran |
+| `individual_agents3_..._033353` | one team of three | **not solved in 2500** | the carrier drove off before the box was on it |
+
+Both had one brain planning the Ridgeback and the Jackal together, so this is
+not about information: the brain saw both robots in one prompt either way. It is
+about **timing**. A team's plans all start at once, so the brain has to make the
+carrier wait out the grasp, and the only tool it has is a `wait(N)` it must size
+by guessing:
+
+    succeeded:  agent_1  wait(400) -> navigate_to(floor_2)     grasp cost 297
+    failed:     agent_1  wait(100) -> navigate_to(floor_2)     grasp cost 297
+                agent_0  grasp[297] -> load_onto -> "4.34 m from agent_1"
+
+and the failure is expensive, not merely a retry: the Ridgeback is left holding
+a box it cannot drive anywhere with, so its only move is to put it back down.
+
+Three ways out, cheapest first, none implemented:
+
+1. Put the primitive costs in the system prompt (grasp/place ~100 ticks floor,
+   navigate 100 + 30/m). Smallest change; still arithmetic.
+2. Let a carrier **wait for an event** rather than a duration -- a
+   `wait_for_load` that ends when something lands on its back. Removes the guess
+   rather than informing it, and matches what the role actually is: drive to
+   where an arm is waiting.
+3. Make `load_onto` approach the carrier itself on failure. Does not help here,
+   because the robot that needs it is exactly the one that cannot drive.
+
+`coop2/team_layouts/v4_s1_v4_ll_one_team.json` is the second configuration,
+kept because the comparison is the evidence for all of the above.
+
 ## Open defects
 
 Fixed ones are not listed here -- the fix and its reasoning live in the commit
@@ -935,12 +1019,14 @@ and in the code comment at the site. What is still true:
    it -- a 552 s call that returned nothing showed up only as
    `total_llm_errors: 1`. The 100 s timeout caps the damage; it does not make
    it visible.
-5. **`load_onto` / `unload_from` do not exist.** `v4_s1_v4_ll` stages a
-   base-locked arm and an armless carrier, so the cooperation it is built around
-   is "put the box on your teammate and let them drive". The action set has no
-   word for cargo on a robot, so the task is solved around the intended route
-   instead of through it. This is the most interesting thing the third activity
-   asks for and the one thing it cannot yet be asked.
+5. **Two robots cannot be sequenced except by guessing tick counts.** The only
+   way a team brain can make robot B act *after* robot A is to put a `wait(N)`
+   in front of B's plan and hope N exceeds what A's action costs. It is not told
+   what an action costs -- the system prompt states the travel charge and
+   nothing else -- so it is arithmetic on a number it does not have. Measured on
+   the two `v4_s1_v4_ll` runs of 2026-09-12: the handoff succeeded when the
+   brain happened to pick `wait(400)` against a 297-tick grasp, and failed when
+   it picked `wait(100)`. See "Carrying, and the sequencing problem it exposed".
 6. **`coop2_trace.json` is always empty.** `plan_env_wrapper` logs
    `plan_committed` events into the repair shim's `Coop2TraceLogger`, whose
    `log()` discards them. Harmless while repair is unported -- nothing reads
