@@ -223,10 +223,37 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
             half_diagonal = 0.0
         return half_diagonal + self.robot_radius + self._nav_clearance_margin
 
+    @staticmethod
+    def is_walkable_surface(obj) -> bool:
+        """Is @obj something the robot stands *on* rather than beside?"""
+        return str(getattr(obj, "category", "")).lower() in ("floors", "carpet", "rug")
+
     def sampling_range_for(self, obj) -> Tuple[float, float]:
-        """``(lo, hi)`` metres to sample the base position in, for @obj."""
+        """``(lo, hi)`` metres to sample the base position in, for @obj.
+
+        A floor is the exception, and it is not a small one. The distance below
+        comes from the target's own half-diagonal, which for a floor spanning a
+        room is metres: navigating to one asked the robot to stand 3.3-3.9 m
+        from its centre, i.e. on a ring outside the room it is the floor of.
+        187 of 200 candidates were then rejected for being in the wrong room and
+        the primitive failed NO_SPACE_AROUND_TARGET every time -- which is how
+        the only way to say "take this to the bedroom" failed.
+
+        So for a surface the robot stands on, sample *within* it instead. The
+        room filter and the traversability check still apply, so what comes back
+        is a spot on that floor the robot actually fits at.
+        """
         if self._nav_distance_range is not None:
             return tuple(self._nav_distance_range)
+        if self.is_walkable_surface(obj):
+            try:
+                extent = obj.aabb_extent[:2]
+                half_diagonal = float(th.norm(extent)) / 2.0
+            except Exception:  # noqa: BLE001 - objects without an aabb
+                half_diagonal = self._nav_reach
+            # Not right to the edge: leave the robot's own radius of margin so a
+            # sampled point is not half outside the surface.
+            return 0.0, max(self._nav_reach, half_diagonal - self.robot_radius)
         clearance = self.clearance_for(obj)
         return clearance, clearance + self._nav_reach
 
