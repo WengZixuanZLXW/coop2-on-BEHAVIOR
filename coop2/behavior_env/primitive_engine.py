@@ -482,8 +482,12 @@ class MultiAgentPrimitiveEngine:
         not a manipulator, so asking it took the whole episode down with an
         AttributeError at the end of that robot's first primitive.
         """
+        # Default True, not False: only a robot that says outright it is not a
+        # manipulator is skipped. Defaulting the other way makes "did not say"
+        # mean "has no arm", which silently reports every robot as empty-handed
+        # wherever the attribute is absent.
         robot = self.robots_by_id.get(agent_id)
-        if robot is not None and not getattr(robot, "is_manipulation", False):
+        if robot is not None and getattr(robot, "is_manipulation", True) is False:
             return None
         return self.controllers[agent_id]._get_obj_in_hand()
 

@@ -396,6 +396,24 @@ def main() -> int:
             assert histogram.get(2, 0) == 0, histogram
     ok("concurrent -> overlap_ratio 1.00 (50 ticks with both moving); exclusive -> 0.00")
 
+    print("test 8b: a robot with no arm holds nothing, rather than raising")
+    # A heterogeneous team can contain a carrier base -- it navigates and does
+    # nothing else -- and `_ag_obj_in_hand` does not exist on a robot that is
+    # not a manipulator. Asking anyway took a whole episode down with an
+    # AttributeError at the end of that robot's first navigate.
+    class Armless:
+        name = "carrier"
+        is_manipulation = False
+
+    class Exploding:
+        def _get_obj_in_hand(self):
+            raise AssertionError("a robot with no arm must not be asked")
+
+    engine.robots_by_id["carrier"] = Armless()
+    engine.controllers["carrier"] = Exploding()
+    assert engine.held_object("carrier") is None
+    ok("an armless robot answers None without reaching for a hand it lacks")
+
     print("\nALL TESTS PASSED")
     return 0
 
