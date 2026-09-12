@@ -1,7 +1,58 @@
-# Visual / kinematic Crazyflie CF2X import. Flight is commanded by the V4
-# kinematic drone API, not by a native wheel or rotor controller.
-raw_controller_order: []
-default_controllers: {}
-default_joint_pos: []
+# Crazyflie CF2X, imported from crazyswarm2 with the official importer's
+# holonomic option.
+#
+# The upstream description is a visualisation asset: one link, no joints. Left
+# as-is it imports as a zero-DOF body, USD gives it no articulation root, and
+# `articulation_root_path` comes back None -- the load dies inside
+# `set_position_orientation`, before the first step. `use_holonomic_joints`
+# synthesises the six `base_footprint_<AXIS>` joints R1 and Tiago have, which
+# supplies both the articulation and, in base_footprint_z, a real degree of
+# freedom for altitude.
+#
+# That altitude joint is not decoration. `_get_robot_pose_from_2d_pose` reads z
+# from the base joints for a holonomic base and forces it to 0.0 for anything
+# else, so a non-holonomic drone would land on the floor on its first navigate.
+raw_controller_order: ["base", "arm_0"]
+default_controllers:
+  base: HolonomicBaseJointController
+  arm_0: JointController
+# One entry per virtual joint: x, y, z, rx, ry, rz. Required, not optional --
+# `reset_joint_pos` is None without it and `_default_arm_null_joint_controller_configs`
+# subscripts it while building the controller defaults.
+default_joint_pos: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 usd_path: "objects/robot/v4_crazyflie_cf2x/usd/v4_crazyflie_cf2x.usda"
-base_footprint_link_name: crazyflie_cf2x
+base_footprint_link_name: base_footprint_z
+
+holonomic_base:
+  # No wheels to approximate -- this thing flies.
+  force_sphere_wheel_approximation: false
+
+locomotion:
+  base_joint_names: ["base_footprint_x_joint", "base_footprint_y_joint", "base_footprint_rz_joint"]
+  floor_touching_base_link_names: []
+
+# An arm with no joints. The V4 drone carries a belly suction cup, and a suction
+# cup is exactly what the symbolic grasp models: `_establish_grasp` teleports the
+# object to `eef_links[arm]` and welds a FixedJoint, needing no arm chain and no
+# fingers. Declaring the body as its own end effector is therefore the honest
+# description, not a workaround -- the gripper *is* the underside of the drone.
+#
+# finger_link_names must still be present: it falls back to {} when absent and
+# `finger_links` then raises KeyError('0') during initialization.
+manipulation:
+  n_arms: 1
+  arm_names: ["0"]
+  arm_link_names:
+    "0": ["crazyflie_cf2x", "bottom_suction_mount"]
+  arm_joint_names:
+    "0": []
+  # The belly mount, not the body. OmniGibson hides the eef link of every
+  # manipulation robot on principle -- on a normal arm it is a massless frame
+  # marker like `ur_arm_tool0` -- so naming the body here made the whole drone
+  # invisible: present, correctly placed, correctly sized, rendering nothing.
+  eef_link_names:
+    "0": bottom_suction_mount
+  finger_link_names:
+    "0": []
+  finger_joint_names:
+    "0": []

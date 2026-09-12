@@ -71,6 +71,7 @@ class CooperativeBehaviorEnv:
         bddl_activity: Optional[str] = None,
         bddl_instance_id: int = 0,
         video_path: Optional[str] = None,
+        want_viewer_camera: bool = False,
         team_layout: Optional[Any] = None,
         **kwargs: Any,
     ):
@@ -113,6 +114,11 @@ class CooperativeBehaviorEnv:
         # is read when the camera is created), which is why this is a
         # constructor argument and not a method you call later.
         self.video_path = video_path
+        #: Render the viewer camera even when nothing is being recorded.
+        #: Recording was the only reason to have one, so a headless caller that
+        #: just wants to *look* at the scene -- inspect_scene -- had no way to
+        #: ask for it, and og.sim.viewer_camera came back None.
+        self.want_viewer_camera = want_viewer_camera
         # Recording and a live viewport cannot share the camera. A scene gets one
         # viewer camera, so MultiViewRecorder captures its N views by moving that
         # camera to each robot, rendering, and putting it back -- several times a
@@ -220,7 +226,7 @@ class CooperativeBehaviorEnv:
         if self.headless:
             # Headless and "no viewer camera" are separate: rendering offscreen
             # is exactly how a video gets recorded without a window.
-            gm.RENDER_VIEWER_CAMERA = bool(self.video_path)
+            gm.RENDER_VIEWER_CAMERA = bool(self.video_path) or self.want_viewer_camera
         else:
             # A window with nothing drawn in it is the worse failure mode.
             gm.RENDER_VIEWER_CAMERA = True
@@ -248,6 +254,10 @@ class CooperativeBehaviorEnv:
             objects=self.extra_objects,
             agent_names=self.agent_names,
             task=self._task_config(),
+            robot_scales=(
+                [spec.scale for spec in self.team_layout.robots]
+                if self.team_layout is not None else None
+            ),
         )
         self.env = og.Environment(configs=config)
         self._enforce_controller_config(config)

@@ -1,0 +1,67 @@
+# Primitives-style config for the imported Clearpath Jackal.
+#
+# The shape mirrors OmniGibson's own `r1_primitives.yaml`, because
+# `build_multi_robot_config` takes its env/scene skeleton from here and uses
+# `robots[0]` as the per-robot template.
+#
+# No grasping settings, because this robot cannot grasp: the Jackal has no arm,
+# `is_manipulation` is False, and there is no arm_0 or gripper_0 group to
+# configure. In the symbolic vocabulary it has navigate_to and wait and nothing
+# else. V4 uses it as a carrier -- the box rides on a cargo plate -- which is a
+# role this action set has no word for yet.
+env:
+  action_frequency: 30
+  physics_frequency: 120
+  device: null
+  automatic_reset: false
+  flatten_action_space: false
+  flatten_obs_space: false
+  use_external_obs: false
+  external_sensors: null
+
+render:
+  viewer_width: 1280
+  viewer_height: 720
+
+scene:
+  type: InteractiveTraversableScene
+  scene_model: Rs_int
+  trav_map_resolution: 0.1
+  default_erosion_radius: 0.0
+  trav_map_with_objects: true
+  num_waypoints: 1
+  waypoint_resolution: 0.2
+  load_object_categories: null
+  not_load_object_categories: null
+  load_room_types: null
+  load_room_instances: null
+  load_task_relevant_only: false
+  seg_map_resolution: 1.0
+  scene_source: OG
+  include_robots: false
+
+robots:
+  - model: v4_jackal
+    obs_modalities: [rgb]
+    include_sensor_names: null
+    exclude_sensor_names: null
+    scale: 1.0
+    self_collisions: true
+    action_normalize: false
+    action_type: continuous
+    sensor_config:
+      VisionSensor:
+        sensor_kwargs:
+          image_height: 128
+          image_width: 128
+    controller_config:
+      base:
+        name: JointController
+        motor_type: position
+        command_input_limits: null
+        use_delta_commands: false
+        use_impedances: false
+
+objects: []
+task:
+  type: DummyTask

@@ -2813,7 +2813,14 @@ class Robot(USDObject, GymObservable):
         """
         assert self.is_manipulation
         idxs = {
-            arm: th.tensor([list(self.joints.keys()).index(name) for name in self.arm_joint_names[arm]])
+            # dtype is explicit for the same reason as gripper_control_idx
+            # below: an arm with no joints of its own is legitimate -- a suction
+            # cup fixed to a drone's belly is an end effector with no chain --
+            # and th.tensor([]) is float32, which cannot index a tensor.
+            arm: th.tensor(
+                [list(self.joints.keys()).index(name) for name in self.arm_joint_names[arm]],
+                dtype=th.int,
+            )
             for arm in self.arm_names
         }
         if self._definition.manipulation and self._definition.manipulation.add_combined_arm_control_idx:

@@ -1,0 +1,81 @@
+# Primitives-style config for the imported Crazyflie CF2X.
+#
+# The shape mirrors OmniGibson's own `r1_primitives.yaml`, because
+# `build_multi_robot_config` takes its env/scene skeleton from here and uses
+# `robots[0]` as the per-robot template.
+#
+# The grasping settings are the same three a suction end effector needs
+# everywhere: "sticky" rather than "physical", because that branch of
+# `is_grasping` reads a gripper controller this robot has none of; and
+# `disable_grasp_handling`, because OmniGibson otherwise runs its own
+# assisted-grasp handling every physics step and that reads the same missing
+# controller. The symbolic layer drives grasps itself.
+env:
+  action_frequency: 30
+  physics_frequency: 120
+  device: null
+  automatic_reset: false
+  flatten_action_space: false
+  flatten_obs_space: false
+  use_external_obs: false
+  external_sensors: null
+
+render:
+  viewer_width: 1280
+  viewer_height: 720
+
+scene:
+  type: InteractiveTraversableScene
+  scene_model: Rs_int
+  trav_map_resolution: 0.1
+  default_erosion_radius: 0.0
+  trav_map_with_objects: true
+  num_waypoints: 1
+  waypoint_resolution: 0.2
+  load_object_categories: null
+  not_load_object_categories: null
+  load_room_types: null
+  load_room_instances: null
+  load_task_relevant_only: false
+  seg_map_resolution: 1.0
+  scene_source: OG
+  include_robots: false
+
+robots:
+  - model: v4_crazyflie_cf2x
+    obs_modalities: [rgb]
+    include_sensor_names: null
+    exclude_sensor_names: null
+    scale: 1.0
+    self_collisions: true
+    action_normalize: false
+    action_type: continuous
+    grasping_mode: sticky
+    disable_grasp_handling: true
+    sensor_config:
+      VisionSensor:
+        sensor_kwargs:
+          image_height: 128
+          image_width: 128
+    controller_config:
+      # Holonomic, like R1 and Tiago: the base is six virtual joints, and the z
+      # one is what keeps a drone in the air. `_get_robot_pose_from_2d_pose`
+      # reads z from the base joints for a holonomic base and forces it to 0.0
+      # for everything else.
+      base:
+        name: HolonomicBaseJointController
+        motor_type: position
+        command_input_limits: null
+        use_impedances: false
+      # An arm with no joints: the end effector is the drone's own body, where
+      # the V4 suction cup is mounted.
+      arm_0:
+        name: JointController
+        motor_type: position
+        command_input_limits: null
+        use_delta_commands: false
+        use_impedances: false
+
+objects: []
+task:
+  type: DummyTask

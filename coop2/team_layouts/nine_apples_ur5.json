@@ -1,0 +1,80 @@
+{
+  "_comment": [
+    "Nine Ridgeback-UR5s for coop_nine_apples_hall, in three teams of three.",
+    "",
+    "Placed by room rather than pinned: the hall task has no authored robot",
+    "layout to reproduce, and place_robots spreads them through empty_room_0",
+    "on its own. Pin coordinates only when a scene was authored with them.",
+    "",
+    "No scale, so each loads at its own full size -- 1.35 x 1.00 m for this",
+    "model. That is deliberate here and the opposite of the v4_s1_v4_ll",
+    "layout, which shrinks its robots to 0.5 because the V4 scene stages them",
+    "within half a metre of each other. empty_room_0 is large enough not to",
+    "need it, and full size is the honest default.",
+    "",
+    "Worth watching: this robot's end effector is a suction cup with no",
+    "fingers, and its navigation sampler wants 1.25-1.85 m of clear floor",
+    "around a target, against roughly 0.6 m for an R1. Nine of them in one",
+    "room is a real test of whether that fits.",
+    "",
+    "Three teams matter even under `individual`, which ignores the split:",
+    "the same file then runs broadcast_chain and centralized unchanged, with",
+    "three teams' worth of inter-team traffic."
+  ],
+  "robots": [
+    {
+      "name": "agent_0",
+      "model": "v4_ridgeback_ur5",
+      "room": "empty_room_0",
+      "team": "team_0"
+    },
+    {
+      "name": "agent_1",
+      "model": "v4_ridgeback_ur5",
+      "room": "empty_room_0",
+      "team": "team_0"
+    },
+    {
+      "name": "agent_2",
+      "model": "v4_ridgeback_ur5",
+      "room": "empty_room_0",
+      "team": "team_0"
+    },
+    {
+      "name": "agent_3",
+      "model": "v4_ridgeback_ur5",
+      "room": "empty_room_0",
+      "team": "team_1"
+    },
+    {
+      "name": "agent_4",
+      "model": "v4_ridgeback_ur5",
+      "room": "empty_room_0",
+      "team": "team_1"
+    },
+    {
+      "name": "agent_5",
+      "model": "v4_ridgeback_ur5",
+      "room": "empty_room_0",
+      "team": "team_1"
+    },
+    {
+      "name": "agent_6",
+      "model": "v4_ridgeback_ur5",
+      "room": "empty_room_0",
+      "team": "team_2"
+    },
+    {
+      "name": "agent_7",
+      "model": "v4_ridgeback_ur5",
+      "room": "empty_room_0",
+      "team": "team_2"
+    },
+    {
+      "name": "agent_8",
+      "model": "v4_ridgeback_ur5",
+      "room": "empty_room_0",
+      "team": "team_2"
+    }
+  ]
+}

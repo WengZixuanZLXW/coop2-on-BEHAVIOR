@@ -123,7 +123,8 @@ def strip_ros_control_transmissions(urdf: Path) -> None:
     urdf.write_text(re.sub(r"\s*<transmission\b.*?</transmission>\s*", "\n", text, flags=re.DOTALL), encoding="utf-8")
 
 
-def importer_config(name: str, urdf: Path, wheel_links=None, wheel_joints=None) -> dict:
+def importer_config(name: str, urdf: Path, wheel_links=None, wheel_joints=None,
+                    holonomic: bool = False) -> dict:
     return {
         "urdf_path": str(urdf.resolve()),
         "name": name,
@@ -135,7 +136,13 @@ def importer_config(name: str, urdf: Path, wheel_links=None, wheel_joints=None) 
             "wheel_links": wheel_links or [],
             "wheel_joints": wheel_joints or [],
             "use_sphere_wheels": False,
-            "use_holonomic_joints": False,
+            # The importer's own way of building the base R1 and Tiago have: it
+            # fixes every wheel joint and adds six virtual "base_footprint_<AXIS>"
+            # joints for 6DOF motion. A robot with no drivable joints of its own
+            # needs this, not for the motion model but for the articulation --
+            # USD gives a zero-DOF body no articulation root, and OmniGibson's
+            # Robot assumes one from `set_position_orientation` onward.
+            "use_holonomic_joints": holonomic,
         },
         "collision": {
             "decompose_method": "convex",
@@ -252,6 +259,26 @@ def main() -> None:
     <inertial><mass value="0.027"/><inertia ixx="0.00001" ixy="0" ixz="0" iyy="0.00001" iyz="0" izz="0.00002"/></inertial>
     <collision><geometry><sphere radius="0.06"/></geometry></collision>''',
     )
+    # A separate end-effector link under the belly, where V4 mounts its suction
+    # cup -- their own wrapper adds `body/bottom_suction_mount` and a bottom
+    # `grip_frame` for the same reason.
+    #
+    # It has to be its own link and not the body. OmniGibson hides the eef link
+    # of every manipulation robot on principle (robot.py, "make eef link not
+    # visible"), because on a normal arm that link is a massless frame marker
+    # like `ur_arm_tool0`. Naming the body as the end effector therefore made
+    # the entire drone invisible -- present, correctly placed, correctly sized,
+    # and rendering nothing.
+    crazy_text = crazy_text.replace(
+        "</robot>",
+        """  <link name="bottom_suction_mount"/>
+  <joint name="bottom_suction_joint" type="fixed">
+    <parent link="crazyflie_cf2x"/>
+    <child link="bottom_suction_mount"/>
+    <origin rpy="0 0 0" xyz="0 0 -0.015"/>
+  </joint>
+</robot>""",
+    )
     (resolved / "crazyflie_cf2x.urdf").write_text(crazy_text, encoding="utf-8")
 
     # Jackal's stock xacro unconditionally imports optional ROS1 sensor
@@ -291,7 +318,17 @@ def main() -> None:
             ["front_left_wheel_link", "front_right_wheel_link", "rear_left_wheel_link", "rear_right_wheel_link"],
             ["front_left_wheel", "front_right_wheel", "rear_left_wheel", "rear_right_wheel"],
         ),
-        "v4_crazyflie_cf2x": importer_config("v4_crazyflie_cf2x", resolved / "crazyflie_cf2x.urdf"),
+        # Holonomic, for two reasons. The upstream crazyswarm2 description is a
+        # visualisation asset -- one link, no joints -- so without virtual joints
+        # it imports as a zero-DOF body and `articulation_root_path` comes back
+        # None, which kills the load before the first step. And the six joints
+        # are what keeps a drone in the air: `_get_robot_pose_from_2d_pose`
+        # preserves z from the base joints for a holonomic base and forces it to
+        # 0.0 for anything else, so a non-holonomic drone lands on the floor on
+        # its first navigate.
+        "v4_crazyflie_cf2x": importer_config(
+            "v4_crazyflie_cf2x", resolved / "crazyflie_cf2x.urdf", holonomic=True,
+        ),
         "v4_fanuc_crx10ial": importer_config("v4_fanuc_crx10ial", resolved / "fanuc_crx10ial.urdf"),
     }
     specs = {name: cfg for name, cfg in all_specs.items() if have.get(name)}

@@ -194,6 +194,15 @@ class RobotSpec:
     position: Optional[Tuple[float, float, float]] = None
     #: Room *instance* to sample a pose in, or None when ``position`` decides.
     room: Optional[str] = None
+    #: Uniform size multiplier, or None to use whatever the model's config says.
+    #:
+    #: Part of a layout, not a property of the robot: a scene is authored with
+    #: robots at a chosen size, and the spacing between them only makes sense at
+    #: that size. The V4 layouts stage a Ridgeback at 0.5 and a Jackal at 0.7,
+    #: which is how three robots fit within half a metre of each other; loading
+    #: them at 1.0 made two of them overlap, `place_robots` relocated them, and
+    #: the relocation shoved the task's box 1.4 m across the room.
+    scale: Optional[float] = None
 
     @property
     def placed_explicitly(self) -> bool:
@@ -355,12 +364,21 @@ def _parse_robot(entry: Any, index: int) -> RobotSpec:
     if team is not None and (not isinstance(team, str) or not team.strip()):
         raise ValueError(f"{where} ({name}): 'team' must be a non-empty string")
 
+    scale = entry.get("scale")
+    if scale is not None:
+        if isinstance(scale, bool) or not isinstance(scale, (int, float)):
+            raise ValueError(f"{where} ({name}): 'scale' must be a number, got {scale!r}")
+        scale = float(scale)
+        if not scale > 0:
+            raise ValueError(f"{where} ({name}): 'scale' must be greater than zero, got {scale}")
+
     return RobotSpec(
         name=name.strip(),
         model=model,
         team=(team.strip() if team else ""),  # resolved against "teams" below
         position=position,
         room=room,
+        scale=scale,
     )
 
 
@@ -403,7 +421,7 @@ def _resolve_teams(
         resolved.append(
             RobotSpec(
                 name=spec.name, model=spec.model, team=team,
-                position=spec.position, room=spec.room,
+                position=spec.position, room=spec.room, scale=spec.scale,
             )
         )
 

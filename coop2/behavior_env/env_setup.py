@@ -88,6 +88,7 @@ def build_multi_robot_config(
     agent_names: Optional[Sequence[str]] = None,
     symbolic_only: bool = True,
     task: Optional[Dict[str, Any]] = None,
+    robot_scales: Optional[Sequence[Optional[float]]] = None,
 ) -> Dict[str, Any]:
     """Build an ``og.Environment`` config with one robot per entry of ``robot_poses``.
 
@@ -177,12 +178,21 @@ def build_multi_robot_config(
     if len(names) != len(robot_poses):
         raise ValueError(f"Got {len(names)} agent names for {len(robot_poses)} robot poses.")
 
+    scales = list(robot_scales) if robot_scales is not None else [None] * len(robot_poses)
+    if len(scales) != len(robot_poses):
+        raise ValueError(f"Got {len(scales)} robot scales for {len(robot_poses)} robot poses.")
+
     robots: List[Dict[str, Any]] = []
-    for name, model, (position, orientation) in zip(names, models, robot_poses):
+    for name, model, (position, orientation), scale in zip(names, models, robot_poses, scales):
         robot_config = copy.deepcopy(templates[model])
         robot_config["name"] = name
         robot_config["position"] = list(position)
         robot_config["orientation"] = list(orientation)
+        if scale is not None:
+            # Size belongs to the layout, not to the model: a scene is authored
+            # with its robots at a chosen size and the spacing between them only
+            # works at that size. None leaves the model's own config alone.
+            robot_config["scale"] = float(scale)
         robots.append(robot_config)
     config["robots"] = robots
 
@@ -208,12 +218,22 @@ def prepare_robots(env, settle_steps: int = 5, object_settle_steps: int = 30) ->
     retract configuration built in ``CuRoboMotionGenerator.__init__``
     assumes fully open grippers. Mirrors
     ``examples/wip/rs_int_primitives_example.py`` but loops over all robots.
+
+    Robots with nothing to open are skipped rather than special-cased: a
+    heterogeneous team can hold a robot with no arm at all (a carrier base) or
+    one whose end effector is a suction cup with no fingers, and
+    ``gripper_control_idx`` asserts ``is_manipulation`` before it will even
+    answer. Both are legitimate here, so neither should have to pretend to have
+    a hand.
     """
     for robot in env.robots:
-        for gripper_control_idx in robot.gripper_control_idx.values():
-            robot.set_joint_positions(
-                th.ones_like(gripper_control_idx), indices=gripper_control_idx, normalized=True
-            )
+        if getattr(robot, "is_manipulation", False):
+            for gripper_control_idx in robot.gripper_control_idx.values():
+                if len(gripper_control_idx) == 0:
+                    continue  # a suction cup has no fingers to open
+                robot.set_joint_positions(
+                    th.ones_like(gripper_control_idx), indices=gripper_control_idx, normalized=True
+                )
         robot.keep_still()
 
     for _ in range(settle_steps):
