@@ -19,7 +19,118 @@ from typing import Callable, Dict, List, Optional, Sequence, Union
 
 from coop2.behavior_env.world_state import EntityObservation, SymbolicObservation, room_type_of
 
-__all__ = ["ActionHint", "render_symbolic_view", "target_hints"]
+__all__ = ["ActionHint", "render_goal_terms", "render_symbolic_view", "target_hints"]
+
+#: BDDL's quantifiers, and the word that leaves each one standing.
+#:
+#: A quantified goal is **not** expanded into the instances it ranges over.
+#: `coop_nine_apples_hall`'s goal is `forall ?apple.n.01`, and nine apples are
+#: declared, so expanding it would name all nine in every prompt from step 0 --
+#: which is the same harm as showing the agent every room, and it would delete
+#: the exploration the activity exists to pose. The quantifier is what the goal
+#: says; saying it back is both faithful and enough to plan against.
+_QUANTIFIER_WORDS = {
+    "forall": "every",
+    "exists": "some",
+}
+
+
+def render_goal_terms(
+    goal_clauses: Optional[Sequence],
+    initial_clauses: Optional[Sequence] = None,
+) -> Optional[str]:
+    """The activity's goal in BDDL's own ids, one clause per line.
+
+    What the agent was *asked* for, as against what it can see. Takes the two
+    parsed condition lists off a compiled BDDL task
+    (`parsed_goal_conditions` / `parsed_initial_conditions`) and returns the
+    text, or None when the activity states no goal.
+
+    Clauses nest: a goal is a tree of quantifiers and connectives over
+    predicates, not a flat predicate with atom arguments. Reading it as the
+    latter crashed both apple activities on `unhashable type: 'list'` for a day
+    -- it survived because `v4_s1_v4_ll`, the activity in hand when this was
+    written, has the one goal in the repo that *is* flat.
+    """
+    if not goal_clauses:
+        return None
+
+    rooms: Dict[str, str] = {}
+    for clause in (initial_clauses or []):
+        # `inroom <obj> <room type>` is part of the activity definition, so
+        # saying it here reveals nothing the task did not already state.
+        if isinstance(clause, list) and len(clause) == 3 and clause[0] == "inroom":
+            rooms[clause[1]] = clause[2]
+
+    lines: List[str] = []
+    for clause in goal_clauses:
+        if not isinstance(clause, list) or not clause:
+            continue
+        named: List[str] = []
+        text = _render_goal_clause(clause, {}, named)
+        where = "; ".join(f"{name} is in the {rooms[name]}"
+                          for name in dict.fromkeys(named) if name in rooms)
+        lines.append(text + (f"   [{where}]" if where else ""))
+    return "\n  ".join(lines) or None
+
+
+def _render_goal_clause(clause, bound: Dict[str, str], named: List[str]) -> str:
+    """One goal clause. `bound` carries the quantified variables in scope;
+    every concrete id the clause names is appended to `named`, so the caller
+    can say which room each is in."""
+    if not isinstance(clause, list) or not clause:
+        return _render_goal_term(clause, bound, named)
+    head, args = str(clause[0]), list(clause[1:])
+    if head in _QUANTIFIER_WORDS and len(args) == 2 and isinstance(args[0], list):
+        # ["forall", ["?apple.n.01", "-", "apple.n.01"], <body>]
+        declaration = args[0]
+        variable, synset = str(declaration[0]), str(declaration[-1])
+        scope = dict(bound, **{variable: f"{_QUANTIFIER_WORDS[head]} {synset}"})
+        return _render_goal_clause(args[1], scope, named)
+    if head == "not":
+        return "not(" + ", ".join(_render_goal_clause(a, bound, named) for a in args) + ")"
+    if head in ("and", "or"):
+        return f" {head} ".join(f"({_render_goal_clause(a, bound, named)})" for a in args)
+    if not args:
+        # A one-element list is a bare term, not a predicate applied to nothing
+        # -- `forn`'s count arrives as ["2"].
+        return _render_goal_term(head, bound, named)
+    # Anything else is a predicate. That includes the quantifiers not named
+    # above -- `forn`, `forpairs` -- which are rendered rather than crashed on,
+    # but still declare variables, and a `?x` reaching the prompt is the whole
+    # hazard here. Bind those and drop the declarations from the arguments.
+    declarations = [a for a in args if _is_variable_declaration(a)]
+    if declarations:
+        bound = dict(bound)
+        for declaration in declarations:
+            bound[str(declaration[0])] = f"any {declaration[-1]}"
+        args = [a for a in args if not _is_variable_declaration(a)]
+    return head + "(" + ", ".join(
+        _render_goal_clause(a, bound, named) if isinstance(a, list)
+        else _render_goal_term(a, bound, named)
+        for a in args
+    ) + ")"
+
+
+def _is_variable_declaration(arg) -> bool:
+    """`["?apple.n.01", "-", "apple.n.01"]` -- BDDL's typed variable."""
+    return isinstance(arg, list) and len(arg) == 3 and arg[1] == "-"
+
+
+def _render_goal_term(term, bound: Dict[str, str], named: List[str]) -> str:
+    """One argument of a goal predicate, as the agent has to write it.
+
+    BDDL prefixes every term inside a goal with `?` -- a quantified variable
+    and a concrete instance alike -- so the goal names the coffee table
+    `?coffee_table.n.01_1`, which is not an id anything here resolves. Handing
+    that to a model that already mangles instance suffixes is asking for it.
+    """
+    text = str(term)
+    if text in bound:
+        return bound[text]
+    name = text[1:] if text.startswith("?") else text
+    named.append(name)
+    return name
 
 #: Scenery: in the world model, out of the prompt. These are the synsets whose
 #: subtrees the taxonomy has no manipulation abilities for -- structure and

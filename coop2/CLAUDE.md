@@ -825,6 +825,14 @@ faster than the version that broke the premise -- env_step 377 against 504, five
 plans against six. **Telling an agent its task is better information than making
 it infer the destination from a room listing.**
 
+## Porting another COOHAVIOR task
+
+`PORTING_COOHAVIOR.md` is the procedure, written from doing v4_s1_v4_ll: which
+three files come out, the two BDDL parser traps that fail silently, where each
+scene keeps its furniture edits (S1 in a separate layer, S2/S3 inline), and why
+`scale` and `base_locked_while_holding` are not optional. The findings behind it
+are below.
+
 ## Third activity: v4_s1_v4_ll, and robots from outside BEHAVIOR (2026-09-11)
 
 `bddl3/bddl/activity_definitions/v4_s1_v4_ll/` -- three robots move a packing

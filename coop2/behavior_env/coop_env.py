@@ -767,24 +767,14 @@ class CooperativeBehaviorEnv:
             self._goal_terms_cache = ""
             return None
 
-        rooms = {}
-        for clause in (getattr(conditions, "parsed_initial_conditions", None) or []):
-            # `inroom <obj> <room type>` is part of the activity definition, so
-            # saying it here reveals nothing the task did not already state.
-            if isinstance(clause, list) and len(clause) == 3 and clause[0] == "inroom":
-                rooms[clause[1]] = clause[2]
+        # Rendering is L1b's -- it is prompt text, and putting it there is what
+        # lets a CPU test read it without Isaac. This method's own job is only
+        # to find the two parsed condition lists on the BehaviorTask.
+        from coop2.behavior_env.symbolic_view import render_goal_terms  # noqa: PLC0415
 
-        lines = []
-        for clause in goal:
-            if not isinstance(clause, list) or not clause:
-                continue
-            predicate, args = clause[0], clause[1:]
-            where = "; ".join(
-                f"{a} is in the {rooms[a]}" for a in args if a in rooms
-            )
-            lines.append(f"{predicate}({', '.join(str(a) for a in args)})"
-                         + (f"   [{where}]" if where else ""))
-        self._goal_terms_cache = "\n  ".join(lines)
+        self._goal_terms_cache = render_goal_terms(
+            goal, getattr(conditions, "parsed_initial_conditions", None)
+        ) or ""
         return self._goal_terms_cache or None
 
     def _build_info(self) -> Dict[str, Any]:
