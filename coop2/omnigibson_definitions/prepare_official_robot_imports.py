@@ -313,10 +313,23 @@ def main() -> None:
             ["front_left_wheel_link", "front_right_wheel_link", "rear_left_wheel_link", "rear_right_wheel_link"],
             ["front_left_wheel", "front_right_wheel", "rear_left_wheel", "rear_right_wheel"],
         ),
+        # Holonomic, like R1 and Tiago. Navigation here is a teleport, and a
+        # real wheeled base does not survive one: the wheels land intersecting
+        # the floor and PhysX ejects the robot, which reads as bouncing. The
+        # importer's holonomic conversion fixes every wheel joint and drives the
+        # base through six virtual joints instead, so there is nothing left to
+        # interpenetrate.
         "v4_ridgeback_ur5": importer_config(
             "v4_ridgeback_ur5", resolved / "ridgeback_ur5.urdf",
             ["front_left_wheel_link", "front_right_wheel_link", "rear_left_wheel_link", "rear_right_wheel_link"],
-            ["front_left_wheel", "front_right_wheel", "rear_left_wheel", "rear_right_wheel"],
+            # front_rocker is the suspension rocker, not a wheel, but it belongs
+            # in this list: the holonomic conversion fixes everything named here,
+            # and a driven joint left over with no controller fails at load
+            # ("All unused joints not mapped to any controller should not have
+            # DriveAPI attached"). A floating base has no suspension to work.
+            ["front_rocker", "front_left_wheel", "front_right_wheel",
+             "rear_left_wheel", "rear_right_wheel"],
+            holonomic=True,
         ),
         # Holonomic, for two reasons. The upstream crazyswarm2 description is a
         # visualisation asset -- one link, no joints -- so without virtual joints

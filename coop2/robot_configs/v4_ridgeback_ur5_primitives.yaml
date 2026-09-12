@@ -64,15 +64,18 @@ robots:
           image_height: 128
           image_width: 128
     controller_config:
-      # Wheel joints, not the six virtual joints of a holonomic base: this is a
-      # real four-wheel base and `is_holonomic_base` is False for it. Navigation
-      # here is a teleport either way -- the controller is what holds position
-      # between primitives.
+      # Holonomic. The base was imported as a real four-wheel one first, and
+      # that does not survive a teleport: the wheels arrive intersecting the
+      # floor and PhysX ejects the robot, which reads as bouncing. The six
+      # virtual joints have nothing to interpenetrate.
       base:
-        name: JointController
+        name: HolonomicBaseJointController
         motor_type: position
         command_input_limits: null
-        use_delta_commands: false
+        # No use_delta_commands: this controller does not take it, and leaving
+        # JointController's parameters behind when swapping the name fails at
+        # load with "unexpected keyword argument". r1_primitives.yaml's base
+        # block is the reference.
         use_impedances: false
       arm_0:
         name: JointController

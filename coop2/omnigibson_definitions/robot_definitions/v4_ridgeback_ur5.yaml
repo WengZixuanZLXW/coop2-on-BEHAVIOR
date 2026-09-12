@@ -1,17 +1,50 @@
-# Official Clearpath Ridgeback + UR5 URDF imported by import_official_v4_robots.sh.
-# The base is intentionally exposed as joints; this is not a Nav2 controller.
+# Official Clearpath Ridgeback + UR5 URDF, imported by import_official_v4_robots.sh.
+#
+# The base is holonomic rather than wheeled. Navigation here is a teleport, and a
+# real four-wheel base does not survive one: the wheels arrive intersecting the
+# floor and PhysX ejects the robot, which reads as bouncing. The importer's
+# holonomic conversion fixes every wheel joint -- and the suspension rocker,
+# which otherwise survives as a driven joint with no controller and fails the
+# load outright -- then drives the base through six virtual joints with nothing
+# left to interpenetrate. R1 and Tiago work the same way.
 raw_controller_order: ["base", "arm_0"]
 default_controllers:
-  base: JointController
+  base: HolonomicBaseJointController
   arm_0: InverseKinematicsController
-default_joint_pos: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+# Six virtual base joints (x, y, z, rx, ry, rz), then the six UR5 joints.
+#
+# The arm folds back over the base. At all-zeros a UR5 stands straight out
+# horizontally and a teleport sweeps it through the room -- it was knocking
+# chairs over on arrival. Measured, base at the origin:
+#
+#     pose            AABB (m)              end effector
+#     all-zeros       1.356 x 1.0 x 1.000   dx +0.817  dz +0.274
+#     upper arm up    1.030 x 1.0 x 1.134   dx +0.487  dz +0.712
+#     straight up     1.000 x 1.0 x 1.505   dx +0.095  dz +1.186
+#     folded back     1.000 x 1.0 x 1.134   dx -0.169  dz +0.546   <- this one
+#
+# The last two both bring the footprint down to the chassis's own 1.0 m, so
+# either keeps the arm out of the furniture. Folded wins on where it leaves the
+# end effector: the symbolic grasp teleports the held object *to* that point and
+# welds it there, so the eef height is the height the robot carries things at.
+# Straight up would have a half-scale base holding a box 1.19 m in the air.
+default_joint_pos: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                    0.0, -1.5708, -2.6, 1.3, 0.0, 0.0]
+
 linear_velocity_gain_for_primitives: 0.05
 angular_velocity_gain_for_primitives: 0.05
 usd_path: "objects/robot/v4_ridgeback_ur5/usd/v4_ridgeback_ur5.usda"
 base_footprint_link_name: base_link
+
+holonomic_base:
+  force_sphere_wheel_approximation: false
+
 locomotion:
-  base_joint_names: ["front_rocker", "front_left_wheel", "front_right_wheel", "rear_left_wheel", "rear_right_wheel"]
+  # The virtual joints, not the wheels: the wheels are fixed now.
+  base_joint_names: ["base_footprint_x_joint", "base_footprint_y_joint", "base_footprint_rz_joint"]
   floor_touching_base_link_names: ["front_left_wheel_link", "front_right_wheel_link", "rear_left_wheel_link", "rear_right_wheel_link"]
+
 manipulation:
   arm_link_names:
     "0": ["ur_arm_base_link", "ur_arm_shoulder_link", "ur_arm_upper_arm_link", "ur_arm_forearm_link", "ur_arm_wrist_1_link", "ur_arm_wrist_2_link", "ur_arm_wrist_3_link"]
