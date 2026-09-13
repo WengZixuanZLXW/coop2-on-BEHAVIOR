@@ -563,10 +563,9 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
         attempts = self._nav_sampling_attempts or 200
         rejected = {"room": 0, "trav": 0, "robots": 0}
         for _ in range(attempts):
-            _, point = seg_map.get_random_point_by_room_instance(room)
-            if point is None:
+            xy = self._random_point_in_room(seg_map, room, names[room])
+            if xy is None:
                 break
-            xy = (float(point[0]), float(point[1]))
             if self._room_of(xy) not in (room, None):
                 rejected["room"] += 1
                 continue
@@ -588,6 +587,36 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
             "furniture, walls or other robots. Wait for them to move, or go elsewhere.",
             {"room": room, "rejected_by": dict(rejected), "reason_code": "NO_SPACE_IN_ROOM"},
         )
+
+    @staticmethod
+    def _random_point_in_room(seg_map, room: str, ins_id) -> Optional[Tuple[float, float]]:
+        """A uniformly random cell of @room, in world metres, or None.
+
+        Not ``seg_map.get_random_point_by_room_instance``: upstream's is
+        broken -- ``th.randint(n)`` without a size raises ``TypeError: only
+        integer tensors of a single element can be converted to an index``,
+        which crashed every room navigation in the first acceptance launch
+        (2026-09-13). Same idea, done with ``nonzero`` and Python's RNG; the
+        upstream call is kept only as the fallback for maps without a cell
+        grid (the CPU fakes).
+        """
+        import random  # noqa: PLC0415
+
+        cells = getattr(seg_map, "room_ins_map", None)
+        if cells is not None:
+            try:
+                idx = th.nonzero(cells == ins_id)
+                if idx.shape[0] == 0:
+                    return None
+                pick = idx[random.randrange(int(idx.shape[0]))]
+                world = seg_map.map_to_world(pick)
+                return float(world[0]), float(world[1])
+            except Exception:  # noqa: BLE001 - fall through to upstream
+                pass
+        _, point = seg_map.get_random_point_by_room_instance(room)
+        if point is None:
+            return None
+        return float(point[0]), float(point[1])
 
     def _navigate_to_obj(self, obj, eef_pose=None, skip_obstacle_update=False):
         """Same as upstream, minus the keyword the symbolic override rejects.
