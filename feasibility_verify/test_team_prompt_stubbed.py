@@ -134,7 +134,8 @@ def main() -> int:
     with_digtag = brain._system_prompt(brain.members[members[0]])
     assert with_digtag.rstrip().endswith("## 5. DIGTAG\ndigtag manual goes here"), with_digtag[-120:]
     brain.reserved_system_prompt = ""
-    for mode in ("individual", "broadcast_chain", "centralized_leader", "centralized_follower"):
+    for mode in ("individual", "broadcast_chain", "centralized_leader", "centralized_follower",
+                 "decentralized_messageboard"):
         assert f"## 4. COOPERATION MODE" in ps.cooperation_section(mode)
     # User side: observations, then messages now, then history, then action history.
     brain.memory.record_message_out(sender="team_0", recipients=["team_1"], content="we take C1", env_step=3)

@@ -4,13 +4,15 @@ System prompt
     1. ROLE                 -- <你的职责>          who you are, what you answer with
     2. ENVIRONMENT RULES    -- <环境规则>          what the world lets an action do
     3. ROBOT CAPABILITIES   -- <不同机器人能力描述>  arm / carrier / drone, and this team's robots
-    4. COOPERATION MODE     -- <当前合作模式规则>    individual / broadcast_chain / centralized
+    4. COOPERATION MODE     -- <当前合作模式规则>    individual / broadcast_chain / centralized /
+                               decentralized_messageboard
     5. RESERVED             -- <预留的提示prompt>    the digtag manual, once digtag exists
 
 User prompt
     6. OBSERVATIONS         -- 全队的<机器人observation和available action>, plus the
                                reserved <digtag任务observation> slot
-    7. CURRENT MESSAGES     -- <当前收到的消息>, worded for the cooperation mode
+    7. CURRENT MESSAGES     -- <当前收到的消息>, worded for the cooperation mode; under
+                               decentralized_messageboard this is the shared MESSAGE BOARD
     8. CONVERSATION HISTORY -- <对话历史>
     9. ACTION HISTORY       -- <行动历史和失败原因>
 
@@ -30,6 +32,7 @@ __all__ = [
     "ENVIRONMENT_RULES",
     "ROBOT_CAPABILITIES",
     "COOPERATION_RULES",
+    "MESSAGEBOARD_NOTIFY_RULES",
     "role_section",
     "robot_capabilities_section",
     "cooperation_section",
@@ -253,14 +256,48 @@ in two or three sentences, grounded in your robots' actual state -- accept it
 and say which robot does which part, or say what you will do instead and why
 (a robot that cannot lift the cargo, a leg already done, a target another
 team holds). Then plan for your robots consistently with what you answered.""",
+    "decentralized_messageboard": """## 4. COOPERATION MODE: DECENTRALIZED MESSAGE BOARD
+Every team plans for itself, as in individual mode: no team waits for
+another, no team sends anyone a message, and nothing you write interrupts
+anybody. What you share is ONE MESSAGE BOARD that every team reads and
+writes. Each time you plan you are shown the whole board (section 7), oldest
+post first, with the posts that appeared since you last planned marked
+(new); and every plan you return carries one `board_post` of your own, which
+the other teams read the next time THEY plan.
+
+- Read the board before dividing the work. A cargo or task leg another team
+  has posted it is taking is taken: send your robots elsewhere, or have them
+  wait, exactly as you would if you saw that team's robot holding it.
+- Write a post that lets the others do the same: which of your robots goes
+  for which cargo or leg THIS round, in the task's ids, and what you are
+  leaving for others. One or two sentences. Do not narrate, ask questions, or
+  repeat what you posted before -- the board keeps the record.
+- A post is a commitment, not a message: nobody is told about it, nobody
+  answers it, and a team already executing will not see it until it next
+  plans. Plan as if the others act on what they posted, not on what you
+  post.""",
 }
 
+#: Reserved for the notify tool: appended to section 4 only when a brain has
+#: ``NOTIFY_TOOL_ENABLED`` set. It exists now so the rule is written next to
+#: the board's, not invented later.
+MESSAGEBOARD_NOTIFY_RULES = """
+NOTIFY (a tool): a post waits for its readers; `notify` does not. Set the
+`notify` field to interrupt named teams with one or two sentences, and only
+when what they are doing right now is wrong because of what you know -- a
+cargo they are heading for that you already hold, a leg you have just
+completed. Interrupting a team stops all its robots and costs it a decision;
+leave `notify` null otherwise."""
 
-def cooperation_section(mode: str) -> str:
+
+def cooperation_section(mode: str, extra: str = "") -> str:
+    """Section 4 for @mode, plus @extra (the reserved notify rule) when given."""
     try:
-        return COOPERATION_RULES[mode]
+        text = COOPERATION_RULES[mode]
     except KeyError:
         raise ValueError(f"unknown cooperation mode {mode!r}; have {sorted(COOPERATION_RULES)}") from None
+    extra = (extra or "").rstrip()
+    return f"{text}\n{extra}" if extra else text
 
 
 # =============================================================================
@@ -281,12 +318,13 @@ def build_team_system_prompt(
     robot_profiles: Optional[Dict[str, Dict[str, object]]] = None,
     lift_rules: Optional[Dict[str, Iterable[str]]] = None,
     reserved: str = "",
+    cooperation_extra: str = "",
 ) -> str:
     sections = [
         role_section(team_name, member_ids, max_actions),
         ENVIRONMENT_RULES,
         robot_capabilities_section(robot_profiles, lift_rules),
-        cooperation_section(cooperation_mode),
+        cooperation_section(cooperation_mode, cooperation_extra),
         reserved_section(reserved),
     ]
     return "\n\n".join(s for s in sections if s)
@@ -328,6 +366,9 @@ _CURRENT_HEADINGS = {
     "broadcast_chain": "## 7. MESSAGES RECEIVED NOW -- what the teams ahead of you committed to",
     "centralized_leader": "## 7. MESSAGES RECEIVED NOW -- your followers' responses to your assignment",
     "centralized_follower": "## 7. MESSAGES RECEIVED NOW -- your leader's assignment",
+    # Reserved: the board mode has no direct messages until the notify tool
+    # delivers one; this is the heading such a message would arrive under.
+    "decentralized_messageboard": "## 7. MESSAGES RECEIVED NOW -- a team interrupted you with notify",
 }
 
 

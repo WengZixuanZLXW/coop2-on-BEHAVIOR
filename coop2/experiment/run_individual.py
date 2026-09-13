@@ -8,6 +8,12 @@ Decision Flow:
     1. Observe environment
     2. Generate plan using LLM (no waiting, no messages)
     3. Execute plan
+
+`decentralized_messageboard` is individual with a shared board, so it runs
+through this same script: ``run_decentralized_messageboard.py`` calls
+``main(topology="decentralized_messageboard")`` and nothing else differs --
+no waiting, no messages, no interrupts; the board is read and written inside
+the planning call. The board is saved as ``message_board.json``.
 """
 
 import sys
@@ -68,6 +74,7 @@ def run_individual_experiment(
     keep_viewer=False,
     team_config=None,
     team_size=None,
+    topology="individual",
 ):
     """
     Run experiment with individual LLM agents (no communication).
@@ -85,9 +92,13 @@ def run_individual_experiment(
         seed: Environment random seed.
         record_video: If True, record and save an episode GIF.
         output_root: Optional directory where this run directory should be created.
+        topology: "individual" or "decentralized_messageboard" -- the two modes
+            in which teams never address each other; see the module docstring.
     """
+    if topology not in ("individual", "decentralized_messageboard"):
+        raise ValueError(f"this runner is for the non-messaging modes, not {topology!r}")
     print("="*80)
-    print("INDIVIDUAL TOPOLOGY WITH LLM AGENTS")
+    print(f"{topology.upper()} TOPOLOGY WITH LLM AGENTS")
     print("="*80)
     
     # Create output directory
@@ -100,7 +111,7 @@ def run_individual_experiment(
     )
     output_dir = os.path.join(
         results_root,
-        f'individual_agents{n_agents}_{repair_label}_seed{seed}_{timestamp}',
+        f'{topology}_agents{n_agents}_{repair_label}_seed{seed}_{timestamp}',
     )
     os.makedirs(output_dir, exist_ok=True)
     print(f"\nResults will be saved to: {output_dir}\n")
@@ -178,8 +189,11 @@ def run_individual_experiment(
         base_env.set_team_score_time_limit(time_limit_seconds)
     
     # Create individual LLM agents
-    print(f"\nCreating individual topology with {n_agents} agents...")
-    print(f"  All agents operate independently (no communication)")
+    print(f"\nCreating {topology} topology with {n_agents} agents...")
+    if topology == "decentralized_messageboard":
+        print("  Teams plan independently; each reads and posts to one shared message board")
+    else:
+        print(f"  All agents operate independently (no communication)")
     if coop2_precheck_enabled:
         print("  COOP2 repair: enabled")
     if time_limit_seconds:
@@ -190,7 +204,7 @@ def run_individual_experiment(
     agents = create_llm_team_topology(
         llm_client=llm_client,
         teams={name: list(members) for name, members in team_layout.teams.items()},
-        topology="individual",
+        topology=topology,
         temperature=0.7,
         verbose=verbose,
         goal_instruction=goal_instruction,
@@ -202,7 +216,7 @@ def run_individual_experiment(
         agent_names=agent_names,
         agents=agents,
         log_file=os.path.join(output_dir, "plan_logs.json"),
-        interrupt_on_message=False,  # No messages in individual topology
+        interrupt_on_message=False,  # No messages in either mode (notify is reserved)
         coop2_precheck_enabled=coop2_precheck_enabled,
     )
     
@@ -295,7 +309,7 @@ def run_individual_experiment(
     
     usage_summary = print_llm_usage_summary(
         agents,
-        role_getter=lambda _agent_id, _agent: "individual",
+        role_getter=lambda _agent_id, _agent: topology,
     )
     total_api_calls = usage_summary["total_api_calls"]
     total_tokens = usage_summary["total_tokens"]
@@ -308,6 +322,12 @@ def run_individual_experiment(
     # Before the figure: the team lanes are drawn from this file.
     save_team_timeline(agents, os.path.join(output_dir, "team_timeline.json"))
     plot_from_run_dir(output_dir)
+    # The board, if this run had one: every post in order, plus any reserved
+    # notify requests. The broker log has none of this -- a post is not a message.
+    boards = {id(a.brain.board): a.brain.board for a in agents.values() if hasattr(a.brain, "board")}
+    if boards:
+        with open(os.path.join(output_dir, "message_board.json"), "w") as f:
+            json.dump([b.to_records() for b in boards.values()][0], f, indent=2)
     
     comprehensive_timeline_path = os.path.join(output_dir, 'comprehensive_timeline.png')
     visualize_comprehensive_timeline(
@@ -324,7 +344,7 @@ def run_individual_experiment(
     llm_stats_path = os.path.join(output_dir, 'llm_usage.json')
     llm_stats = {
         'model': llm_client.model,
-        'topology': 'individual',
+        'topology': topology,
         'max_steps': max_steps,
         'time_limit_seconds': time_limit_seconds,
         'timed_out': timed_out,
@@ -361,10 +381,10 @@ def run_individual_experiment(
 # handler costs nothing and turns that into a stack trace.
 faulthandler.register(signal.SIGUSR1, all_threads=True, chain=False)
 
-if __name__ == "__main__":
+def build_parser(topology="individual"):
     import argparse
-    
-    parser = argparse.ArgumentParser(description="Run individual LLM experiment")
+
+    parser = argparse.ArgumentParser(description=f"Run {topology} LLM experiment")
     parser.add_argument("--agents", type=int, default=3, help="Number of agents")
     parser.add_argument("--steps", type=int, default=200, help="Maximum environment steps")
     parser.add_argument("--time-limit-seconds", type=float, default=120, help="Wall-clock time budget; use 0 to disable")
@@ -402,9 +422,12 @@ if __name__ == "__main__":
     parser.add_argument("--keep-viewer", action="store_true",
                         help="After the episode, keep the window open and keep printing "
                              "task-object positions until Ctrl+C. Implies --gui.")
+    return parser
 
-    args = parser.parse_args()
-    
+
+def main(argv=None, topology="individual"):
+    args = build_parser(topology).parse_args(argv)
+
     run_individual_experiment(
         n_agents=args.agents,
         max_steps=args.steps,
@@ -426,4 +449,9 @@ if __name__ == "__main__":
         keep_viewer=args.keep_viewer,
         team_config=args.team_config,
         team_size=args.team_size,
+        topology=topology,
     )
+
+
+if __name__ == "__main__":
+    main()

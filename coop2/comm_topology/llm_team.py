@@ -5,10 +5,10 @@ answers with one plan per robot, so the division of labour inside a team is made
 once, with all of it visible, instead of emerging from N agents that cannot see
 each other's intentions.
 
-This is not a fourth topology. It is the **unit** the three existing ones are
-expressed in: individual / broadcast_chain / centralized describe how teams talk
-to *each other*, while inside every team it is always one LLM driving four
-robots. Set the team size to 1 and each topology collapses to its old
+This is not a topology of its own. It is the **unit** the topologies are
+expressed in: individual / broadcast_chain / centralized /
+decentralized_messageboard describe how teams talk to *each other*, while
+inside every team it is always one LLM driving four robots. Set the team size to 1 and each topology collapses to its old
 one-LLM-per-robot behaviour, which is what makes this a generalisation rather
 than a replacement.
 
@@ -67,7 +67,11 @@ from typing import Any, Dict, List, Optional, Tuple
 from coop2.cognitive.agent import LLMClient
 from coop2.cognitive.agent.base_llm_agent import BaseLLMAgent
 from coop2.cognitive.agent.cognitive_agent import parse_plan_response
-from coop2.cognitive.agent.llm_client import InterruptDecision
+from coop2.cognitive.agent.llm_client import (
+    InterruptDecision,
+    LLMMessageboardNotifyPlanResponse,
+    LLMMessageboardPlanResponse,
+)
 from coop2.cognitive.agent.memory import AgentMemory
 from coop2.cognitive.agent.prompt_sections import (  # noqa: E402
     action_history_section,
@@ -82,12 +86,14 @@ from coop2.cognitive.agent.prompts import (
 from coop2.cognitive.action.action import SymbolicAction
 from coop2.cognitive.agent.agent import AgentState
 from coop2.cognitive.plan import SymbolicPlan
+from coop2.comm_topology.message_board import MessageBoard, render_board
 
 __all__ = [
     "ChainTeamBrain",
     "FollowerTeamBrain",
     "LLMTeamAgent",
     "LeaderTeamBrain",
+    "MessageboardTeamBrain",
     "TEAM_BRAIN_ROLES",
     "TeamBrain",
     "create_llm_team_topology",
@@ -312,6 +318,18 @@ class TeamBrain:
 
     def after_plan(self) -> None:
         """Communication that follows from the plan. Default: none."""
+
+    def _call_plan_model(self, prompt: List[Dict[str, str]]):
+        """The model call of a planning round: ``(response, usage)``.
+
+        Overridden by a brain that needs a wider response than the plans --
+        the message board's ``board_post`` rides in the same call.
+        """
+        return self.llm_client.generate_team_plan(messages=prompt, temperature=self.temperature)
+
+    def _on_plan_response(self, response: Any) -> None:
+        """Once per successful planning call, with the parsed response, before
+        the plans are handed out. Default: nothing."""
 
     def before_interrupt_decision(self, messages: List[Dict]) -> List[Dict]:
         """Runs once per interrupt round, before the model is asked.
@@ -757,9 +775,7 @@ class TeamBrain:
             print(f"  [{self.team_name}] Calling LLM for {len(members)} plans...")
 
         try:
-            response, usage = self.llm_client.generate_team_plan(
-                messages=prompt, temperature=self.temperature
-            )
+            response, usage = self._call_plan_model(prompt)
             anchor._record_llm_usage(
                 usage, f"Team Plan Generation [{self.team_name}]", prompt, response
             )
@@ -792,6 +808,10 @@ class TeamBrain:
                 print(f"  [{member.agent_id}] Plan: {plan.specification}")
         if self.verbose and getattr(response, "reasoning", ""):
             print(f"  [{self.team_name}] allocation: {response.reasoning}")
+        try:
+            self._on_plan_response(response)
+        except Exception as error:  # noqa: BLE001 - a bad post must not cost the plans
+            print(f"  [{self.team_name}] plan response hook failed: {error}")
         return plans
 
     # -- interrupts --------------------------------------------------------
@@ -1045,7 +1065,12 @@ class TeamBrain:
             robot_profiles=self._robot_profiles(members),
             lift_rules=self._lift_rules(members),
             reserved=getattr(self, "reserved_system_prompt", ""),
+            cooperation_extra=self._cooperation_extra(),
         )
+
+    def _cooperation_extra(self) -> str:
+        """Text appended to section 4 by a mode with an optional tool. Default: none."""
+        return ""
 
     @staticmethod
     def _world_observation(member: "LLMTeamAgent"):
@@ -1149,6 +1174,15 @@ class TeamBrain:
     def _render_message(self, message: Dict) -> str:
         return f"From {message.get('sender', 'unknown')}: {message.get('content', '')}"
 
+    def _current_messages_block(self, messages: List[Dict]) -> str:
+        """Section 7. Default: the messages that arrived, worded for the mode.
+        The board mode puts the shared board here, above any direct message."""
+        return current_messages_section(self.COOPERATION_MODE, messages, self._render_message)
+
+    def _plan_closing(self, members: List["LLMTeamAgent"]) -> str:
+        return (f"Return exactly {len(members)} plans, one per robot, using each "
+                "robot's own ids. Say in `reasoning` how you divided the work.")
+
     def _build_team_prompt(self, members: List["LLMTeamAgent"]) -> List[Dict[str, str]]:
         """Sections 6-9, then the closing instruction."""
         anchor = members[0]
@@ -1161,12 +1195,11 @@ class TeamBrain:
                 goal_instruction=self.goal_instruction,
                 reserved_task_observation=getattr(self, "reserved_task_observation", ""),
             ),
-            current_messages=current_messages_section(self.COOPERATION_MODE, new, self._render_message),
+            current_messages=self._current_messages_block(new),
             conversation_history=conversation_history_section(
                 self._messages_block("## 8. CONVERSATION HISTORY", exclude=new)),
             action_history=action_history_section([self._action_history_block(m) for m in members]),
-            closing=(f"Return exactly {len(members)} plans, one per robot, using each "
-                     "robot's own ids. Say in `reasoning` how you divided the work."),
+            closing=self._plan_closing(members),
         )
         return [
             {"role": "system", "content": self._system_prompt(anchor)},
@@ -1187,8 +1220,7 @@ class TeamBrain:
                 reserved_task_observation=getattr(self, "reserved_task_observation", ""),
                 preface="\nThe team was interrupted by a message.",
             ),
-            current_messages=current_messages_section(
-                self.COOPERATION_MODE, list(messages or []), self._render_message),
+            current_messages=self._current_messages_block(list(messages or [])),
             conversation_history=conversation_history_section(
                 self._messages_block("## 8. CONVERSATION HISTORY", exclude=messages)),
             action_history=action_history_section([self._action_history_block(m) for m in members]),
@@ -1202,6 +1234,105 @@ class TeamBrain:
             {"role": "user", "content": user},
         ]
 
+
+
+class MessageboardTeamBrain(TeamBrain):
+    """Individual planning around one shared board -- `decentralized_messageboard`.
+
+    Nothing here waits, sends or interrupts: ``wait_for`` and ``send_to`` stay
+    empty and the plain TeamBrain barrier is the only synchronisation. The
+    difference from `individual` is the board (``coop2.comm_topology.
+    message_board``), one instance shared by every brain in the run: it is
+    rendered as section 7 of every planning prompt, and the plan response is
+    ``LLMMessageboardPlanResponse``, whose ``board_post`` is appended to the
+    board the moment the plans are parsed -- so the post is written by the same
+    reasoning that produced the plans, and a team that plans a moment later
+    reads it.
+
+    **The notify tool is reserved, not built.** The seam is in three places
+    and one flag turns all three: ``NOTIFY_TOOL_ENABLED``. When set, the
+    response schema gains ``notify`` (which teams to interrupt, with what),
+    section 4 gains the rule for using it (``MESSAGEBOARD_NOTIFY_RULES``), and
+    ``_on_plan_response`` hands the request to ``board.notify`` -- which
+    records it and delivers it only through a ``board.deliverer``, of which
+    there is none. Delivering would mean sending through the broker with
+    ``interrupts_execution`` to the named teams' members (``_say`` does this
+    for a fixed ``send_to``; notify would choose its recipients per call) and
+    letting those teams' interrupt rounds answer resume/replan as they do for
+    a chain message. That, and the interrupt prompt's section 7 heading for
+    this mode, is what is left to build.
+    """
+
+    COOPERATION_MODE = "decentralized_messageboard"
+    #: Reserved. False: the model is never offered `notify`, and no post can
+    #: interrupt anyone.
+    NOTIFY_TOOL_ENABLED = False
+
+    def __init__(self, *args, board: Optional[MessageBoard] = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        #: Shared with every other brain in the run by the factory; a brain
+        #: built alone gets a board of its own so it still works.
+        self.board = board if board is not None else MessageBoard()
+        #: The board's sequence number when this team last built a planning
+        #: prompt: posts after it are (new) next time.
+        self._board_seen = 0
+
+    # -- the board in the prompt --------------------------------------------
+
+    def _board_block(self) -> str:
+        return render_board(self.board.posts(), reader=self.team_name, new_after=self._board_seen)
+
+    def _current_messages_block(self, messages: List[Dict]) -> str:
+        """Section 7: the board, then any direct message (reserved: notify)."""
+        direct = current_messages_section(self.COOPERATION_MODE, messages, self._render_message)
+        return "\n\n".join(part for part in (self._board_block(), direct) if part)
+
+    def _build_team_prompt(self, members: List["LLMTeamAgent"]) -> List[Dict[str, str]]:
+        built = super()._build_team_prompt(members)
+        # Marked after rendering: what this prompt showed as (new) is old the
+        # next time round.
+        self._board_seen = self.board.last_seq
+        return built
+
+    def _plan_closing(self, members: List["LLMTeamAgent"]) -> str:
+        return (f"Return exactly {len(members)} plans, one per robot, using each "
+                "robot's own ids. Say in `reasoning` how you divided the work, and in "
+                "`board_post` tell the other teams -- in one or two sentences, in the "
+                "task's ids -- which robot of yours takes which cargo or leg this round "
+                "and what you leave to them.")
+
+    def _cooperation_extra(self) -> str:
+        from coop2.cognitive.agent.prompt_sections import MESSAGEBOARD_NOTIFY_RULES  # noqa: PLC0415
+
+        return MESSAGEBOARD_NOTIFY_RULES if self.NOTIFY_TOOL_ENABLED else ""
+
+    # -- the response --------------------------------------------------------
+
+    @property
+    def plan_response_format(self):
+        return LLMMessageboardNotifyPlanResponse if self.NOTIFY_TOOL_ENABLED else LLMMessageboardPlanResponse
+
+    def _call_plan_model(self, prompt: List[Dict[str, str]]):
+        return self.llm_client.generate(
+            prompt, response_format=self.plan_response_format, temperature=self.temperature
+        )
+
+    def _on_plan_response(self, response: Any) -> None:
+        """Post the round's `board_post`; record a `notify` if the tool is on."""
+        post = getattr(response, "board_post", "")
+        entry = self.board.post(self.team_name, post, env_step=self._env_step(), round=self.rounds + 1)
+        if entry is not None and self.verbose:
+            print(f"  [{self.team_name}] board: {entry.content[:80]}")
+        elif entry is None and self.verbose:
+            print(f"  [{self.team_name}] board: (no post this round)")
+        request = getattr(response, "notify", None) if self.NOTIFY_TOOL_ENABLED else None
+        if request is not None and getattr(request, "teams", None):
+            record = self.board.notify(
+                self.team_name, list(request.teams), request.content, env_step=self._env_step()
+            )
+            if self.verbose:
+                print(f"  [{self.team_name}] notify -> {record.targets} "
+                      f"({'delivered to ' + str(record.delivered) if record.delivered else 'recorded only'})")
 
 
 class ChainTeamBrain(TeamBrain):
@@ -1627,6 +1758,7 @@ TEAM_BRAIN_ROLES = {
     "individual": "no team talks to any other",
     "broadcast_chain": "teams speak in order, each broadcasting to the later ones",
     "centralized": "the first team leads; the rest report to it",
+    "decentralized_messageboard": "no team talks to any other, but every team reads and writes one shared board",
 }
 
 
@@ -1791,11 +1923,18 @@ def create_llm_team_topology(
 
     names = list(teams)
     brains: Dict[str, TeamBrain] = {}
+    # One board for the whole run: the mode is the sharing, so it is built
+    # here, where every brain is, and not by any one of them.
+    board = MessageBoard() if topology == "decentralized_messageboard" else None
     for index, team_name in enumerate(names):
+        extra: Dict[str, Any] = {}
         if topology == "broadcast_chain":
             factory = ChainTeamBrain
         elif topology == "centralized":
             factory = LeaderTeamBrain if index == 0 else FollowerTeamBrain
+        elif topology == "decentralized_messageboard":
+            factory = MessageboardTeamBrain
+            extra["board"] = board
         else:
             factory = TeamBrain
         brains[team_name] = factory(
@@ -1805,6 +1944,7 @@ def create_llm_team_topology(
             temperature=temperature,
             verbose=verbose,
             goal_instruction=goal_instruction,
+            **extra,
         )
 
     agents: Dict[str, LLMTeamAgent] = {}

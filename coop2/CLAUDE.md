@@ -1848,6 +1848,53 @@ clock before it is sent (`_say`), so sent and received interleave as they
 happened. Absolute wall time would not have worked: the broker stamps every
 message relative to the agents' start.
 
+## A fourth mode: decentralized_messageboard (2026-09-13)
+
+Individual planning around one shared board (user). Nothing waits, nothing
+is sent, nothing interrupts: `MessageboardTeamBrain` (`llm_team.py`) keeps
+`wait_for`/`send_to` empty and the plain team barrier. What it adds is one
+`MessageBoard` (`coop2/comm_topology/message_board.py`) per run, handed to
+every brain by `create_llm_team_topology`. Each time a team plans, the board
+is section 7 of its prompt -- every post, oldest first, its own labelled
+`You (team_k)`, the others' posts since it last planned marked `(new)`, an
+empty board shown as empty so the model knows it exists -- and the planning
+call asks for `LLMMessageboardPlanResponse`, which is the team plan plus one
+`board_post`. The post is appended the moment the plans parse
+(`_on_plan_response`), so it is written by the same reasoning as the plans
+and the next team to reach its barrier reads it. Section 4 says all of this
+in the model's terms (`COOPERATION_RULES["decentralized_messageboard"]`). A
+post is not a message: it reaches no inbox, the broker never sees it, and a
+team already executing learns of it only when it next plans. The board is
+saved as `message_board.json` in the run directory.
+
+Three seams were added to `TeamBrain` for it, all with do-nothing defaults:
+`_call_plan_model` (which response schema the planning call uses),
+`_on_plan_response` (what to do with the parsed response before the plans
+go out), `_current_messages_block` / `_plan_closing` / `_cooperation_extra`
+(section 7, the closing line, and text appended to section 4).
+
+**The notify tool is reserved, not built.** The user wants a team to be able
+to choose which other teams to interrupt. Its whole seam is behind
+`MessageboardTeamBrain.NOTIFY_TOOL_ENABLED` (False): when set, the schema
+becomes `LLMMessageboardNotifyPlanResponse` (adds `notify: NotifyRequest` --
+teams, content, reasoning), section 4 gains `MESSAGEBOARD_NOTIFY_RULES`, and
+`_on_plan_response` hands the request to `MessageBoard.notify`, which
+records it (`to_records()["notifies"]`) and delivers it only through an
+installed `MessageBoard.deliverer`, of which there is none. What building
+it means: a deliverer that sends through the broker with
+`interrupts_execution` to the named teams' members (what `_say` does for a
+fixed `send_to`, but choosing recipients per call), `interrupt_on_message`
+turned on in the runner, and those teams' interrupt rounds answering
+resume/replan as they do for a chain message; the mode already has its
+section 7 heading for such a message ("a team interrupted you with notify").
+
+Runner: `run_decentralized_messageboard.py` is `run_individual.main(
+topology="decentralized_messageboard")` -- `run_individual` took a
+`topology` parameter and grew `build_parser`/`main`; the run folder is
+`decentralized_messageboard_agents<N>_...`; `run_grid` and
+`build_results_table` know the name. `test_messageboard_stubbed.py` pins
+the mode (nine tests). No GPU episode has been run in this mode yet.
+
 ## Open defects
 
 Fixed ones are not listed here -- the fix and its reasoning live in the commit
@@ -1944,8 +1991,9 @@ python -u -m coop2.experiment.run_individual --agents 2 --steps 4000 --seed 0 \
   --bddl-activity coop_two_apples_pomaria \
   --goal "Put both apples on coffee_table.n.01_1." \
   --model gpt-5.6-luna --llm-quiet
-# run_centralized / run_broadcast_chain take the same flags.
-# Output lands in coop2/runs/<topology>_agents<N>_..._<timestamp>/.
+# run_centralized / run_broadcast_chain / run_decentralized_messageboard take
+# the same flags. Output lands in coop2/runs/<topology>_agents<N>_..._<timestamp>/;
+# the board mode also writes message_board.json there.
 
 # Twelve robots as three teams of four on the nine-apple hall -- the 2026-09-11
 # sweep, about 17 minutes a topology. --time-limit-seconds 0 is required or the

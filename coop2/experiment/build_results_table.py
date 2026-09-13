@@ -27,11 +27,11 @@ from coop2.cognitive.coop2_attempt_events import (
 
 
 RESULT_RE = re.compile(
-    r"^(?P<topology>individual|centralized|broadcast_chain)_agents(?P<agents>\d+)_"
+    r"^(?P<topology>individual|centralized|broadcast_chain|decentralized_messageboard)_agents(?P<agents>\d+)_"
     r"repair_(?P<repair>on|off)_seed(?P<seed>\d+)_"
 )
 
-TOPOLOGY_ORDER = ["individual", "centralized", "broadcast_chain"]
+TOPOLOGY_ORDER = ["individual", "centralized", "broadcast_chain", "decentralized_messageboard"]
 LLAMA_SCOUT_MODEL = "Llama-4-Scout-17B-16E-Instruct"
 MODEL_ORDER = ["gpt-5.4-mini", LLAMA_SCOUT_MODEL, "gpt-5.4"]
 MODEL_LABELS = {
@@ -41,6 +41,7 @@ TOPOLOGY_LABELS = {
     "individual": "Individual",
     "centralized": "Centralized",
     "broadcast_chain": "Broadcast Chain",
+    "decentralized_messageboard": "Message Board",
 }
 DEFAULT_AGENTS = [3]
 TABLE_METRICS = [
