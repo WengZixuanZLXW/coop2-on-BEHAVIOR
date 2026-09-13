@@ -26,7 +26,7 @@ from datetime import datetime
 from typing import Dict
 
 # Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from coop2.behavior_env.coop_env import CooperativeEnv
 from coop2.cognitive import (

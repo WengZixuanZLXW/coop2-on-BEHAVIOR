@@ -11,7 +11,7 @@ as message_board.json in the run directory.
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from coop2.experiment.run_individual import main  # noqa: E402
 
