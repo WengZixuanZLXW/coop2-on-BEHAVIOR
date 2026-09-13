@@ -1022,16 +1022,45 @@ class TeamBrain:
         )
         return base + "\n\n" + TEAM_ROLE.format(n=self.size).strip()
 
+    TASK_HEADER = "\nYOUR TASK, in the ids it is written in:"
+
+    @classmethod
+    def _split_task(cls, view: str) -> Tuple[str, str]:
+        """``(view without its YOUR TASK block, that block)``.
+
+        The per-robot view carries the task because a single-robot prompt has
+        nowhere else to put it. In a team prompt that put the same ten-node
+        route under every one of nine robots (user, 2026-09-13: "repeated").
+        The block runs from its header to the next blank-line section
+        (``Goal:``) or the end.
+        """
+        if not view or cls.TASK_HEADER not in view:
+            return view, ""
+        head, rest = view.split(cls.TASK_HEADER, 1)
+        cut = rest.find("\n\nGoal:")
+        task, tail = (rest, "") if cut < 0 else (rest[:cut], rest[cut:])
+        return head.rstrip("\n") + tail, cls.TASK_HEADER.strip("\n") + task.rstrip("\n")
+
+    def _team_task_block(self, members: List["LLMTeamAgent"]) -> str:
+        """The task once, for the whole team: the first member's, since every
+        robot of one activity is told the same thing."""
+        for member in members:
+            _, task = self._split_task(member.symbolic_view or "")
+            if task:
+                return "\n" + task.replace("YOUR TASK", "THE TEAM'S TASK (the same for every robot)", 1)
+        return ""
+
     def _member_block(self, member: "LLMTeamAgent") -> str:
         """One robot's section of the team prompt.
 
-        The per-agent observation is reused verbatim rather than re-rendered:
-        it is the same text a single-agent topology would send, so a team prompt
-        differs from N individual prompts only by being concatenated.
+        The per-agent observation is reused rather than re-rendered -- it is
+        the same text a single-agent topology would send -- minus its YOUR
+        TASK block, which the team prompt states once (`_team_task_block`).
         """
         lines = [f"=== ROBOT {member.agent_id} ==="]
         if member.symbolic_view:
-            lines.append(member.symbolic_view)
+            view, _ = self._split_task(member.symbolic_view)
+            lines.append(view)
         elif member.target_hints:
             lines.append(member.target_hints)
         else:
@@ -1054,6 +1083,9 @@ class TeamBrain:
             parts.append(f"\nGLOBAL OBJECTIVE: {self.goal_instruction}")
         parts.append(f"\nTEAM {self.team_name} ({len(members)} robots): "
                      f"{', '.join(m.agent_id for m in members)}")
+        task = self._team_task_block(members)
+        if task:
+            parts.append(task)
         for member in members:
             parts.append("\n" + self._member_block(member))
         messages = self._messages_block()
@@ -1084,6 +1116,9 @@ class TeamBrain:
         for message in messages or []:
             sender = message.get("sender", "unknown")
             parts.append(f"  From {sender}: {message.get('content', '')}")
+        task = self._team_task_block(members)
+        if task:
+            parts.append(task)
         for member in members:
             parts.append("\n" + self._member_block(member))
         parts.append(

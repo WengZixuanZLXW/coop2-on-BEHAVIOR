@@ -1135,6 +1135,25 @@ def main() -> int:
     )
     ok("an upstream team with no open round is not waited for")
 
+    print("test: the task is stated once for the team, not once per robot")
+    t_client, t_agents, t_ids = make_team(3, name="routed")
+    view = ("Step 0/100 | you are {a} in kitchen_0\nHolding: nothing\n\nkitchen_0:\n  - die.n.01_1  -> grasp\n"
+            "\nYOUR TASK, in the ids it is written in:\n  Route R, carry die.n.01_1 through these in order:\n"
+            "  NEXT  C1  ontop(die.n.01_1, cabinet.n.01_1)   [childs_room]\n"
+            "A support reached out of order does not count.")
+    for name in t_ids:
+        t_agents[name].symbolic_view = view.format(a=name)
+    for name in t_ids:
+        t_agents[name].handle_reasoning()
+    prompt = t_client.last_prompt
+    assert prompt.count("YOUR TASK") == 0, prompt
+    assert prompt.count("THE TEAM'S TASK") == 1, prompt.count("THE TEAM'S TASK")
+    assert prompt.count("carry die.n.01_1 through these in order") == 1
+    assert prompt.index("THE TEAM'S TASK") < prompt.index("=== ROBOT "), "the task comes before the robots"
+    for name in t_ids:
+        assert f"you are {name} in kitchen_0" in prompt and "die.n.01_1  -> grasp" in prompt
+    ok("one task block above three robot sections, each section still carrying its own listing")
+
     print("\nALL TESTS PASSED")
     return 0
 
