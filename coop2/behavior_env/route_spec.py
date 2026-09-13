@@ -220,7 +220,8 @@ def _parse_node(raw: Any, where: str, declared: Dict[str, str], rooms: Dict[str,
             # may not have, and nothing raises when a goal names one.
             raise _fail(f"{where} ({node_id})",
                         f"{instance} is not declared in the BDDL :objects; every id a "
-                        f"node names must be, or the instance cannot bind it")
+                        f"node names must be, or the instance cannot bind it -- add it "
+                        f"to :objects with an inroom line in :init")
     if goal[1] != cargo:
         # COOHAVIOR binds a box to its route by a name regex; ours is the
         # `cargo` field, and a node about a different object is a load error.
@@ -270,10 +271,12 @@ def _parse_route(raw: Any, index: int, declared: Dict[str, str], rooms: Dict[str
                             f"{list(earlier.goal)} -- the second will be satisfied the "
                             f"instant the first is")
 
-    # The last node is the destination, and it must be what the BDDL :goal
-    # says for this cargo. Refused, not warned: this mismatch is exactly the
-    # LL disagreement in COOHAVIOR's own files, and whichever one is wrong, a
-    # run against both would end on one and be scored on the other.
+    # The last node is the destination, and the BDDL :goal must say the same
+    # for this cargo. Refused, not warned: this mismatch is exactly the LL
+    # disagreement in COOHAVIOR's own files, and a run against both would end
+    # on one and be scored on the other. The route is the authority (user,
+    # 2026-09-12): when they disagree the BDDL is what gets corrected, so the
+    # message says so.
     destination = nodes[-1]
     stated = [t for t in goal_triples if t[1] == cargo]
     if not stated:
@@ -282,7 +285,8 @@ def _parse_route(raw: Any, index: int, declared: Dict[str, str], rooms: Dict[str
     if destination.goal not in stated:
         raise _fail(where, f"destination {destination.id} is {list(destination.goal)} but the "
                            f"BDDL :goal for {cargo} is {[list(t) for t in stated]}; the two "
-                           f"files disagree on where the route ends")
+                           f"files disagree on where the route ends -- the route is the task, "
+                           f"so correct the BDDL :goal to match it")
     return Route(id=route_id, cargo=cargo, nodes=tuple(nodes))
 
 

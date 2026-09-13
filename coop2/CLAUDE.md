@@ -44,10 +44,10 @@ teams of three, run all three topologies without stalling.
 **In progress: route supervision.** A COOHAVIOR task is an *ordered* sequence
 of `ontop` sub-goals on one box, and BDDL can only state the last one -- which
 is why `v4_s1_v4_hl` ends at env_step 0. `coop2/ROUTE_SUPERVISION_PLAN.md` is
-the design; its step 1 is done (the `route.json` sidecar, its loader, and LL's
-route -- see "The route file" below). Steps 2-7 -- the `RouteTracker` that
-decides `terminated`, the prompt rendering, the lift gate, HL -- are not
-started. Read the plan before touching termination or the `YOUR TASK` block.
+the design; steps 1 and 2 are done (the `route.json` sidecar, its loader, LL's
+route, and the `RouteTracker` -- see "The route file" below). Steps 3-7 -- the
+wiring that lets the tracker decide `terminated`, the prompt rendering, the
+lift gate, HL -- are not started. Read the plan before touching termination or the `YOUR TASK` block.
 
 **Two lines of work are open**, and neither is a milestone from
 PORTING_PLAN.md section 7:

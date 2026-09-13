@@ -402,9 +402,15 @@ things to read (see the memory note on ignoring constraint metrics).
    `evaluate_bddl_predicate` returns False for None -- so `check_goal` can
    never fire and the run reads as agent failure. Re-sample is part of this
    step, not optional.
-2. `RouteTracker` (5.2) with a stubbed-world CPU test: serial completion,
-   out-of-order then recovery, two parallel routes, credit attribution,
-   `complete()`.
+2. **Done 2026-09-12.** `coop2/behavior_env/route_tracker.py`, driven through
+   the real loader by `test_route_tracker_stubbed.py` (11 checks: in-order
+   completion, out-of-order recorded and uncredited then recovery, a scored
+   node never re-evaluated, two parallel routes, credit only when exactly one
+   terminated agent let go, a bare world with no inventories, the evaluation
+   budget, serialisation). Decisions taken by the user the same day: out of
+   order does not count and is not punished; `Y_task` counts nodes; the prompt
+   shows the whole route; when route and BDDL disagree the route is the task
+   and the BDDL is corrected (the loader's messages say so).
 3. Wiring (5.3) and the post-episode saver, with the post-episode CPU test
    extended. Then `inspect_scene --view agent_0` on LL: the route block
    renders, every support resolves to an entity in the scene, the goal is
