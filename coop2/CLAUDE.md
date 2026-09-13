@@ -1795,13 +1795,17 @@ S2/S3 yet.
 ## The task in one sentence, and no rooms in the state (2026-09-13)
 
 Each activity now has a `description.txt` beside its `problem0.bddl`
-(`coop2/behavior_env/task_description.py` loads it): one sentence saying
-what is carried from where to where -- "Carry the die (8 g; an arm or a drone
-can lift it) from the child's-room floor to the bed in the child's room,
-visiting the route's supports in order on the way: kitchen, dining room,
-living room, bedroom, then back." It opens THE TEAM'S TASK; the route block
-follows in ids, and the state lines carry no room any more (user: the task
-state should not show where each node is). `render_goal_terms` likewise
+(`coop2/behavior_env/task_description.py` loads it): one sentence per
+carried object, by id, listing in order the supports it goes onto and the
+room each is in -- "Move die.n.01_1, in this order, onto: the cabinet in the
+child's room, the bookcase in the kitchen, the refrigerator in the kitchen,
+..., the bed in the child's room." No weight, no word "route" (user,
+2026-09-13); a repeated kind in one room gets its id in parentheses. For the
+twelve V4 tasks `feasibility_verify/make_task_descriptions.py` writes them
+from route.json + the BDDL's inroom; the two apple tasks are hand-written.
+It opens THE TEAM'S TASK; the route block follows in ids, and the state
+lines carry no room any more (user: the task state should not show where
+each node is). `render_goal_terms` likewise
 dropped its `[x is in the bedroom]` notes. Fourteen descriptions, one line
 each, checked by `test_goal_terms_stubbed` 5b; `test_route_tracker` 12 checks
 the block opens with the description and has no bracket on any line.

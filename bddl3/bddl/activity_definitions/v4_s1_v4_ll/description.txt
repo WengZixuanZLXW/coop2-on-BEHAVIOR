@@ -1,1 +1,1 @@
-Carry the die (8 g; an arm or a drone can lift it) from the child's-room floor to the bed in the child's room, visiting the route's supports in order on the way: kitchen, dining room, living room, bedroom, then back.
+Move die.n.01_1, in this order, onto: the cabinet in the child's room, the bookcase in the kitchen, the refrigerator in the kitchen, the armchair in the dining room, the breakfast table in the dining room, the coffee table in the living room, the cabinet in the living room, the cabinet in the bedroom, the bed in the bedroom, the bed in the child's room.

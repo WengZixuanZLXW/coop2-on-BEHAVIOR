@@ -1,1 +1,1 @@
-Carry the die (8 g; an arm or a drone can lift it) from the dining-room floor to a dining chair, visiting the route's supports in order on the way: living room, private office, kitchen, bathroom, then back.
+Move die.n.01_1, in this order, onto: the coffee table in the dining room, the footstool in the living room, the breakfast table in the living room, the desk in the private office (desk.n.01_1), the desk in the private office (desk.n.01_2), the bookcase in the kitchen, the countertop in the kitchen, the sink in the bathroom, the chair in the dining room.
