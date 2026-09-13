@@ -144,17 +144,20 @@ def main() -> int:
     assert ("place_on_top", "floor.n.01_1") in e
     print("  ok: grasp -> load_onto -> drive -> unload_from -> place_on_top")
 
-    print("\ntest 8b: the lift table withholds grasp from a role that may not lift")
+    print("\ntest 8b: the lift table withholds grasp from a role that may not lift, silently")
     # LH/HH: only an arm may take the 20 g notebook; the 8 g die may go by
-    # drone too. A robot the table forbids is told so, on the object's line,
-    # rather than discovering CANNOT_LIFT after a whole plan.
+    # drone too. The verb is withheld and nothing is written on the line
+    # (user, 2026-09-13): the rule is in the system prompt, keyed on the
+    # robot's own "(drone)" header and the [drone] tag on teammates.
     def with_lift(agent, role):
         die = EntityObservation("die.n.01_1", "dice_1", "dice", [ROOM], position=(0.3, 0, 0.5))
         note = EntityObservation("notebook.n.01_1", "notebook_1", "notebook", [ROOM], position=(0.4, 0, 0.5))
         robot = EntityObservation(agent, agent, "agent", [ROOM], position=(0, 0, 0),
                                   is_robot=True, lift_role=role,
                                   is_carrier=(role == "carrier"))
-        ents = [robot, die, note]
+        mate = EntityObservation("agent_9", "agent_9", "agent", [ROOM], position=(0.5, 0.5, 0),
+                                 is_robot=True, lift_role="drone")
+        ents = [robot, die, note, mate]
         obs = SymbolicObservation(agent_id=agent, step=1, max_steps=100, room=ROOM,
                                   entities={e.entity_id: e for e in ents}, facts=[],
                                   task_entity_ids={e.entity_id for e in ents})
@@ -163,29 +166,28 @@ def main() -> int:
     drone = verbs(with_lift("agent_2", "drone"))
     assert ("grasp", "die.n.01_1") in drone, sorted(drone)
     assert ("grasp", "notebook.n.01_1") not in drone, sorted(drone)
-    assert ("blocked", "notebook.n.01_1") in drone
-    note_line = next(h.note for h in sv.target_hints(with_lift("agent_2", "drone"), interaction_radius=1.5)
-                     if h.target_id == "notebook.n.01_1" and h.primitive == "blocked")
-    assert "too heavy" in note_line, note_line
+    assert ("blocked", "notebook.n.01_1") not in drone, "no mark on the line"
+    rendered = sv.render_symbolic_view(with_lift("agent_2", "drone"), interaction_radius=1.5)
+    assert "too heavy" not in rendered and "blocked" not in rendered, rendered
+    assert "you are agent_2 (drone)" in rendered.splitlines()[0], rendered.splitlines()[0]
+    assert any("agent_9" in l and "[drone]" in l for l in rendered.splitlines()), rendered
+    note_line = next(l for l in rendered.splitlines() if "notebook.n.01_1" in l and "->" in l)
+    assert "grasp" not in note_line and "navigate_to" in note_line, note_line
     arm = verbs(with_lift("agent_0", "arm"))
     assert ("grasp", "die.n.01_1") in arm and ("grasp", "notebook.n.01_1") in arm
+    arm_view = sv.render_symbolic_view(with_lift("agent_0", "arm"), interaction_radius=1.5)
+    assert "(drone)" not in arm_view.splitlines()[0]
     carrier = verbs(with_lift("agent_1", "carrier"))
     assert not [v for v in carrier if v[0] == "grasp"], "a carrier lifts nothing, table or no table"
-    # Weight before reach: from 3 m the drone is still told "too heavy", and
-    # not "unreachable" -- flying closer would not help. The rendered line
-    # carries that note, not the distance.
+    # Out of reach the line reads as any other far object: distance first,
+    # nothing about weight.
     far = with_lift("agent_2", "drone")
     far.entities["notebook.n.01_1"].position = (3.0, 0, 0.5)
-    far_v = verbs(far)
-    assert ("blocked", "notebook.n.01_1") in far_v and ("unreachable", "notebook.n.01_1") not in far_v, sorted(far_v)
-    assert ("unreachable", "die.n.01_1") not in far_v  # the die is still at 0.3 m
-    rendered = sv.render_symbolic_view(far, interaction_radius=1.5)
-    line = next(l for l in rendered.splitlines() if "notebook.n.01_1" in l and "->" in l)
-    assert "too heavy for you" in line and "m away" not in line, line
+    assert ("unreachable", "notebook.n.01_1") in verbs(far)
     # No table: no opinion, everyone with a hand may lift anything.
     free = with_lift("agent_2", "drone"); free.lift_rules = {}
     assert ("grasp", "notebook.n.01_1") in verbs(free)
-    print("  ok: drone gets the die and is told the notebook is too heavy; arm gets both")
+    print("  ok: drone gets grasp(die) only, no mark; header says (drone); arm gets both")
 
     print("\ntest 8c: unloading is a lift too, and is withheld the same way")
     riding = scene("agent_2", box_held_by="agent_1", jackal_carrying=BOX)
@@ -194,7 +196,7 @@ def main() -> int:
     riding.lift_rules = {"packing_box.n.02": ("arm",)}
     got = verbs(riding)
     assert ("unload_from", "agent_1") not in got, sorted(got)
-    assert ("blocked", "agent_1") in got, sorted(got)
+    assert ("blocked", "agent_1") not in got, sorted(got)
     riding.lift_rules = {"packing_box.n.02": ("arm", "drone")}
     assert ("unload_from", "agent_1") in verbs(riding)
     print("  ok: a drone may not unload what it may not lift")

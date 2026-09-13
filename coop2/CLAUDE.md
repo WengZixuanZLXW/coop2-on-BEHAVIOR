@@ -1504,30 +1504,26 @@ the route file's `lift` table is where it lives (`"notebook.n.01": ["arm"]`,
   controller. The engine's `_require_may_lift` refuses `grasp` and
   `unload_from` -- unloading puts cargo in the hand, so it is a lift -- with
   reason code `CANNOT_LIFT`, which terminates the plan like `TOO_FAR`. The
-  view's `_may_lift` mirrors it exactly and turns the verb into
-  `blocked [too heavy for you]` on the object's line, the way base-lock is
-  shown rather than left to be inferred from a missing verb. Both system
-  prompts say what the mark means.
+  view's `_may_lift` mirrors it exactly and withholds the verb.
+* **The rule is in the system prompt, not on the line.** The first version
+  wrote `blocked, navigate_to [too heavy for you]` on the notebook's line;
+  the user turned that down (2026-09-13): just say in the system prompt that
+  the drone cannot lift the notebook. So both prompts now carry that one
+  sentence -- die yes, notebook no, `CANNOT_LIFT`, only an arm can -- and the
+  listing gives the robot the fact the sentence is keyed on: `(drone)` in
+  its own header, `[drone]` on a teammate's line. Out of reach the notebook
+  reads like any far object, `unreachable, navigate_to [1.2 m away]`.
 * **No table, no opinion.** A synset the table does not name, or a run with
   no route file, is unchanged: anyone with a hand may lift anything. The
   apple tasks are untouched.
 
-CPU: `test_carrier_view_stubbed` 8b (drone gets the die and is told the
-notebook is too heavy; arm gets both; a carrier gets no grasp regardless) and
+CPU: `test_carrier_view_stubbed` 8b (drone gets `grasp(die)` only, no mark,
+header says `(drone)`; arm gets both; a carrier gets no grasp regardless) and
 8c (unload withheld the same way); `test_team_config_stubbed` parses and
-refuses a non-bool `drone`. GPU: `inspect_scene --view agent_2` on LH printed
-`[route] lift rules: notebook.n.01 -> arm` and, in the drone's listing,
-
-```
-  - notebook.n.01_1  -> blocked, navigate_to  [too heavy for you]
-```
-
-while agent_0's read `-> grasp, navigate_to`. The first GPU pass showed the
-gap CPU tests had not: the drone stood 1.2 m away, the reach check ran first,
-and it was told `unreachable [1.2 m away]` -- it would have flown over to
-learn the truth. Weight is now judged before reach (too heavy is too heavy at
-any distance, so `unreachable` is not added), and a `blocked` hint's note wins
-the bracket over `navigate_to`'s distance. Unreachable lines are unchanged.
+refuses a non-bool `drone`. GPU: `inspect_scene --view agent_2` on LH prints
+`[route] lift rules: notebook.n.01 -> arm`, the header reads
+`you are agent_2 (drone) in childs_room_0`, and the notebook's line carries
+no `grasp` while agent_0's reads `-> grasp, navigate_to`.
 
 ## Open defects
 

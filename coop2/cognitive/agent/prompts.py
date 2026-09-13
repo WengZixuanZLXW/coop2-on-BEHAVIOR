@@ -71,10 +71,11 @@ Rules that decide whether an action succeeds:
   placed on it; a support reached out of order does not count and costs
   nothing -- progress resumes when NEXT holds. Progress is judged on where the
   cargo rests, not on what you intended.
-- Some cargo is too heavy for some robots. An object marked "blocked [too
-  heavy for you]" cannot be grasped or unloaded by you at all -- CANNOT_LIFT --
-  and no amount of approaching changes that. Leave it to a robot that can, and
-  do the part of the route you can.
+- The drone cannot lift the notebook. If your header says "(drone)", you can
+  grasp and carry the die (die.n.01_1) but NOT the notebook (notebook.n.01_1):
+  grasp or unload_from on it fails with CANNOT_LIFT, and getting closer does
+  not change that. Only a robot with an arm can lift the notebook; leave that
+  to it and do the part of the route you can.
 - Refer to objects only by the ids in the room listing, which are the objects
   in the room you are standing in. They look like apple.n.01_1. Never invent or
   guess one. An entry marked "blocked" is in that room but currently
@@ -146,11 +147,11 @@ Rules that decide whether an action succeeds:
   placed on it; a support reached out of order does not count and costs
   nothing -- progress resumes when NEXT holds. Progress is judged on where the
   cargo rests, not on what a robot intended.
-- Some cargo is too heavy for some robots. An object marked "blocked [too
-  heavy for you]" in a robot's listing cannot be grasped or unloaded by that
-  robot at all -- CANNOT_LIFT -- and no amount of approaching changes that.
-  Give that leg to a robot that can lift it; this is a division of labour the
-  task is built around.
+- The drone cannot lift the notebook. A robot tagged [drone] can grasp and
+  carry the die (die.n.01_1) but NOT the notebook (notebook.n.01_1): grasp or
+  unload_from on it fails with CANNOT_LIFT, and getting closer does not change
+  that. Only a robot with an arm can lift the notebook, so give that leg to an
+  arm; this division of labour is what the task is built around.
 - Refer to objects only by the ids in that robot's own room listing, which are
   the objects in the room it is standing in. They look like apple.n.01_1. Never
   invent one, and never give one robot an id that appeared only under another

@@ -342,9 +342,11 @@ enforced yet"). With `lift` in the route file:
   `reason_code: CANNOT_LIFT` when the cargo's synset is in `lift` and the
   robot's role is not listed. Role comes from the layout: `drone` if the
   layout says so, `carrier` if no arm, else `arm`.
-* `target_hints`: do not offer `grasp` on such an object to such a robot, and
-  say why on the object's line (`-> navigate_to  [too heavy for you]`), the
-  way the base-lock absence is explained today.
+* `target_hints`: do not offer `grasp` (or `unload_from`) on such an object
+  to such a robot. Silently -- no mark on the line (user, 2026-09-13); the
+  rule "the drone cannot lift the notebook" is stated once in the system
+  prompt, and the robot knows which it is from `(drone)` in its header and
+  `[drone]` on teammates' lines.
 * CPU test in `test_carrier_view_stubbed.py`'s style: a drone is offered
   `grasp(die)` and not `grasp(notebook)`; an arm is offered both.
 
@@ -438,9 +440,10 @@ things to read (see the memory note on ignoring constraint metrics).
    place, `coop_env._build` handing `route_spec.lift` to the world and every
    controller as `lift_rules`, `_require_may_lift` in `_grasp` and
    `unload_from` (unloading puts the cargo in the hand, so it is a lift)
-   raising `CANNOT_LIFT`, and `target_hints` withholding the verb with
-   `blocked [too heavy for you]`. `ReasonCode.CANNOT_LIFT` terminates the
-   plan like `TOO_FAR`. Both system prompts say what the mark means. CPU:
+   raising `CANNOT_LIFT`, and `target_hints` withholding the verb silently.
+   `ReasonCode.CANNOT_LIFT` terminates the plan like `TOO_FAR`. Both system
+   prompts state the rule concretely -- the drone cannot lift the notebook --
+   keyed on a `(drone)` header / `[drone]` tag. CPU:
    `test_carrier_view_stubbed` 8b/8c, `test_team_config_stubbed`. LH's
    episode is still step 4's successor.
 6. **Done 2026-09-12 (out of order with 4 and 5, at the user's request).**

@@ -437,11 +437,10 @@ def target_hints(
             if held is not None and entity.carrying is None:
                 hints.append(ActionHint("load_onto", entity.entity_id, entity.name))
             elif entity.carrying is not None and held is None:
+                # Unloading puts the cargo in this hand, so the lift table
+                # applies; withheld silently, like grasp.
                 if _may_lift(observation, me, entity.carrying):
                     hints.append(ActionHint("unload_from", entity.entity_id, entity.name))
-                else:
-                    hints.append(ActionHint("blocked", entity.entity_id, entity.name,
-                                            "its cargo is too heavy for you"))
             elif entity.carrying is not None:
                 hints.append(ActionHint("blocked", entity.entity_id, entity.name,
                                         "your hand is full"))
@@ -464,17 +463,6 @@ def target_hints(
                 ActionHint("navigate_to", entity.entity_id, entity.name,
                            "" if in_range else f"{distance:.1f} m away")
             )
-        # Weight before reach: a drone 1.2 m from the notebook was shown
-        # "unreachable [1.2 m away]" and would have flown over to learn the
-        # truth. Too heavy is too heavy at any distance, so it is said first
-        # and "unreachable" is not -- approaching would not help. Said, not
-        # left to be inferred from a missing verb: the same rule as base-lock.
-        # What "too heavy" means is the system prompt's job.
-        too_heavy = (not armless and not entity.is_fixed and entity.held_by is None
-                     and not _may_lift(observation, me, entity.entity_id))
-        if too_heavy:
-            hints.append(ActionHint("blocked", entity.entity_id, entity.name, "too heavy for you"))
-
         if not in_range:
             # Say it, rather than leaving it to be inferred from the absence of
             # the other verbs. A line that reads "navigate_to [5.7 m away]" and
@@ -482,10 +470,9 @@ def target_hints(
             # missing, and an agent that misreads that spends a whole plan
             # discovering it: one recorded run had an agent plan
             # grasp-then-place on an object it was five metres from.
-            if not too_heavy:
-                hints.append(
-                    ActionHint("unreachable", entity.entity_id, entity.name, far_note)
-                )
+            hints.append(
+                ActionHint("unreachable", entity.entity_id, entity.name, far_note)
+            )
             continue
 
         if armless:
@@ -493,7 +480,12 @@ def target_hints(
             continue
 
         if entity.held_by is None and held is None and not entity.is_fixed:
-            if not too_heavy:
+            # The lift table is applied silently: no "blocked [too heavy]" mark
+            # on the line (user, 2026-09-13). The rule itself -- a drone cannot
+            # lift the notebook -- is stated once in the system prompt, and the
+            # robot knows which it is from its [drone] tag. The verb is still
+            # withheld so a plan is never built on a grasp the engine refuses.
+            if _may_lift(observation, me, entity.entity_id):
                 hints.append(ActionHint("grasp", entity.entity_id, entity.name, far_note))
         elif entity.held_by not in (None, observation.agent_id):
             # Surfaced deliberately: "who holds what" is the cross-agent signal
@@ -547,6 +539,11 @@ def render_symbolic_view(
         header += f"/{observation.max_steps}"
     room_type = room_type_of(observation.room)
     header += f" | you are {observation.agent_id}"
+    if me is not None and me.lift_role == "drone":
+        # The one fact the system prompt's lift rule is keyed on. A drone
+        # that does not know it is one would read "a drone cannot lift the
+        # notebook" as being about someone else.
+        header += " (drone)"
     header += f" in {observation.room}" if observation.room else " (room unknown)"
     if room_type and room_type != observation.room:
         header += f" (a {room_type.replace('_', ' ')})"
@@ -590,12 +587,7 @@ def render_symbolic_view(
         # two lines that mean opposite things looked alike at a glance.
         status = [word for word in ("unreachable", "blocked") if word in primitives]
         verbs_for[target_id] = ", ".join(status + sorted(primitives - set(status)))
-        # A "blocked" note wins: "blocked, navigate_to [too heavy for you]"
-        # rather than "[1.2 m away]" from the navigate_to hint that came
-        # first. Unreachable lines keep their short distance note as before.
-        note_for[target_id] = next(
-            (h.note for h in target_hint_list if h.note and h.primitive == "blocked"),
-            next((h.note for h in target_hint_list if h.note), ""))
+        note_for[target_id] = next((h.note for h in target_hint_list if h.note), "")
 
     # A carrier and its cargo are one line, because they are one thing to act
     # on: the box's id, where it is and how to get it back are all facts about
@@ -632,6 +624,8 @@ def render_symbolic_view(
                                 if entity.carrying else "[carrier, empty]")
                 if entity.base_locked_while_holding:
                     bits.append("[base locks while holding]")
+                if entity.lift_role == "drone":
+                    bits.append("[drone]")
             if entity.held_by:
                 bits.append(f"held by {entity.held_by}")
             active = [name for name, value in sorted(entity.states.items()) if value]

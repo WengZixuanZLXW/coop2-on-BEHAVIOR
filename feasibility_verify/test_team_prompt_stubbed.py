@@ -43,8 +43,8 @@ SHARED_RULES = ("TOO_FAR", "unreachable", "held by", "room listing",
                 "no arm", "On your back:", "within reach",
                 # The route rule: only the NEXT support counts.
                 "route", "NEXT", "out of order",
-                # The lift rule: what a robot may not carry, it is told.
-                "too heavy", "CANNOT_LIFT")
+                # The lift rule, stated concretely: the drone cannot lift the notebook.
+                "drone cannot lift the notebook", "CANNOT_LIFT")
 
 
 def main() -> int:

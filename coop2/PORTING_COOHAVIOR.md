@@ -347,9 +347,10 @@ synset -> roles), and a robot's role comes from the layout: `carrier` if it has
 no arm, `drone` if the entry says `"drone": true`, else `arm`. Not a payload
 number: COOHAVIOR's contract is a table of roles, and a mass would have made us
 invent one. `symbolic_contention._require_may_lift` refuses `grasp` and
-`unload_from` with `CANNOT_LIFT`, and `target_hints` withholds the verb and
-writes `blocked [too heavy for you]` on the object's line -- both sides, or the
-agent burns a plan learning it (ROUTE_SUPERVISION_PLAN.md section 5.4).
+`unload_from` with `CANNOT_LIFT`, and `target_hints` withholds the verb --
+both sides, or the agent burns a plan learning it. No mark on the line: the
+system prompt says "the drone cannot lift the notebook" and the drone's header
+says `(drone)` (ROUTE_SUPERVISION_PLAN.md section 5.4).
 
 A side effect worth having: the notebook is 0.151 x 0.120 x 0.028, against the
 packing box's 0.380 x 0.468. All five HH cargoes now sit at V4's exact staged
