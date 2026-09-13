@@ -144,6 +144,10 @@ class FakeController:
         self.rooms_visited = getattr(self, "rooms_visited", []) + [room]
         yield f"room:{room}"
 
+    def navigate_to_robot(self, robot):
+        self.robots_visited = getattr(self, "robots_visited", []) + [robot.name]
+        yield f"robot:{robot.name}"
+
     def apply_ref(self, primitive, *args, attempts=1):
         plan = self.script[primitive.name]
         if isinstance(plan, tuple):
@@ -458,6 +462,20 @@ def main() -> int:
     bad = room_engine.assign("agent_0", P.NAVIGATE_TO, "attic_0")
     assert bad is not None and bad.reason_code == "INVALID_TARGET", bad
     print("  ok: kitchen_0 -> navigate_to_room; attic_0 -> INVALID_TARGET")
+
+    print("\ntest: a robot is a NAVIGATE_TO target, and still not a GRASP target")
+    mate = FakeRobotBase(); mate.name = "jackal_9"
+    nav_env = FakeEnv([FakeRobot("agent_0")], {"apple_0": FakeNamed("apple_0"), "jackal_9": mate})
+    nav_ctrl = FakeController({"NAVIGATE_TO": 2, "GRASP": 2})
+    nav_engine = engine_module.MultiAgentPrimitiveEngine(
+        nav_env, agent_ids=["agent_0"], progress_every=0, verbose=False, controllers={"agent_0": nav_ctrl})
+    assert nav_engine.assign("agent_0", P.NAVIGATE_TO, "jackal_9") is None, "driving to a teammate is allowed"
+    while nav_engine.has_active("agent_0"):
+        nav_engine.tick()
+    assert nav_ctrl.robots_visited == ["jackal_9"], "dispatched to navigate_to_robot, not apply_ref"
+    bad = nav_engine.assign("agent_0", P.GRASP, "jackal_9")
+    assert bad is not None and bad.reason_code == "INVALID_TARGET" and "is a robot" in bad.failure_reason, bad
+    print("  ok: navigate_to(robot) accepted; grasp(robot) refused")
 
     print("\nALL TESTS PASSED")
     return 0

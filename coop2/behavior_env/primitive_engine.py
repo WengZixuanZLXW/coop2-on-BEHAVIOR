@@ -646,8 +646,15 @@ class MultiAgentPrimitiveEngine:
         if room is not None:
             obj, error = None, None
         else:
+            # Robots are targets for the carry primitives (the carrier IS the
+            # target) and for NAVIGATE_TO: the listing offers `-> navigate_to`
+            # on every teammate carrier, and load_onto/unload_from need the two
+            # within reach, so "drive to the carrier" is the move the prompt
+            # asks for. It was refused as "'jackal_2' is a robot" 19 times in
+            # the first two routed episodes (2026-09-13).
+            name = getattr(primitive, "name", None)
             obj, error = self.resolve_target(
-                target, allow_robot=getattr(primitive, "name", None) in LOCAL_PRIMITIVES
+                target, allow_robot=name in LOCAL_PRIMITIVES or name == "NAVIGATE_TO"
             )
         target_name = obj.name if obj is not None else (target if isinstance(target, str) else None)
         primitive_name = primitive.name
@@ -676,6 +683,10 @@ class MultiAgentPrimitiveEngine:
             )(obj)
         elif room is not None:
             generator = self.controllers[agent_id].navigate_to_room(room)
+        elif primitive_name == "NAVIGATE_TO" and isinstance(obj, Robot):
+            # apply_ref refuses a robot argument; the controller has a path
+            # that does not go through it.
+            generator = self.controllers[agent_id].navigate_to_robot(obj)
         elif primitive_name == WAIT.name:
             # Not in upstream's primitive set, so apply_ref cannot dispatch it;
             # our controller implements it directly. Everything downstream --

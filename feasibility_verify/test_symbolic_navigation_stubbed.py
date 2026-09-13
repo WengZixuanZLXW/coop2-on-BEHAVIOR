@@ -458,6 +458,13 @@ def main() -> int:
     assert shelf_ctrl.support_of(die) is bookcase
     assert shelf_ctrl.support_of(apple_on_floor) is None, "a floor is walked on, not reached across"
     assert shelf_ctrl.support_of(bookcase) is None
+    # A robot rests on nothing; a die under a hovering drone is not its support.
+    hover = FakeRobot(shelf_scene, name="drone_9", position=(2.1, 0.05, 1.25))
+    hover.reset_joint_pos_aabb_extent = FakeVector([0.24, 0.24, 0.1])
+    die_under = FakeObject("die_9", [2.1, 0.05, 1.30], aabb_extent=(0.04, 0.04, 0.04))
+    shelf_scene.objects += [die_under]
+    assert shelf_ctrl.support_of(hover) is None
+    assert shelf_ctrl.support_of(die_under) is None, "the die's footprint holds nothing bigger than itself"
     # The sampled spot is in the bookcase's annulus, not the die's.
     b_lo, b_hi = shelf_ctrl.sampling_range_for(bookcase)
     for _ in range(50):
@@ -506,6 +513,23 @@ def main() -> int:
     except Exception as error:  # noqa: BLE001
         assert "No room named 'attic_0'" in str(error) and "kitchen_0" in str(error), error
     ok("navigate_to_room samples inside the room, skips occupied spots, refuses unknown rooms")
+
+    print("test: a settle is at most MAX_SETTLE_TICKS, and stops early when still")
+    calm = FakeRobot(FakeScene(FakeSegMap()), name="calm")
+    calm.get_linear_velocity = lambda: FakeVector([0.0, 0.0, 0.0])
+    calm.q_to_action = lambda q: "hold"
+    calm.get_joint_positions = lambda: 0
+    spinner = FakeRobot(FakeScene(FakeSegMap()), name="spinner")
+    spinner.get_linear_velocity = lambda: FakeVector([2.0, 0.0, 0.0])
+    spinner.q_to_action = lambda q: "hold"
+    spinner.get_joint_positions = lambda: 0
+    for robot, expected in ((calm, 0), (spinner, Navigable.MAX_SETTLE_TICKS)):
+        ctrl = Navigable(None, robot, require_traversable=False)
+        ctrl._postprocess_action = lambda a: a
+        ticks = list(ctrl._settle_robot())
+        assert len(ticks) == expected, (robot.name, len(ticks), expected)
+    assert Navigable.MAX_SETTLE_TICKS == 10
+    ok("still robot: 0 ticks; a robot that never stops: 10, not 550")
 
     print("\nALL TESTS PASSED")
     return 0

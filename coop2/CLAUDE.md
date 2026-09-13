@@ -49,10 +49,11 @@ route, the `RouteTracker`, and the wiring that lets it decide `terminated` --
 see "The route file" and "Route supervision, wired" below), and the S1 part of
 steps 6-7: all four S1 tasks have route files and corrected, re-sampled BDDLs
 ("Four route files, four re-samples"), and step 5, the lift gate ("The lift
-gate"). Step 4, the LL episode against the route, has run once: two of ten
-nodes, five defects fixed from it ("Step 4's first episode"); the acceptance
-run is the next launch. Not started: S2/S3's eight route files. Read the
-plan before touching termination or the `YOUR TASK` block.
+gate"). Step 4, the LL episode against the route, has run twice: two of ten
+nodes, then five of ten after the fixes ("Step 4's first episode", "The
+acceptance run"); termination on `D` is still untested. Not started: S2/S3's
+eight route files. Read the plan before touching termination or the `YOUR
+TASK` block.
 
 **Two lines of work are open**, and neither is a milestone from
 PORTING_PLAN.md section 7:
@@ -1601,6 +1602,67 @@ die hand it back and forth across team lines (drone_3 unloaded jackal_2's
 cargo), each hop a plan; a carrier planned `place_on_top` and was refused;
 "holding for the team" idles dominate the timeline. Those are the
 cooperation problem the benchmark is about, not defects.
+
+## The acceptance run, and what a die on a Jackal's back taught (2026-09-13)
+
+**Second routed LL episode: five of ten nodes.** Same nine robots, same
+budget, all of the previous section's fixes: C1 at 1037, C2 at 3379, C3 at
+5539 (credited `by drone_2`, the first attribution), C4 at 6819, C5 at 7936;
+`Y_task` 0.5, 32 team calls, 241k tokens, no crash, nine videos including
+real drone views. Run
+`coop2/runs/individual_agents3_repair_off_seed0_20260913_014222_865648`.
+Its first launch died on every `navigate_to(<room>)` because upstream's
+`get_random_point_by_room_instance` calls `th.randint(n)` without a size;
+`navigate_to_room` samples cells itself now. Nineteen `navigate_to(<robot>)`
+across the two runs were refused as "'jackal_2' is a robot" while the listing
+offered exactly that on every carrier; the engine now dispatches a robot
+target to `navigate_to_robot`, which bypasses `apply_ref`'s own refusal.
+
+**The user watched the first run's video and saw a drone drop its die.** The
+answer took ten GPU probes (`feasibility_verify/verify_carrier_cargo_gpu.py`,
+no LLM: drone grasps the die, flies to the Jackal, loads it, the Jackal
+drives away; every few ticks the die's pose against the Jackal's body). What
+they found, in order:
+
+* The die at floor height after a drone's grasp was the probe's own artifact:
+  the LL layouts give the drone no z and it spawns on the floor. With
+  `s1/sets_1` (1.2 m) the grasp holds the die 3 cm under the mount and it
+  flies with the drone. **The grasp is fine.**
+* `load_onto` puts the die at the Jackal's top centre (z 0.417 over a 0.394
+  top, dxy 0.000) and it rides through a 6 m drive. **The handoff is fine.**
+* The drone's reported angular velocity is 0.0 before the grasp and
+  **4.445 rad/s for ever after**, on the root and on the body link, while its
+  yaw, its position and all six virtual base joints do not change by a
+  millimetre over 250 idle ticks, with or without gravity on the die, before
+  and after a hop. The number is a ghost of the fixed-joint solver, not a
+  motion. It is also why every drone grasp cost 501 ticks: the settle waited
+  for a velocity that never falls below 0.01.
+* `support_of(drone)` answered "dice_154": the die welded under it lay in
+  its footprint at its bottom. A robot has no support, and a support is at
+  least as large as what rests on it.
+
+Three changes came out of it, all in `symbolic_contention.py` /
+`symbolic_navigation.py`:
+
+* **Settles are 10 ticks at most** (user). `NavigableSymbolicActionPrimitives.
+  _settle_robot` replaces upstream's 50 unconditional + up to 500, and
+  `tune_primitive_macros` sets `MAX_STEPS_FOR_SETTLING` to 10. Grasp went
+  from 501 ticks to 11; `load_onto` from 51 to 1.
+* **A teleporting robot takes its attachments.** A FixedJoint drags its child
+  after a teleported parent only through the solver, over ticks; under the
+  10-tick cap the Jackal's die was measured 0.76 m behind it when the
+  primitive returned. `_teleport_with_attachments` moves what is in the hand
+  and what rides on the back by the robot's own rigid transform, then stills
+  them. After the fix: 1.6 cm.
+* **A drone holds under its mount.** Upstream places a grasped object's centre
+  at the eef link origin -- inside the suction mount's collision shape. The
+  die now hangs half a mount plus half a die below it. Harmless where the
+  spin turned out to be a ghost, correct regardless.
+
+The die beside the Jackal in the video (7.0-7.5 s, ticks 840-900) sits inside
+`load_onto`'s window; the scripted reproduction never puts it there, and no
+log records object poses. Recorded as unexplained rather than fixed. What the
+next run's videos show, with the ten-tick settles, is the test.
 
 ## Open defects
 

@@ -37,7 +37,7 @@ __all__ = [
 def tune_primitive_macros(
     max_steps_for_joint_motion: int = 30,
     joint_pos_diff_threshold: float = 0.02,
-    max_steps_for_settling: int = 200,
+    max_steps_for_settling: int = 10,
     collision_activation_distance: float = 0.03,
     base_pose_sampling_upper_bound: Optional[float] = None,
     holonomic_base_prismatic_joint_limit: Optional[float] = None,
@@ -57,6 +57,11 @@ def tune_primitive_macros(
           for the same check.
         - ``MAX_STEPS_FOR_SETTLING`` (stock 500): every ``_move_hand`` begins
           with a ``_settle_robot``, so this is paid many times per primitive.
+          10 since 2026-09-13 (user): the symbolic robots are stable, and the
+          one that is not -- a drone that starts spinning in the air -- never
+          reaches the velocity threshold, so it burned the whole budget on
+          every grasp. See also ``NavigableSymbolicActionPrimitives._settle_robot``,
+          which caps upstream's fixed 50-tick prelude to the same 10.
         - ``DEFAULT_COLLISION_ACTIVATION_DISTANCE`` (stock 0.02): inflates the
           robot spheres against the world; extra margin for teammates.
         - ``HOLONOMIC_BASE_PRISMATIC_JOINT_LIMIT`` (stock 5.0 m): the

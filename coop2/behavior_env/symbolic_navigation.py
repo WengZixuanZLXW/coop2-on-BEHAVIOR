@@ -469,6 +469,31 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
         # teleported into a wall and toppled instead of reporting failure.
         return None
 
+    #: Ticks a settle may take, at most. Upstream's ``_settle_robot`` is 50
+    #: unconditional ticks and then up to MAX_STEPS_FOR_SETTLING (500) more
+    #: until the base is still. Every primitive ends in one, several begin
+    #: with one, and a failed attempt pays another via ``_reset_robot``. The
+    #: symbolic robots teleport and are still at once; the one exception, a
+    #: drone that spins in the air once it holds something, never stops and
+    #: so paid the full 550 every time (grasp = 501 ticks in the routed
+    #: episodes). 10 for everything (user, 2026-09-13).
+    MAX_SETTLE_TICKS = 10
+
+    def _settle_robot(self):
+        """Hold still for at most :attr:`MAX_SETTLE_TICKS`, stopping early
+        once the base is still. Replaces upstream's 50 + 500."""
+        if not hasattr(self.robot, "get_linear_velocity"):
+            # The CPU fakes: their own scripted settle, which the tests count.
+            yield from super()._settle_robot()
+            return
+        for _ in range(self.MAX_SETTLE_TICKS):
+            try:
+                if float(th.norm(self.robot.get_linear_velocity())) < 0.01:
+                    break
+            except Exception:  # noqa: BLE001 - a stub without velocities
+                pass
+            yield self._postprocess_action(self.robot.q_to_action(self.robot.get_joint_positions()))
+
     # -- what an object rests on -------------------------------------------
 
     @staticmethod
@@ -505,20 +530,26 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
         that is smaller than the object itself.
         """
         scene = getattr(self.robot, "scene", None)
+        robots = list(getattr(scene, "robots", None) or [])
+        if hasattr(obj, "action_dim") or any(obj is r for r in robots):
+            # A robot rests on nothing we would stand at -- and a drone with
+            # a die welded under it was reported as "resting on dice_154".
+            return None
         objects = getattr(scene, "objects", None)
         if not objects:
             return None
         try:
-            lo, _ = self._aabb_of(obj)
+            lo, hi = self._aabb_of(obj)
             x, y = self._object_xy_of(obj)
         except Exception:  # noqa: BLE001
             return None
         bottom = lo[2]
+        obj_dx, obj_dy = hi[0] - lo[0], hi[1] - lo[1]
         best, best_top = None, None
         for other in objects:
             if other is obj or getattr(other, "category", None) == "agent":
                 continue
-            if self.is_walkable_surface(other) or hasattr(other, "action_dim"):
+            if self.is_walkable_surface(other) or hasattr(other, "action_dim") or any(other is r for r in robots):
                 continue
             try:
                 o_lo, o_hi = self._aabb_of(other)
@@ -526,6 +557,10 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
                 continue
             margin = 0.05
             if not (o_lo[0] - margin <= x <= o_hi[0] + margin and o_lo[1] - margin <= y <= o_hi[1] + margin):
+                continue
+            # A support is at least as big as what rests on it; a die under a
+            # drone is not the drone's support.
+            if (o_hi[0] - o_lo[0]) < obj_dx or (o_hi[1] - o_lo[1]) < obj_dy:
                 continue
             top = o_hi[2]
             if top > bottom + 0.15 or top < bottom - 0.15:
@@ -538,6 +573,19 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
     def _object_xy_of(obj):
         position = obj.get_position_orientation()[0]
         return float(position[0]), float(position[1])
+
+    def navigate_to_robot(self, robot):
+        """Drive to a spot beside @robot -- a teammate, usually the carrier.
+
+        Upstream's ``apply_ref`` refuses a robot argument outright ("Cannot
+        call a symbolic semantic action primitive with a robot as an
+        argument"), so the engine dispatches here instead. The same sampler
+        as for an object: a robot has an AABB, so the annulus and the reach
+        gate come out of ``sampling_range_for`` like anything else, and its
+        own body is skipped by ``_clear_of_other_robots`` because the annulus
+        starts outside it.
+        """
+        yield from self._navigate_to_obj(robot)
 
     def navigate_to_room(self, room: str):
         """Drive to a free spot inside @room (a room instance, ``kitchen_0``).

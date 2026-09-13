@@ -603,11 +603,15 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
         # Unloading puts the cargo in this robot's hand, so it is a lift too.
         self._require_may_lift(riding, "unload")
         unload_from(carrier)
-        # The same weld a grasp makes, now on this robot's own end effector.
-        eef_position = self.robot.get_eef_position(self.arm)
-        riding.set_position_orientation(position=eef_position)
-        self.robot._establish_grasp(riding, riding.root_link_name, self.arm,
-                                    eef_position, "FixedJoint")
+        # The same weld a grasp makes, now on this robot's own end effector
+        # (under it, for a drone -- see _hold_position).
+        hold = self._hold_position(riding)
+        riding.set_position_orientation(position=hold)
+        try:
+            riding.keep_still()
+        except Exception:  # noqa: BLE001
+            pass
+        self.robot._establish_grasp(riding, riding.root_link_name, self.arm, hold, "FixedJoint")
         yield from self._settle_robot()
 
     def travel_ticks(self, distance: float) -> int:
@@ -643,11 +647,110 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
               f"{distance:.1f} m, {ticks} travel ticks")
         for _ in range(ticks):
             yield self._hold_action()
-        yield from super()._navigate_to_pose(pose_2d)
+        yield from self._teleport_with_attachments(pose_2d)
+
+    def _attachments(self):
+        """Bodies welded to this robot right now: what is in its hand, and
+        what rides on its back if it is a carrier."""
+        out = []
+        if getattr(self.robot, "arm_names", None) and hasattr(self.robot, "_ag_obj_in_hand"):
+            # A carrier has no hand to ask about.
+            held = self._get_obj_in_hand()
+            if held is not None:
+                out.append(held)
+        try:
+            from coop2.behavior_env.carrier import carried_by  # noqa: PLC0415
+
+            cargo = carried_by(self.robot)
+            if cargo is not None:
+                out.append(cargo)
+        except Exception:  # noqa: BLE001
+            pass
+        return out
+
+    def _teleport_with_attachments(self, pose_2d):
+        """Upstream's ``_navigate_to_pose`` -- set the pose, settle -- plus one
+        thing it never needed: the welded bodies move with the robot.
+
+        A FixedJoint drags its child after a teleported parent only through the
+        solver, over ticks. With the 550-tick settle that always finished; with
+        the 10-tick cap (2026-09-13) a Jackal's die was measured 0.76 m behind
+        the Jackal when the primitive returned. So the cargo and the held object
+        are moved by the same rigid transform as the robot, and stilled.
+        """
+        attachments = [(obj, obj.get_position_orientation()) for obj in self._attachments()]
+        before_pos, before_orn = self.robot.get_position_orientation()
+        # Upstream teleports on the first next() and then settles; take that
+        # first step, move the attachments, then hand the rest through. This
+        # keeps the teleport itself upstream's (and the CPU fakes').
+        teleport = super()._navigate_to_pose(pose_2d)
+        first = next(teleport, None)
+        if attachments:
+            after_pos, after_orn = self.robot.get_position_orientation()
+            try:
+                import importlib  # noqa: PLC0415
+
+                T = importlib.import_module("omnigibson.utils.transform_utils")
+            except Exception:  # noqa: BLE001 - the CPU stubs: translate only
+                T = None
+            for obj, (obj_pos, obj_orn) in attachments:
+                try:
+                    if T is not None:
+                        rel_pos, rel_orn = T.relative_pose_transform(obj_pos, obj_orn, before_pos, before_orn)
+                        new_pos, new_orn = T.pose_transform(after_pos, after_orn, rel_pos, rel_orn)
+                        obj.set_position_orientation(position=new_pos, orientation=new_orn)
+                    else:
+                        shift = [float(after_pos[i]) - float(before_pos[i]) for i in range(3)]
+                        obj.set_position_orientation(
+                            position=type(obj_pos)([float(obj_pos[i]) + shift[i] for i in range(3)]))
+                    obj.keep_still()
+                except Exception as error:  # noqa: BLE001 - never let bookkeeping kill a navigate
+                    print(f"[nav] could not move {getattr(obj, 'name', obj)} with {self.robot.name}: {error}")
+        if first is not None:
+            yield first
+        yield from teleport
 
     # Each override below is a generator function, so the body -- and the gate
     # -- runs on the first next(), which is before the parent has touched the
     # scene. A rejected primitive therefore costs 0 ticks and moves nothing.
+
+    def _hold_position(self, obj):
+        """Where @obj sits once this robot holds it.
+
+        Upstream puts the object's centre AT the end-effector link's origin.
+        For a gripper that is between the fingers; for the Crazyflie's bottom
+        suction mount it is inside the mount's collision shape, and the two
+        bodies -- welded together and interpenetrating -- push on each other
+        every tick. Measured 2026-09-13: angular velocity 0.0 before the grasp,
+        3.6 rad/s one tick after, 4.4 rad/s for ever after, the die orbiting
+        at 0.9 m/s. That spin is what the videos showed as a drone flinging
+        its die about, and why a drone's settle never converged. A drone
+        holds its load *under* the mount: half the mount's height plus half
+        the object's, plus 5 mm of daylight. Everyone else is unchanged.
+        """
+        eef = self.robot.get_eef_position(self.arm)
+        try:
+            from coop2.behavior_env.carrier import lift_role  # noqa: PLC0415
+
+            if lift_role(self.robot) != "drone":
+                return eef
+        except Exception:  # noqa: BLE001
+            return eef
+        try:
+            mount_half = float(self.robot.eef_links[self.arm].aabb_extent[2]) / 2.0
+        except Exception:  # noqa: BLE001
+            mount_half = 0.02
+        try:
+            obj_half = float(obj.aabb_extent[2]) / 2.0
+        except Exception:  # noqa: BLE001
+            obj_half = 0.02
+        drop = mount_half + obj_half + 0.005
+        try:
+            import torch as th  # noqa: PLC0415
+
+            return th.tensor([float(eef[0]), float(eef[1]), float(eef[2]) - drop], dtype=th.float32)
+        except Exception:  # noqa: BLE001 - the CPU stubs have no torch
+            return type(eef)([float(eef[0]), float(eef[1]), float(eef[2]) - drop])
 
     def _grasp(self, obj):
         self._require_arm("grasp")
@@ -655,7 +758,22 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
         self._require_not_held_by_self(obj)
         self._require_unclaimed(obj, "grasp")
         self._require_near(obj, "grasp", GATE_GRASP)
-        yield from super()._grasp(obj)
+        if not hasattr(self.robot, "get_eef_position"):
+            yield from super()._grasp(obj)
+            return
+        # Upstream's body, with the object at _hold_position instead of the
+        # eef origin; the joint is anchored at the same point.
+        hold = self._hold_position(obj)
+        obj.set_position_orientation(position=hold)
+        try:
+            obj.keep_still()
+        except Exception:  # noqa: BLE001
+            pass
+        self.robot._establish_grasp(obj, obj.root_link_name, self.arm, hold, "FixedJoint")
+        yield from self._settle_robot()
+        if self._get_obj_in_hand() is None:
+            raise self._error("EXECUTION_ERROR", f"Grasp of {obj.name} did not take.",
+                              {"target object": obj.name})
 
     def _place_with_predicate(self, obj, predicate, near_poses=None, near_poses_threshold=None):
         """Upstream's placement, with the object's velocity zeroed on arrival.

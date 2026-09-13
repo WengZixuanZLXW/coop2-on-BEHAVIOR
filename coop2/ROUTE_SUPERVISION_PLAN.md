@@ -428,7 +428,9 @@ things to read (see the memory note on ignoring constraint metrics).
    real instance. One thing the suite caught: a CPU test builds the env with
    `object.__new__`, so a new attribute set in `__init__` does not exist there
    -- every read of `route_tracker` goes through `getattr(..., None)`.
-4. **First episode run 2026-09-13, 2 of 10 nodes** (nine robots, three
+4. **Run twice 2026-09-13: 2 of 10, then 5 of 10 nodes** (C1 1037, C2 3379,
+   C3 5539, C4 6819, C5 7936 in the second; `Y_task` 0.5). Termination on
+   `D` is still untested. The first launch: 2 of 10 (nine robots, three
    teams, `s1/sets_3.json`, individual, 8000 steps): C1 at 2310, C2 at 3607,
    `route_progress.json` and `Y_task` 0.2 in `coop2_metrics.json`, nine
    per-robot videos. Termination on `D` is still untested. The run found five
