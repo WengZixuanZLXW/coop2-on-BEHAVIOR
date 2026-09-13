@@ -434,12 +434,23 @@ things to read (see the memory note on ignoring constraint metrics).
    and `--time-limit-seconds 0`.
 5. The lift gate (5.4) and its test; then LH, where the notebook is what the
    drone may not carry.
-6. HL: `route.json` with five two-node routes. Acceptance is precisely that
-   the run **no longer ends at env_step 0**, and `allow_trivial_goal` in
-   `sample_v4_s1_task.py` can then be removed, because the BDDL final state
-   no longer decides termination.
-7. Route files for the remaining nine tasks are a table transcription from
-   `tasks.modified.json`; do them per scene once S2/S3 are ported.
+6. **Done 2026-09-12 (out of order with 4 and 5, at the user's request).**
+   HL's `route.json`: five two-node routes chaining through shared supports
+   (M5's destination is M3's checkpoint). Its BDDL goals are the destinations
+   now, `allow_trivial_goal` is removed, and at load all five are unsatisfied.
+   The run-level acceptance -- no longer ending at env_step 0 -- is step 4's
+   episode.
+7. **S1 done 2026-09-12**: LH (LL's ten nodes, notebook, `lift` arm-only) and
+   HH (HL's five routes, notebook) alongside HL; all four BDDLs grown to the
+   same 13-object shape and re-sampled, every node bound, goal false at load.
+   Two things learned writing them, both now CPU-checked in
+   `test_route_spec_stubbed.py`: a `*` anywhere in a definition -- a comment
+   included -- is a wildcard to `_strip_wildcards` and crashes
+   `Environment.__init__` (two GPU runs to find); and COOHAVIOR's spawn
+   annotations (`spawn_nodes.bddl_support` = a fixture) disagree with its own
+   `initial_relation` and staged box prims (the floor) -- the prim is what
+   spawns, so boxes start on floors and no node is true at load. **S2/S3's
+   eight files remain**, per scene once those are ported.
 
 ## 7. Traps, known before starting
 

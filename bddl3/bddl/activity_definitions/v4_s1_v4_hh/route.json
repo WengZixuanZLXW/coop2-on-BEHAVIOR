@@ -1,0 +1,136 @@
+{
+  "_comment": [
+    "COOHAVIOR S1-V4-HH: five routes, one per station, each one checkpoint",
+    "then a destination. Transcribed from tasks.modified.json; route ids are",
+    "COOHAVIOR's, supports renumbered to our synsets as in v4_s1_v4_ll/route.json",
+    "(cabinet.n.01_1 = dajebq childs_room, _2 = jhymlr living_room, _3 = jrhgeu",
+    "bedroom; bookcase.n.01_1 = COOHAVIOR's shelf_owvfik_0).",
+    "",
+    "The routes chain through shared supports -- M5's destination is M3's",
+    "checkpoint, M3's is M2's -- but each box is on its own route and the",
+    "tracker judges them independently. Nothing is true at load: every box",
+    "starts on its station's floor, and no floor is a node.",
+    "",
+    "Box mass 0.02 kg (tasks.modified.json); see `lift`."
+  ],
+  "activity": "v4_s1_v4_hh",
+  "source": "COOHAVIOR tasks.modified.json S1-V4-HH",
+  "policy": "parallel",
+  "routes": [
+    {
+      "id": "S1-M5",
+      "cargo": "notebook.n.01_1",
+      "nodes": [
+        {
+          "id": "C1",
+          "goal": [
+            "ontop",
+            "notebook.n.01_1",
+            "cabinet.n.01_1"
+          ]
+        },
+        {
+          "id": "D",
+          "goal": [
+            "ontop",
+            "notebook.n.01_1",
+            "bookcase.n.01_1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S1-M3",
+      "cargo": "notebook.n.01_2",
+      "nodes": [
+        {
+          "id": "C1",
+          "goal": [
+            "ontop",
+            "notebook.n.01_2",
+            "bookcase.n.01_1"
+          ]
+        },
+        {
+          "id": "D",
+          "goal": [
+            "ontop",
+            "notebook.n.01_2",
+            "armchair.n.01_1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S1-M2",
+      "cargo": "notebook.n.01_3",
+      "nodes": [
+        {
+          "id": "C1",
+          "goal": [
+            "ontop",
+            "notebook.n.01_3",
+            "armchair.n.01_1"
+          ]
+        },
+        {
+          "id": "D",
+          "goal": [
+            "ontop",
+            "notebook.n.01_3",
+            "coffee_table.n.01_1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S1-M1",
+      "cargo": "notebook.n.01_4",
+      "nodes": [
+        {
+          "id": "C1",
+          "goal": [
+            "ontop",
+            "notebook.n.01_4",
+            "cabinet.n.01_2"
+          ]
+        },
+        {
+          "id": "D",
+          "goal": [
+            "ontop",
+            "notebook.n.01_4",
+            "bed.n.01_2"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S1-M4",
+      "cargo": "notebook.n.01_5",
+      "nodes": [
+        {
+          "id": "C1",
+          "goal": [
+            "ontop",
+            "notebook.n.01_5",
+            "cabinet.n.01_3"
+          ]
+        },
+        {
+          "id": "D",
+          "goal": [
+            "ontop",
+            "notebook.n.01_5",
+            "bed.n.01_1"
+          ]
+        }
+      ]
+    }
+  ],
+  "lift": {
+    "notebook.n.01": [
+      "arm"
+    ]
+  }
+}

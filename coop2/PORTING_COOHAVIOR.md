@@ -62,6 +62,16 @@ Add `agent.n.01_1 - agent.n.01` and an `(ontop agent.n.01_1 <floor>)` initial
 condition if the source lacks them; BEHAVIOR binds that instance to
 `robots[0]`.
 
+3. **No `*` anywhere in the file, comments included.**
+   `knowledge_base/models.py:_strip_wildcards` runs over the *raw text* and
+   treats every line containing `*` as a wildcard scope line; a comment such
+   as `; the spawn *marker* sits -- on a fixture` then hits
+   `line.split(" - ")[1]` and dies with `IndexError` inside
+   `Environment.__init__`, after the scene has loaded. Found 2026-09-12 on
+   the first HL/HH re-sample -- two GPU runs to learn that emphasis is a
+   wildcard. `test_route_spec_stubbed.py` now runs that pass over every S1
+   definition on CPU.
+
 Verify before going further:
 
 ```bash
@@ -300,17 +310,22 @@ So the BDDL collapses each start/target pair to one floor instance (BDDL's
 parser could not carry two `- floor.n.01` lines anyway), and every goal clause
 is literally an initial condition.
 
-That is accepted rather than worked around (user, 2026-09-12): COOHAVIOR's
-real task structure is the ordered checkpoint sequence of each route in
-`tasks.modified.json` -- not `packages[].depends_on`, which no runtime code
-reads -- and a supervision layer will enforce it. The design for that layer,
-and for the `route.json` sidecar that states the sequence, is
-`coop2/ROUTE_SUPERVISION_PLAN.md`. The BDDL goal is only the final state.
-`sample_v4_s1_task.py` has an `allow_trivial_goal` switch for this one task
-and no other. **Until that layer exists, `check_goal` is the sole authority
-over `terminated`, and a run of `v4_s1_v4_hl` ends at env_step 0.**
+**Resolved 2026-09-12, the other way round.** COOHAVIOR's real task structure
+is the ordered checkpoint sequence of each route in `tasks.modified.json`, and
+the route is the task (user): when the BDDL disagrees with it the BDDL is what
+gets corrected. HL's five goals are now the routes' destinations --
+`ontop(die_1, bookcase.n.01_1)`, `(die_2, armchair.n.01_1)`, `(die_3,
+coffee_table.n.01_1)`, `(die_4, bed.n.01_2)`, `(die_5, bed.n.01_1)` -- with the
+checkpoint cabinets declared alongside, so nothing holds at t=0
+(`unsatisfied: [0, 1, 2, 3, 4]` at load), the `allow_trivial_goal` switch is
+gone, and `terminated` is decided by the route tracker
+(`coop2/ROUTE_SUPERVISION_PLAN.md`, steps 1-3 done). The boxes still start on
+their stations' floors: COOHAVIOR's `initial_relation` says so, its staged box
+*prims* -- the coordinates the sampler pins to -- sit on the floor beside the
+fixtures, and only its spawn *markers* sit on them; the prim is what spawns.
 
-The same collapse applies to S2-HL and S3-HL when they are ported.
+The same collapse will appear in S2-HL and S3-HL's BDDLs as read off
+COOHAVIOR; write their route files first and the goals follow from them.
 
 ### The two box weights are two objects now
 

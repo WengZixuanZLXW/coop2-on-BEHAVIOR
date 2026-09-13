@@ -30,7 +30,7 @@ This file is only the operational summary.
 | — repair shim, viz stub | `coop2/_repair_shim/`, `coop2/cognitive/viz/` | **done** (no-op by design) |
 | BDDL tasks + cached instances | `bddl3/.../{coop_two_apples_pomaria,coop_nine_apples_hall,v4_s1_v4_ll}/`, `feasibility_verify/sample_*.py` | **three activities, all GPU-verified and all solved**; two apples solves, v4_s1_v4_ll at env_step 504, nine apples at 4434 (2026-09-12) |
 | Robots from outside BEHAVIOR | `coop2/robot_configs/`, `coop2/omnigibson_definitions/fix_*.py` | **Ridgeback+UR5, Jackal and Crazyflie imported from upstream URDFs** (2026-09-11); URDF colours restored by `fix_robot_visual_materials.py`; the Crazyflie holds altitude (driven z joint owned by `arm_0`, `base_footprint_link_name: world`, navigate keeps world z) (2026-09-12) |
-| COOHAVIOR S1 family | `bddl3/.../v4_s1_v4_{ll,lh,hl,hh}/`, `feasibility_verify/sample_v4_s1_task.py`, `coop2/team_layouts/s1/sets_{1..5}.json` (shared spawn in living_room_0, drones hovering at 1.2 m over their Jackal; generator `make_s1_shared_spawn_layouts.py`) | **all four S1 tasks sampled and inspected** (2026-09-12); cargo is `die.n.01` (8 g) or `notebook.n.01` (20 g) per `tasks.modified.json`; HL's goal holds at t=0 by design -- see `PORTING_COOHAVIOR.md` |
+| COOHAVIOR S1 family | `bddl3/.../v4_s1_v4_{ll,lh,hl,hh}/` (each with `route.json`), `feasibility_verify/sample_v4_s1_task.py`, `coop2/team_layouts/s1/sets_{1..5}.json` (shared spawn in living_room_0, drones hovering at 1.2 m over their Jackal; generator `make_s1_shared_spawn_layouts.py`) | **all four routed, BDDLs corrected to the routes, re-sampled with every node bound and goal false at load** (2026-09-12); cargo is `die.n.01` (8 g, arm or drone) or `notebook.n.01` (20 g, arm only) per `tasks.modified.json`; HL's goals are its routes' destinations, so it no longer ends at env_step 0 |
 | M9 wiring (BehaviorTask + `check_goal` termination) | `coop2/behavior_env/coop_env.py` | **done**, commits `e4d28a98`…`5fda3d28` |
 
 ## Where we are (2026-09-12)
@@ -46,9 +46,10 @@ of `ontop` sub-goals on one box, and BDDL can only state the last one -- which
 is why `v4_s1_v4_hl` ends at env_step 0. `coop2/ROUTE_SUPERVISION_PLAN.md` is
 the design; steps 1-3 are done (the `route.json` sidecar, its loader, LL's
 route, the `RouteTracker`, and the wiring that lets it decide `terminated` --
-see "The route file" and "Route supervision, wired" below). Steps 4-7 -- one
-GPU episode of LL against the route, the lift gate, HL, the other nine route
-files -- are not started. Read the plan before touching termination or the `YOUR TASK` block.
+see "The route file" and "Route supervision, wired" below), and the S1 part of
+steps 6-7: all four S1 tasks have route files and corrected, re-sampled BDDLs
+("Four route files, four re-samples"). Not started: step 4, one GPU episode of
+LL against the route; step 5, the lift gate; and S2/S3's eight route files. Read the plan before touching termination or the `YOUR TASK` block.
 
 **Two lines of work are open**, and neither is a milestone from
 PORTING_PLAN.md section 7:
@@ -1435,6 +1436,52 @@ stub would need.
 `--steps 8000`, ten nodes at roughly navigate + grasp + navigate + place each),
 the lift gate (step 5), HL's five two-node routes (step 6), and the route
 files for the other nine tasks (step 7).
+
+## Four route files, four re-samples (2026-09-12)
+
+LH, HH and HL got what LL got: a `route.json` transcribed from
+`tasks.modified.json`, a BDDL grown to declare every support the route names
+with its `inroom`, goals corrected to the routes' destinations (the route is
+the task -- user's decision -- so the BDDL follows it), the sampler pinning the
+nine supports by model, and a re-sample. All four now load with every node
+bound and the goal false at t=0; `test_route_spec_stubbed` checks all four
+files' shapes on CPU.
+
+| task | routes | cargo | may lift | what was wrong before |
+|---|---|---|---|---|
+| LL | 1 x 10 | die | arm, drone | goal was the stale bedroom floor |
+| LH | 1 x 10 | notebook | **arm only** | goal was C1's cabinet; eight supports missing |
+| HL | 5 x 2 | die | arm, drone | goals were the spawn floors, true at t=0 |
+| HH | 5 x 2 | notebook | **arm only** | destinations right; three checkpoint cabinets missing |
+
+HL's and HH's five routes chain -- M5's destination is M3's checkpoint, M3's
+is M2's -- but each box is on its own route and the tracker judges them
+independently. `unsatisfied: [0, 1, 2, 3, 4]` at load is the line that says the
+env_step-0 problem is gone.
+
+**Boxes start on floors, and COOHAVIOR's files had to be read three ways to
+know it.** Its `spawn_nodes` annotate each HL/HH box's spawn support as a
+fixture (fridge, table, bed) and the spawn *markers* sit on those fixtures; its
+`initial_relation` says the floor; its staged box *prims* -- the coordinates
+our sampler pins to -- are on the floor beside the fixtures. The prim is what
+physically spawns, so the floor is what is true, and no node is a floor, so
+nothing can be credited at load.
+
+**A `*` anywhere in a definition is a wildcard, comments included.** The first
+HL/HH re-sample died inside `Environment.__init__` with an `IndexError` from
+`knowledge_base/models.py:_strip_wildcards`, which runs over the raw text and
+treats every line containing `*` as a scope line to be split on ` - `. The
+lines were my comments -- `the spawn *marker* sits -- on a fixture`. Two GPU
+runs to learn that emphasis is syntax; the loader test now runs that pass over
+every S1 definition in a millisecond. Recorded as trap 3 in
+`PORTING_COOHAVIOR.md` step 1.
+
+Bindings that are not COOHAVIOR's, recorded rather than hidden: LL and HL took
+`bottom_cabinet_jrhgeu_1` for C8/M4-C1 where LH and HH took `_0` (both stand in
+bedroom_0; COOHAVIOR's own files disagree), and LL took `armchair_qplklw_1`
+where the other three took `_2`. `_apply_scene_edits` keeps whatever the BDDL
+bound off V4's deactivate list, so LL's scene has one armchair more than V4's;
+none of it changes a route.
 
 ## Open defects
 

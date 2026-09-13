@@ -1,11 +1,32 @@
 (define (problem v4_s1_v4_hh-0)
     (:domain behavior-1k)
 
+    ; COOHAVIOR S1-V4-HH: five boxes, five stations, five independent
+    ; two-node routes -- each station's box goes one station on. The BDDL states
+    ; each box's final support and the object scope; the checkpoints are in
+    ; route.json beside this file. Box i is station M5, M3, M2, M1, M4 in that
+    ; order (V4's own audit order), and floor.n.01_N is station M<N>.
+    ;
+    ; Boxes start on their station's floor. COOHAVIOR's own files disagree
+    ; about this -- `initial_relation` says the floor, the spawn marker sits
+    ; on a fixture (fridge, table, bed), and the staged box prim is on the
+    ; floor beside it. The prim is what physically spawns and the coordinates
+    ; the sampler pins to are the prims', so the floor is what is true.
+    ; The heavy task: only an arm may lift a notebook (route.json `lift`).
+    ; COOHAVIOR's own names, renumbered to our taxonomy: its bottom_cabinet.n.01
+    ; is not a synset here (the category bottom_cabinet is cabinet.n.01), its
+    ; fridge.n.01 is our electric_refrigerator.n.01, and its shelf.n.01_3 is the
+    ; model owvfik, which our dataset ships as bookcase_owvfik_0 -- the same
+    ; object at the same pose (-0.17, 4.90) in kitchen_0, under an older name.
+    ; One synset per line: the parser keeps only the last `- <synset>` group.
     (:objects
         notebook.n.01_1 notebook.n.01_2 notebook.n.01_3 notebook.n.01_4 notebook.n.01_5 - notebook.n.01
         floor.n.01_1 floor.n.01_2 floor.n.01_3 floor.n.01_4 floor.n.01_5 - floor.n.01
+        cabinet.n.01_1 cabinet.n.01_2 cabinet.n.01_3 - cabinet.n.01
         bookcase.n.01_1 - bookcase.n.01
+        electric_refrigerator.n.01_1 - electric_refrigerator.n.01
         armchair.n.01_1 - armchair.n.01
+        breakfast_table.n.01_1 - breakfast_table.n.01
         coffee_table.n.01_1 - coffee_table.n.01
         bed.n.01_1 bed.n.01_2 - bed.n.01
         agent.n.01_1 - agent.n.01
@@ -14,18 +35,23 @@
     (:init
         (ontop notebook.n.01_1 floor.n.01_5)
         (inroom floor.n.01_5 childs_room)
-        (inroom bookcase.n.01_1 kitchen)
         (ontop notebook.n.01_2 floor.n.01_3)
         (inroom floor.n.01_3 kitchen)
-        (inroom armchair.n.01_1 dining_room)
         (ontop notebook.n.01_3 floor.n.01_2)
         (inroom floor.n.01_2 dining_room)
-        (inroom coffee_table.n.01_1 living_room)
         (ontop notebook.n.01_4 floor.n.01_1)
         (inroom floor.n.01_1 living_room)
-        (inroom bed.n.01_2 bedroom)
         (ontop notebook.n.01_5 floor.n.01_4)
         (inroom floor.n.01_4 bedroom)
+        (inroom cabinet.n.01_1 childs_room)
+        (inroom bookcase.n.01_1 kitchen)
+        (inroom electric_refrigerator.n.01_1 kitchen)
+        (inroom armchair.n.01_1 dining_room)
+        (inroom breakfast_table.n.01_1 dining_room)
+        (inroom coffee_table.n.01_1 living_room)
+        (inroom cabinet.n.01_2 living_room)
+        (inroom cabinet.n.01_3 bedroom)
+        (inroom bed.n.01_2 bedroom)
         (inroom bed.n.01_1 childs_room)
         (ontop agent.n.01_1 floor.n.01_5)
     )

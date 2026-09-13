@@ -93,6 +93,52 @@ def main() -> int:
     assert spec.warnings == (), spec.warnings
     ok("ten nodes in COOHAVIOR's order, each with its room, ending on bed.n.01_1")
 
+    print("test 1b: every S1 task's route loads against its BDDL, in COOHAVIOR's shape")
+    # LL/LH: one box through ten supports. HL/HH: five boxes, one station on
+    # each. The heavy tasks' notebook may be lifted by an arm only.
+    expect = {
+        "v4_s1_v4_ll": ("serial", 1, 10, {"die.n.01": ("arm", "drone")}),
+        "v4_s1_v4_lh": ("serial", 1, 10, {"notebook.n.01": ("arm",)}),
+        "v4_s1_v4_hl": ("parallel", 5, 10, {"die.n.01": ("arm", "drone")}),
+        "v4_s1_v4_hh": ("parallel", 5, 10, {"notebook.n.01": ("arm",)}),
+    }
+    for activity, (policy, n_routes, n_nodes, lift) in expect.items():
+        spec = load_route_spec(activity)
+        assert spec is not None, activity
+        assert (spec.policy, len(spec.routes), spec.required_nodes) == (policy, n_routes, n_nodes), (
+            activity, spec.policy, len(spec.routes), spec.required_nodes)
+        assert spec.lift == lift, (activity, spec.lift)
+        assert spec.warnings == (), (activity, spec.warnings)
+        # Every node has a room: the BDDL declares inroom for every support.
+        assert all(n.room for r in spec.routes for n in r.nodes), activity
+    # LH is LL's route with the cargo swapped and nothing else.
+    ll = load_route_spec("v4_s1_v4_ll").routes[0]; lh = load_route_spec("v4_s1_v4_lh").routes[0]
+    assert [n.support for n in ll.nodes] == [n.support for n in lh.nodes]
+    assert lh.cargo == "notebook.n.01_1" and ll.cargo == "die.n.01_1"
+    # HL and HH are the same five routes with the cargo swapped; they chain --
+    # M5's destination is M3's checkpoint -- and no node is a floor, so nothing
+    # can be true at load.
+    hl = load_route_spec("v4_s1_v4_hl"); hh = load_route_spec("v4_s1_v4_hh")
+    assert [(r.id, [n.support for n in r.nodes]) for r in hl.routes] == \
+           [(r.id, [n.support for n in r.nodes]) for r in hh.routes]
+    by_id = {r.id: r for r in hl.routes}
+    assert by_id["S1-M5"].destination.support == by_id["S1-M3"].checkpoints[0].support == "bookcase.n.01_1"
+    assert by_id["S1-M3"].destination.support == by_id["S1-M2"].checkpoints[0].support == "armchair.n.01_1"
+    assert not any(n.support.startswith("floor.") for r in hl.routes for n in r.nodes)
+    ok("four S1 route files, each the shape COOHAVIOR's tasks.modified.json gives it")
+
+    print("test 1c: every S1 definition survives BehaviorTask's wildcard pass")
+    # `_strip_wildcards` treats any line containing `*` as a wildcard scope
+    # line and indexes split(" - ")[1] -- so a `*` in a comment with a ` -- ` in
+    # it raises IndexError inside Environment.__init__, after the scene loads.
+    # Two GPU runs found that; this finds it in a millisecond.
+    from bddl.knowledge_base.models import Task as _Task
+    for activity in expect:
+        text = open(os.path.dirname(route_file_for(activity)) + "/problem0.bddl").read()
+        assert "*" not in text, f"{activity}: a '*' anywhere in the file is a wildcard to BehaviorTask"
+        _Task._strip_wildcards(_Task.__new__(_Task), text)
+    ok("no '*' in any S1 definition, and the pass runs clean on all four")
+
     print("test 2: an activity without a route file is simply unrouted")
     assert load_route_spec("coop_two_apples_pomaria") is None
     assert load_route_spec(None) is None

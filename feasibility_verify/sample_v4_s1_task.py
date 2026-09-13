@@ -51,8 +51,8 @@ SCENE_EDITS = os.path.join(
 TASKS = {
     "lh": {
         "activity": "v4_s1_v4_lh",
-        # One box, same spawn as LL -- the difference is the destination, which
-        # is a bedroom cabinet rather than the bedroom floor.
+        # One box, same spawn and the same ten-node route as LL (route.json);
+        # the difference is the cargo's weight, which only an arm may lift.
         "boxes": [("notebook.n.01_1", (-0.0672, 0.415), "floor.n.01_1", "childs_room_0")],
         # LH is one of V4's two *heavy* tasks. The authority on box mass is
         # COOHAVIOR/behavior_style_task/tasks.modified.json: `tasks[].box_mass_kg` is 0.02 for LH and HH,
@@ -73,12 +73,25 @@ TASKS = {
         "box_mass_kg": 0.02,
         "whitelist": {
             "notebook.n.01": {"notebook": {"aanuhi": None}},
-            # bedroom_0 holds four cabinets and `inroom` binds by room *type*,
-            # so without this the goal can land on any of them. `jrhgeu` is the
-            # model V4 lists as an S1 checkpoint support.
-            "cabinet.n.01": {"bottom_cabinet": {"jrhgeu": None, "slgzfc": None, "dajebq": None}},
+            # The route's supports (route.json), pinned to the models COOHAVIOR's
+            # S1 checkpoints name. `inroom` separates same-model instances in
+            # different rooms; the two jrhgeu cabinets share bedroom_0 and either
+            # is acceptable.
+            "cabinet.n.01": {"bottom_cabinet": {"dajebq": None, "jhymlr": None, "jrhgeu": None}},
+            "bookcase.n.01": {"bookcase": {"owvfik": None}},
+            "electric_refrigerator.n.01": {"fridge": {"xyejdx": None}},
+            "armchair.n.01": {"armchair": {"qplklw": None}},
+            "breakfast_table.n.01": {"breakfast_table": {"skczfi": None}},
+            "coffee_table.n.01": {"coffee_table": {"fqluyq": None}},
+            "bed.n.01": {"bed": {"zrumze": None}},
         },
-        "expect_rooms": {"cabinet.n.01_1": "bedroom_0"},
+        "expect_rooms": {
+            "cabinet.n.01_1": "childs_room_0", "bookcase.n.01_1": "kitchen_0",
+            "electric_refrigerator.n.01_1": "kitchen_0", "armchair.n.01_1": "dining_room_0",
+            "breakfast_table.n.01_1": "dining_room_0", "coffee_table.n.01_1": "living_room_0",
+            "cabinet.n.01_2": "living_room_0", "cabinet.n.01_3": "bedroom_0",
+            "bed.n.01_2": "bedroom_0", "bed.n.01_1": "childs_room_0",
+        },
     },
     "hh": {
         "activity": "v4_s1_v4_hh",
@@ -113,14 +126,24 @@ TASKS = {
             # three armchairs are all model `qplklw` and both beds are `zrumze`,
             # so a whitelist cannot separate them. Whichever binds is reported
             # below and protected from the furniture filter.
+            # The route's supports (route.json), pinned to the models COOHAVIOR's
+            # S1 checkpoints name. `inroom` separates same-model instances in
+            # different rooms; the two jrhgeu cabinets share bedroom_0 and either
+            # is acceptable.
+            "cabinet.n.01": {"bottom_cabinet": {"dajebq": None, "jhymlr": None, "jrhgeu": None}},
             "bookcase.n.01": {"bookcase": {"owvfik": None}},
+            "electric_refrigerator.n.01": {"fridge": {"xyejdx": None}},
+            "armchair.n.01": {"armchair": {"qplklw": None}},
+            "breakfast_table.n.01": {"breakfast_table": {"skczfi": None}},
+            "coffee_table.n.01": {"coffee_table": {"fqluyq": None}},
+            "bed.n.01": {"bed": {"zrumze": None}},
         },
         "expect_rooms": {
-            "bookcase.n.01_1": "kitchen_0",
-            "armchair.n.01_1": "dining_room_0",
-            "coffee_table.n.01_1": "living_room_0",
-            "bed.n.01_1": "childs_room_0",
-            "bed.n.01_2": "bedroom_0",
+            "cabinet.n.01_1": "childs_room_0", "bookcase.n.01_1": "kitchen_0",
+            "electric_refrigerator.n.01_1": "kitchen_0", "armchair.n.01_1": "dining_room_0",
+            "breakfast_table.n.01_1": "dining_room_0", "coffee_table.n.01_1": "living_room_0",
+            "cabinet.n.01_2": "living_room_0", "cabinet.n.01_3": "bedroom_0",
+            "bed.n.01_2": "bedroom_0", "bed.n.01_1": "childs_room_0",
         },
     },
     "hl": {
@@ -139,22 +162,29 @@ TASKS = {
         "cargo": "die.n.01",
         "box_mass_kg": 0.008,
         "attempts": 30,
-        "whitelist": {"die.n.01": {"dice": {"iswudu": 2.0}}},
-        "expect_rooms": {},
-        # The goal holds at t=0, and that is the task as written. V4's five HL
-        # goals are `ontop(box_i, floor.n.01_target_i)` with the target floor
-        # `inroom` the same room the box starts in: its targets are *positions*
-        # on a floor. Ours is a room-level predicate and Merom_1_int has one
-        # floor object per room, so start and target are the same object and
-        # every goal clause is literally an initial condition. COOHAVIOR's real
-        # task structure is the ordered package sequence in tasks.modified.json
-        # (`packages[].depends_on`, `routes`), which a supervision layer will
-        # enforce later; the BDDL goal is only the final state (user,
-        # 2026-09-12). So the "goal already met" refusal is switched off for
-        # this one task and no other. Until that layer exists, `check_goal`
-        # is the only authority over `terminated`, and a run of this activity
-        # ends at env_step 0.
-        "allow_trivial_goal": True,
+        "whitelist": {
+            "die.n.01": {"dice": {"iswudu": 2.0}},
+            # The route's supports (route.json), pinned to the models COOHAVIOR's
+            # S1 checkpoints name. `inroom` separates same-model instances in
+            # different rooms; the two jrhgeu cabinets share bedroom_0 and either
+            # is acceptable.
+            "cabinet.n.01": {"bottom_cabinet": {"dajebq": None, "jhymlr": None, "jrhgeu": None}},
+            "bookcase.n.01": {"bookcase": {"owvfik": None}},
+            "electric_refrigerator.n.01": {"fridge": {"xyejdx": None}},
+            "armchair.n.01": {"armchair": {"qplklw": None}},
+            "breakfast_table.n.01": {"breakfast_table": {"skczfi": None}},
+            "coffee_table.n.01": {"coffee_table": {"fqluyq": None}},
+            "bed.n.01": {"bed": {"zrumze": None}},
+        },
+        "expect_rooms": {
+            "cabinet.n.01_1": "childs_room_0", "bookcase.n.01_1": "kitchen_0",
+            "electric_refrigerator.n.01_1": "kitchen_0", "armchair.n.01_1": "dining_room_0",
+            "breakfast_table.n.01_1": "dining_room_0", "coffee_table.n.01_1": "living_room_0",
+            "cabinet.n.01_2": "living_room_0", "cabinet.n.01_3": "bedroom_0",
+            "bed.n.01_2": "bedroom_0", "bed.n.01_1": "childs_room_0",
+        },
+        # The goals are the routes' destinations now (route.json), so nothing
+        # holds at t=0 and the trivial-goal switch this task used to need is gone.
     },
 }
 
@@ -295,6 +325,23 @@ def main():
             f"{entity_id} bound to {obj.name}, which stands in {actual}, not {want}"
             f" (its annotation says {list(getattr(obj, 'in_rooms', None) or [])})")
     print(f"  all {len(spec.get('expect_rooms') or {})} expected room bindings hold")
+
+    # Every support the route names must have bound, and the log must say to
+    # what: this print is the only place an unbindable support is visible
+    # before an episode is spent on it.
+    from coop2.behavior_env.route_spec import load_route_spec  # noqa: PLC0415
+
+    route = load_route_spec(activity)
+    if route is not None:
+        print(f"\nroute bindings ({route.required_nodes} nodes):")
+        for r in route.routes:
+            for node in r.nodes:
+                entity = scope.get(node.support)
+                obj = getattr(entity, "wrapped_obj", entity)
+                assert obj is not None, f"{r.id} {node.id} names {node.support}, which did not bind"
+                xy = obj.get_position_orientation()[0][:2]
+                print(f"  {r.id} {node.id:<3} {node.support:<28} -> {obj.name:<28} "
+                      f"({float(xy[0]):+.2f}, {float(xy[1]):+.2f}) {seg_room_of_object(obj)}")
 
     og.sim.play()
     env.task.reset(env)
