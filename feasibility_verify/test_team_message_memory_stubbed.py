@@ -90,9 +90,13 @@ def main() -> int:
 
     print("test 3: the record reached the prompt the follower planned from")
     prompt = client.last_prompt
-    assert "MESSAGES THIS TEAM SENT AND RECEIVED" in prompt, prompt[-600:]
-    assert "From lead (new)" in prompt, "the request it was answering was news at that moment"
-    ok("the planning prompt quotes the exchange")
+    # Since 2026-09-13 the news is section 7 and the record section 8, so the
+    # request it was answering is quoted under MESSAGES RECEIVED NOW and not
+    # repeated in the history.
+    assert "## 7. MESSAGES RECEIVED NOW" in prompt, prompt[-600:]
+    news = prompt.split("## 7.", 1)[1].split("## 8.", 1)[0] if "## 8." in prompt else prompt.split("## 7.", 1)[1]
+    assert "From lead" in news, "the request it was answering was news at that moment"
+    ok("the planning prompt quotes the exchange, the news in section 7")
 
     print("test 4: the leader hears the answer, and keeps its own question next to it")
     lead._collect_heard()
@@ -105,12 +109,12 @@ def main() -> int:
     members = [lead.members["agent_0"], lead.members["agent_1"]]
     incoming = [dict(replies[0], content=replies[0]["content"])]
     user = lead._build_interrupt_prompt(members, incoming)[1]["content"]
-    assert "MESSAGES:" in user
+    assert "## 7. MESSAGES RECEIVED NOW" in user
     body = replies[0]["content"]
     assert user.count(body) == 1, f"quoted {user.count(body)} times:\n{user}"
-    assert "EARLIER MESSAGES" in user, "the record minus the news is still there"
+    assert "## 8. CONVERSATION HISTORY" in user, "the record minus the news is still there"
     assert "You told follow" in user
-    ok("the news under MESSAGES, the rest under EARLIER MESSAGES, each once")
+    ok("the news under section 7, the rest under section 8, each once")
 
     print("test 6: the record is bounded, and keeps the newest")
     for i in range(TEAM_MESSAGE_HISTORY * 3):

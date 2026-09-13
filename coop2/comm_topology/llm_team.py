@@ -69,6 +69,13 @@ from coop2.cognitive.agent.base_llm_agent import BaseLLMAgent
 from coop2.cognitive.agent.cognitive_agent import parse_plan_response
 from coop2.cognitive.agent.llm_client import InterruptDecision
 from coop2.cognitive.agent.memory import AgentMemory
+from coop2.cognitive.agent.prompt_sections import (  # noqa: E402
+    action_history_section,
+    assemble_user_prompt,
+    conversation_history_section,
+    current_messages_section,
+    observations_section,
+)
 from coop2.cognitive.agent.prompts import (
     build_team_system_prompt, format_message_content_for_prompt, format_plan_history,
 )
@@ -89,24 +96,8 @@ __all__ = [
 
 #: Appended to the team system prompt. Only what the world description cannot
 #: say: these are properties of being asked as a team, not of the house.
-TEAM_ROLE = """
-## Your Role: TEAM CONTROLLER
-You are given all {n} robots' observations in one call and answer with one plan
-per robot, in that same call.
-
-- Divide the work. Two robots sent to the same object waste one of them: the
-  loser burns the whole trip and its grasp fails with OBJECT_CLAIMED.
-- Your robots start their plans together and you are not asked again until
-  every one of them has finished. A robot that finishes early holds position
-  and does nothing useful, so plans of wildly different lengths waste the
-  short ones.
-- Other teams are driven by their own controllers, not by you. You coordinate
-  with them only through the messages quoted in this prompt.
-- Under each robot are its last few plans, with their actions and how each
-  ended; at the end are the messages this team has sent and received so far.
-  A plan that failed for a reason that still holds will fail the same way
-  again, and a question you already asked has its answer in the record.
-"""
+#: TEAM_ROLE moved into ``prompt_sections.role_section`` (2026-09-13): the
+#: system prompt is assembled there, section by section, in a fixed order.
 
 #: How many of the team's own messages -- sent and received, oldest first --
 #: the prompt quotes. The memory keeps more (`TEAM_MESSAGE_MEMORY`), so this
@@ -199,6 +190,11 @@ class TeamBrain:
         self.temperature = temperature
         self.verbose = verbose
         self.goal_instruction = goal_instruction
+        #: Sections 5 and 6b of the prompt, reserved for digtag (the next
+        #: cooperation system): its manual, and its own task observation.
+        #: Empty strings add nothing to the prompt.
+        self.reserved_system_prompt = ""
+        self.reserved_task_observation = ""
 
         self.members: Dict[str, "LLMTeamAgent"] = {}
         self._lock = threading.RLock()
@@ -412,7 +408,7 @@ class TeamBrain:
     def _env_step(self) -> int:
         return max((getattr(m, "env_step", 0) or 0 for m in self.members.values()), default=0)
 
-    def _messages_block(self, heading: str = "MESSAGES THIS TEAM SENT AND RECEIVED",
+    def _messages_block(self, heading: str = "## 8. CONVERSATION HISTORY",
                         exclude: Optional[List[Dict]] = None) -> str:
         """What this team has said and been told, oldest first.
 
@@ -1014,13 +1010,57 @@ class TeamBrain:
 
     # -- prompts -----------------------------------------------------------
 
+    #: Section 4 of the system prompt. Subclasses name their mode.
+    COOPERATION_MODE = "individual"
+
     def _system_prompt(self, anchor: "LLMTeamAgent") -> str:
-        base = build_team_system_prompt(
+        """Sections 1-5, in order: role, environment, robots, cooperation
+        mode, the reserved digtag manual (``self.reserved_system_prompt``)."""
+        members = [self.members[n] for n in self.member_ids if n in self.members]
+        return build_team_system_prompt(
             self.team_name,
-            [name for name in self.member_ids if name in self.members],
+            [m.agent_id for m in members],
             max_actions=6,
+            cooperation_mode=self.COOPERATION_MODE,
+            robot_profiles=self._robot_profiles(members),
+            lift_rules=self._lift_rules(members),
+            reserved=getattr(self, "reserved_system_prompt", ""),
         )
-        return base + "\n\n" + TEAM_ROLE.format(n=self.size).strip()
+
+    @staticmethod
+    def _world_observation(member: "LLMTeamAgent"):
+        """The member's SymbolicObservation, if its last observe() carried one."""
+        raw = getattr(member, "observation", None)
+        if isinstance(raw, dict):
+            return raw.get("symbolic_world_state")
+        return None
+
+    def _robot_profiles(self, members) -> Dict[str, Dict[str, object]]:
+        """``{robot: flags}`` for section 3's roster, read off each robot's own
+        observation; a robot without one is left out rather than guessed."""
+        profiles: Dict[str, Dict[str, object]] = {}
+        for member in members:
+            obs = self._world_observation(member)
+            if obs is None:
+                continue
+            me = next((e for e in getattr(obs, "entities", {}).values()
+                       if getattr(e, "name", None) == obs.agent_id), None)
+            if me is None:
+                continue
+            profiles[member.agent_id] = {
+                "is_carrier": bool(getattr(me, "is_carrier", False)),
+                "base_locked_while_holding": bool(getattr(me, "base_locked_while_holding", False)),
+                "lift_role": getattr(me, "lift_role", None),
+            }
+        return profiles
+
+    def _lift_rules(self, members):
+        for member in members:
+            obs = self._world_observation(member)
+            rules = getattr(obs, "lift_rules", None) if obs is not None else None
+            if rules:
+                return dict(rules)
+        return None
 
     TASK_HEADER = "\nYOUR TASK, in the ids it is written in:"
 
@@ -1065,71 +1105,78 @@ class TeamBrain:
             lines.append(member.target_hints)
         else:
             lines.append("(no observation yet)")
+        return "\n".join(lines)
+
+    def _action_history_block(self, member: "LLMTeamAgent") -> str:
+        """Section 9, one robot: what it is doing now and its last plans.
+
+        Per robot, not per team: each robot finished its own plans for its own
+        reasons, and a merged list would leave the model to guess which of
+        four robots a failure belonged to.
+        """
+        lines = [f"--- {member.agent_id} ---"]
         plan = member.plan
         if plan is not None:
-            lines.append(f"Its last plan: {plan.specification} [{plan.status.value}]")
-        # Per robot, not per team: each robot finished its own plans for its own
-        # reasons, and a merged list would leave the model to guess which of
-        # four robots a failure belonged to.
+            lines.append(f"Its current plan: {plan.specification} [{plan.status.value}]")
         history = format_plan_history(getattr(member, "plan_history", []))
         if history:
             lines.append(history)
-        return "\n".join(lines)
+        return "\n".join(lines) if len(lines) > 1 else ""
+
+    def _render_message(self, message: Dict) -> str:
+        return f"From {message.get('sender', 'unknown')}: {message.get('content', '')}"
 
     def _build_team_prompt(self, members: List["LLMTeamAgent"]) -> List[Dict[str, str]]:
+        """Sections 6-9, then the closing instruction."""
         anchor = members[0]
-        parts = [f"=== STEP {anchor.env_step} ==="]
-        if self.goal_instruction:
-            parts.append(f"\nGLOBAL OBJECTIVE: {self.goal_instruction}")
-        parts.append(f"\nTEAM {self.team_name} ({len(members)} robots): "
-                     f"{', '.join(m.agent_id for m in members)}")
-        task = self._team_task_block(members)
-        if task:
-            parts.append(task)
-        for member in members:
-            parts.append("\n" + self._member_block(member))
-        messages = self._messages_block()
-        if messages:
-            parts.append(messages)
-        parts.append(
-            f"\nReturn exactly {len(members)} plans, one per robot, using each "
-            "robot's own ids. Say in `reasoning` how you divided the work."
+        new = list(self._heard)
+        user = assemble_user_prompt(
+            observations=observations_section(
+                anchor.env_step, self.team_name,
+                [self._member_block(m) for m in members],
+                task_block=self._team_task_block(members),
+                goal_instruction=self.goal_instruction,
+                reserved_task_observation=getattr(self, "reserved_task_observation", ""),
+            ),
+            current_messages=current_messages_section(self.COOPERATION_MODE, new, self._render_message),
+            conversation_history=conversation_history_section(
+                self._messages_block("## 8. CONVERSATION HISTORY", exclude=new)),
+            action_history=action_history_section([self._action_history_block(m) for m in members]),
+            closing=(f"Return exactly {len(members)} plans, one per robot, using each "
+                     "robot's own ids. Say in `reasoning` how you divided the work."),
         )
         return [
             {"role": "system", "content": self._system_prompt(anchor)},
-            {"role": "user", "content": "\n".join(parts)},
+            {"role": "user", "content": user},
         ]
 
     def _build_interrupt_prompt(
         self, members: List["LLMTeamAgent"], messages: List[Dict]
     ) -> List[Dict[str, str]]:
+        """The same sections; the interrupting messages are section 7."""
         anchor = members[0]
-        parts = [f"=== STEP {anchor.env_step} ===", "\nThe team was interrupted by a message."]
-        if self.goal_instruction:
-            parts.append(f"\nGLOBAL OBJECTIVE: {self.goal_instruction}")
-        # The record first, minus the messages being decided on -- those are
-        # quoted in full right after it, and were quoted twice before this.
-        earlier = self._messages_block("EARLIER MESSAGES", exclude=messages)
-        if earlier:
-            parts.append(earlier)
-        parts.append("\nMESSAGES:")
-        for message in messages or []:
-            sender = message.get("sender", "unknown")
-            parts.append(f"  From {sender}: {message.get('content', '')}")
-        task = self._team_task_block(members)
-        if task:
-            parts.append(task)
-        for member in members:
-            parts.append("\n" + self._member_block(member))
-        parts.append(
-            "\nFor each robot decide 'resume' or 'replan'. Resume unless the "
-            "message actually contradicts what that robot is doing -- replanning "
-            "a robot the message did not concern throws away work it has already "
-            "paid for. A 'replan' decision must carry its new_plan."
+        user = assemble_user_prompt(
+            observations=observations_section(
+                anchor.env_step, self.team_name,
+                [self._member_block(m) for m in members],
+                task_block=self._team_task_block(members),
+                goal_instruction=self.goal_instruction,
+                reserved_task_observation=getattr(self, "reserved_task_observation", ""),
+                preface="\nThe team was interrupted by a message.",
+            ),
+            current_messages=current_messages_section(
+                self.COOPERATION_MODE, list(messages or []), self._render_message),
+            conversation_history=conversation_history_section(
+                self._messages_block("## 8. CONVERSATION HISTORY", exclude=messages)),
+            action_history=action_history_section([self._action_history_block(m) for m in members]),
+            closing=("For each robot decide 'resume' or 'replan'. Resume unless the "
+                     "message actually contradicts what that robot is doing -- replanning "
+                     "a robot the message did not concern throws away work it has already "
+                     "paid for. A 'replan' decision must carry its new_plan."),
         )
         return [
             {"role": "system", "content": self._system_prompt(anchor)},
-            {"role": "user", "content": "\n".join(parts)},
+            {"role": "user", "content": user},
         ]
 
 
@@ -1143,6 +1190,8 @@ class ChainTeamBrain(TeamBrain):
     ordered now is teams, and each message carries a whole team's allocation
     rather than one robot's intention.
     """
+
+    COOPERATION_MODE = "broadcast_chain"
 
     def before_plan(self) -> None:
         self._await_speakers()
@@ -1255,6 +1304,8 @@ class LeaderTeamBrain(TeamBrain):
     intended several hundred ticks ago.
     """
 
+    COOPERATION_MODE = "centralized_leader"
+
     def before_plan(self) -> None:
         self._say(
             f"[{self.team_name}] Leader planning request: report each robot's position, "
@@ -1311,6 +1362,8 @@ class FollowerTeamBrain(TeamBrain):
     it is a status report, and spending an LLM call to paraphrase facts the
     brain already has would double this topology's cost for nothing.
     """
+
+    COOPERATION_MODE = "centralized_follower"
 
     def on_interrupt(self, messages: List[Dict]) -> None:
         """Answer the leader the moment its request lands.

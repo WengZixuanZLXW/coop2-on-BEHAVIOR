@@ -100,97 +100,18 @@ Read the failure reason before replanning -- it tells you whether to wait,
 approach, or pick a different target."""
 
 
-#: The same world, described to a controller that drives several robots at once
-#: rather than to one robot. Not generated from ENV_DESCRIPTION by swapping
-#: pronouns: the two differ in substance as well as person -- a team controller
-#: has to allocate between robots, and is told what that costs. The shared rules
-#: (TOO_FAR, unreachable, exclusivity, id discipline) must stay in step, and
-#: test_team_prompt_stubbed.py fails if one of them is edited out of either.
-TEAM_ENV_DESCRIPTION = """You command a team of robots in a house, alongside other teams doing the same.
+#: The world and the robots, described to a controller that drives several
+#: robots at once. Since 2026-09-13 this is sections 2 and 3 of
+#: ``prompt_sections`` (environment rules, robot capabilities); kept under this
+#: name so the shared-rule guard in test_team_prompt_stubbed still has one
+#: string to check against ENV_DESCRIPTION.
+from coop2.cognitive.agent.prompt_sections import (  # noqa: E402
+    ENVIRONMENT_RULES as _ENVIRONMENT_RULES,
+    ROBOT_CAPABILITIES as _ROBOT_CAPABILITIES,
+    build_team_system_prompt as _build_team_system_prompt,
+)
 
-Your robots act through high-level primitives, not joint commands. Each one
-takes many simulation steps: driving across a room costs 30 ticks per metre, so
-distance is the main cost you control. None of them can see -- each is given a
-symbolic description of the room it is standing in, and only that room, and
-those descriptions are listed below one robot at a time.
-
-Rules that decide whether an action succeeds:
-- To grasp, place, open or toggle an object a robot must be closer to it than
-  that object's own distance threshold; beyond it the action fails with TOO_FAR.
-  Each object in a robot's room listing carries what that robot can do to it
-  after "->", and a distance in metres ONLY when it is out of range -- no
-  distance means that robot is already close enough to act on it now.
-- An out-of-range object is marked "unreachable" and offers navigate_to and
-  NOTHING else. No robot can grasp, place, open or toggle an unreachable
-  object, however close it looks in the room listing: it must navigate_to it
-  first.
-- If a robot has nothing useful to do right now -- another robot is already
-  handling the only target it could work on, or it is waiting on something to
-  finish -- give it wait rather than acting anyway. wait holds its position for
-  the number of ticks you give it, during which the others make progress.
-- One object at a time per robot: grasp needs an empty gripper, place needs a
-  full one.
-- Objects are exclusive, including between your own robots. If anyone is
-  holding something, a grasp for it fails with "held by <agent>". Sending two
-  robots after one target costs the loser the whole trip for nothing.
-- A robot may be unable to drive while its gripper is loaded. Some bases lock
-  the moment the robot picks something up, and navigate_to then fails with
-  BASE_LOCKED; such a robot cannot deliver what it picks up. Have it load the
-  object onto a carrier robot with load_onto, let the carrier drive, and have
-  an arm take it back at the far end with unload_from. A carrier is a robot
-  with no arm of its own -- cargo rides on its back. Both actions name the
-  *carrier* as their target and need the two robots within reach of each other.
-  This is a division of labour, not a detour: it is why a task can need more
-  than one of your robots.
-- ONLY a robot marked [base locks while holding] needs a carrier. Any other
-  robot that can grasp -- a drone, an unmarked arm -- carries what it holds by
-  itself: grasp, navigate_to the support, place_on_top, done. A drone that can
-  lift the cargo needs nobody: routing its cargo through a carrier and back is
-  a detour that costs two extra actions and a round of waiting for nothing.
-  Use the carrier for the base-locked robot's legs, and only for those.
-- A carrier and what it is carrying are ONE line in that robot's room listing:
-
-    - agent_1  (teammate)  [carrier, carrying box.n.01_1]  -> unload_from
-
-  The cargo has no line of its own and cannot be grasped where it sits.
-  unload_from(agent_1) takes it off that carrier's back and into the acting
-  robot's hand; load_onto(agent_1) puts what that robot holds onto it. Both
-  name the carrier, both need the two robots within reach of each other, and
-  unload_from is the only way to get cargo back.
-- **A carrier has no arm**, so give it navigate_to and wait and nothing else:
-  no grasp, no place, no release, no load_onto or unload_from -- those are done
-  *to* it by a robot that has a hand. Its own section lists its load on an
-  "On your back:" line, and it cannot put that down itself. Its job is to drive
-  to where an arm is waiting, which is the whole reason a task needs two of them.
-- Some tasks are a route: YOUR TASK lists supports the cargo must rest on in
-  order, marked done / NEXT. Only the NEXT support counts when the cargo is
-  placed on it; a support reached out of order does not count and costs
-  nothing -- progress resumes when NEXT holds. Progress is judged on where the
-  cargo rests, not on what a robot intended.
-- Every id in YOUR TASK is a valid navigate_to target for any robot from ANY
-  room, even when it is not in that robot's listing: navigate_to(<that id>)
-  drives it there, through the house, and its next listing shows that room.
-  That is how a robot changes rooms. The cargo is where YOUR TASK says it
-  starts (or on the last support marked done) -- send a robot there; it will
-  not be found where the robots stand.
-- The line "Rooms in this house" names every room. navigate_to(<room name>)
-  drives a robot to a free spot inside that room, so it can reach a room whose
-  objects it cannot name yet, or go and look for something.
-- The drone cannot lift the notebook. A robot tagged [drone] can grasp and
-  carry the die (die.n.01_1) but NOT the notebook (notebook.n.01_1): grasp or
-  unload_from on it fails with CANNOT_LIFT, and getting closer does not change
-  that. Only a robot with an arm can lift the notebook, so give that leg to an
-  arm; this division of labour is what the task is built around.
-- Refer to objects only by the ids in that robot's own room listing, which are
-  the objects in the room it is standing in. They look like apple.n.01_1. Never
-  invent one, and never give one robot an id that appeared only under another
-  robot -- it is in a room that robot cannot see.
-- An entry marked "blocked" is in that room but currently unavailable -- the
-  bracketed note says why.
-
-When an action fails, that robot's plan is abandoned. You are told the failure
-reason the next time you are asked -- read it before replanning: it tells you
-whether that robot should wait, approach, or pick a different target."""
+TEAM_ENV_DESCRIPTION = _ENVIRONMENT_RULES + "\n\n" + _ROBOT_CAPABILITIES
 
 
 def get_env_description() -> str:
@@ -656,31 +577,16 @@ def build_team_system_prompt(
     team_name: str,
     member_ids: List[str],
     max_actions: int = 6,
+    **sections,
 ) -> str:
     """System prompt for the one LLM that drives a whole team.
 
-    Distinct from ``build_system_prompt`` in person and in task: that one tells
-    a model it *is* a robot and asks for one plan, which is the wrong framing
-    for a caller that receives four observations and must answer with four
-    plans. It was being used for teams with the team's name in the robot slot,
-    so the prompt opened by calling team_0 a robot and then asked it for a
-    single plan.
+    Sections 1-5 of ``prompt_sections`` in their fixed order: role, environment
+    rules, robot capabilities, cooperation mode, the reserved digtag slot.
+    ``**sections`` are that builder's keyword arguments (``cooperation_mode``,
+    ``robot_profiles``, ``lift_rules``, ``reserved``).
     """
-    robots = ", ".join(member_ids)
-    return "\n".join([
-        f"You command TEAM '{team_name}' -- {len(member_ids)} robots "
-        f"({robots}) -- in a multi-agent cooperative household task.",
-        "",
-        TEAM_ENV_DESCRIPTION,
-        "",
-        f"""PLAN RESPONSE:
-- Return a structured plan for EVERY robot listed above, one each, tagged with
-  that robot's agent_id.
-- Give each robot one task and at most {max_actions} actions; 3-6 short
-  executable actions are usually enough.
-- Use exact item_id values from that robot's own section of the prompt.
-- Say in the team-level `reasoning` how you divided the work between them.""",
-    ])
+    return _build_team_system_prompt(team_name, member_ids, max_actions=max_actions, **sections)
 
 
 def build_system_prompt(

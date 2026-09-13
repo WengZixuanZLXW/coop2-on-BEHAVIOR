@@ -180,11 +180,16 @@ def main() -> int:
         a.observe({}, 0)
     agents["agent_0"].plan_history = agent.plan_history
     user = brain._build_team_prompt([brain.members["agent_0"], brain.members["agent_1"]])[1]["content"]
+    # Since 2026-09-13 the history is section 9, at the end, one sub-block per
+    # robot -- not under the robot's observation (user: fixed prompt order).
     a0 = user.index("=== ROBOT agent_0 ==="); a1 = user.index("=== ROBOT agent_1 ===")
-    assert "YOUR FINISHED PLANS" in user[a0:a1], "agent_0's history is missing from its own block"
-    assert "YOUR FINISHED PLANS" not in user[a1:], "agent_1 has no history and must show none"
-    assert "plan: navigate_to(apple.n.01_1)" in user[a0:a1]
-    ok("each robot's block carries its own plans and their actions")
+    assert "YOUR FINISHED PLANS" not in user[a0:a1], "history must not sit under the observation any more"
+    section9 = user.split("## 9. ACTION HISTORY AND FAILURES", 1)[1]
+    h0 = section9.index("--- agent_0 ---")
+    assert "YOUR FINISHED PLANS" in section9[h0:], "agent_0's history is missing from section 9"
+    assert "--- agent_1 ---" not in section9, "agent_1 has no history and must show none"
+    assert "plan: navigate_to(apple.n.01_1)" in section9[h0:]
+    ok("section 9 carries each robot's own plans and their actions, and only for robots that have some")
 
     print("\nALL TESTS PASSED")
     return 0

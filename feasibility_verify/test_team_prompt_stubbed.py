@@ -59,7 +59,8 @@ def main() -> int:
 
     print("test 1: the prompt addresses a controller, not a robot")
     assert "You are agent" not in prompt, prompt.splitlines()[0]
-    assert "team_0" in prompt.splitlines()[0], prompt.splitlines()[0]
+    head = "\n".join(prompt.splitlines()[:3])
+    assert prompt.startswith("## 1. YOUR ROLE") and "team_0" in head, head
     for name in members:
         assert name in prompt, f"{name} is not named in the prompt"
     # It is given four observations and must answer with four plans. The
@@ -103,6 +104,37 @@ def main() -> int:
         assert user.count(f"view for {name}") == 1
     assert "put the apples on the table" in user
     ok("the team call carries the team system prompt and four observations")
+
+    print("test 5: the sections come in the fixed order, system 1-5 and user 6-9")
+    import coop2.cognitive.agent.prompt_sections as ps
+    sys_headers = ["## 1. YOUR ROLE", "## 2. ENVIRONMENT RULES", "## 3. ROBOT CAPABILITIES",
+                   "## 4. COOPERATION MODE"]
+    positions = [system.index(h) for h in sys_headers]
+    assert positions == sorted(positions), positions
+    assert "## 5. DIGTAG" not in system, "the reserved slot adds nothing while empty"
+    brain.reserved_system_prompt = "digtag manual goes here"
+    with_digtag = brain._system_prompt(brain.members[members[0]])
+    assert with_digtag.rstrip().endswith("## 5. DIGTAG\ndigtag manual goes here"), with_digtag[-120:]
+    brain.reserved_system_prompt = ""
+    for mode in ("individual", "broadcast_chain", "centralized_leader", "centralized_follower"):
+        assert f"## 4. COOPERATION MODE" in ps.cooperation_section(mode)
+    # User side: observations, then messages now, then history, then action history.
+    brain.memory.record_message_out(sender="team_0", recipients=["team_1"], content="we take C1", env_step=3)
+    brain._heard = [{"sender": "team_1", "content": "we take C2", "metadata": {}}]
+    for agent in agents.values():
+        agent.plan_history = [{"plan_id": 1, "status": "failed", "specification": "ontop(x, y)",
+                               "actions": ["grasp(x)"], "reason": "TOO_FAR"}]
+    user2 = brain._build_team_prompt([brain.members[n] for n in members])[1]["content"]
+    order = [user2.index(h) for h in ("## 6. OBSERVATIONS", "## 7. MESSAGES RECEIVED NOW",
+                                      "## 8. CONVERSATION HISTORY", "## 9. ACTION HISTORY AND FAILURES")]
+    assert order == sorted(order), order
+    assert "we take C2" in user2.split("## 8.")[0].split("## 7.")[1], "the new message is in section 7"
+    assert "TOO_FAR" in user2.split("## 9.")[1], "failures are in section 9"
+    assert "TOO_FAR" not in user2.split("## 7.")[0], "and no longer under the robot's observation"
+    brain.reserved_task_observation = "digtag task view"
+    user3 = brain._build_team_prompt([brain.members[n] for n in members])[1]["content"]
+    assert "DIGTAG TASK OBSERVATION:\ndigtag task view" in user3.split("=== ROBOT")[0]
+    ok("1-5 in order in the system prompt, 6-9 in the user prompt, both digtag slots wired")
 
     print("\nALL TESTS PASSED")
     return 0

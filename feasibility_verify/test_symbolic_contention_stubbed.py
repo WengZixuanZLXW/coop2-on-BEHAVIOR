@@ -590,9 +590,13 @@ def main() -> int:
     from coop2.behavior_env.symbolic_contention import DEFAULT_TRAVEL_TICKS_PER_METER
 
     charge = int(DEFAULT_TRAVEL_TICKS_PER_METER)
-    with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                           "coop2/cognitive/agent/prompts.py")) as handle:
-        prompt_source = handle.read()
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    prompt_source = ""
+    # The single-robot description lives in prompts.py; the team's environment
+    # rules moved to prompt_sections.py (2026-09-13). One literal each.
+    for rel in ("coop2/cognitive/agent/prompts.py", "coop2/cognitive/agent/prompt_sections.py"):
+        with open(os.path.join(root, rel)) as handle:
+            prompt_source += handle.read()
     quoted = re.findall(r"(\d+) ticks per metre", prompt_source)
     assert len(quoted) == 2, f"expected both descriptions to state it, found {quoted}"
     assert all(int(value) == charge for value in quoted), (

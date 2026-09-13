@@ -1716,6 +1716,27 @@ a drone or an unmarked arm carries what it holds by itself, and routing its
 cargo through a carrier is a detour. Whether the model then still does it
 is what the next run shows; the rule is the part that was ours to fix.
 
+## The prompt in nine sections, in a fixed order (2026-09-13)
+
+The team prompt is now assembled section by section, in the order the user
+fixed, by `coop2/cognitive/agent/prompt_sections.py`; `coop2/PROMPTS.md`
+links every file and symbol that contributes to it. System: 1 role and
+response format, 2 environment rules, 3 robot capabilities (generic text
+plus this team's roster from each robot's own observation flags and the
+activity's lift table), 4 cooperation-mode rules (individual /
+broadcast_chain / centralized leader / follower -- none of these texts
+existed before), 5 the reserved digtag manual. User: 6 every robot's
+observation and available actions with THE TEAM'S TASK once and a reserved
+digtag task-observation slot, 7 the messages received now (heading worded
+for the mode), 8 the conversation history, 9 each robot's action history
+and failure reasons, which used to sit under its observation. The two
+digtag slots are `TeamBrain.reserved_system_prompt` and
+`reserved_task_observation`; empty strings add no tokens. `TEAM_ROLE` and
+`TEAM_ENV_DESCRIPTION` are gone as sources of truth; the latter survives as
+the concatenation of sections 2 and 3 so the shared-rule guard still works.
+The legacy single-robot prompts (`ENV_DESCRIPTION`, `build_system_prompt`)
+were not restructured; they are off the runtime path.
+
 ## Open defects
 
 Fixed ones are not listed here -- the fix and its reasoning live in the commit
