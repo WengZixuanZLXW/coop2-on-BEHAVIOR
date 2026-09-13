@@ -1810,6 +1810,30 @@ dropped its `[x is in the bedroom]` notes. Fourteen descriptions, one line
 each, checked by `test_goal_terms_stubbed` 5b; `test_route_tracker` 12 checks
 the block opens with the description and has no bracket on any line.
 
+## Centralized: the leader assigns first (2026-09-13)
+
+The leader's first message of a round used to be a request -- "report each
+robot's position, what it holds, ..." -- and the followers reported. Now
+(user): the leader's first message IS the assignment, written by the model
+from the full task block, its own robots' observations, their action history
+and the record (`LeaderTeamBrain._compose_assignment`, the same section
+builders as a plan prompt plus one closing instruction); each follower
+answers it -- accept and say which robot does which part, or say what it will
+do instead and why (`FollowerTeamBrain._compose_response`, grounded in
+`_status_report()`); then the leader plans its own robots with the responses
+in section 7. Sections 4 and 7 say so in both roles' words. The wire type is
+still `leader_broadcast`, because the broker treats that name as interrupting
+and the interrupt tests pin it. `_compose_report` remains as an alias.
+
+**History in time order.** The conversation record sorted by filing order
+showed a reply above the message it answered: a follower that answers from
+`on_interrupt` writes its reply inside the delivery of the assignment, before
+the leader has recorded its own outgoing line. The record is now sorted by
+the broker's timestamp, and the outgoing line is stamped on the broker's
+clock before it is sent (`_say`), so sent and received interleave as they
+happened. Absolute wall time would not have worked: the broker stamps every
+message relative to the agents' start.
+
 ## Open defects
 
 Fixed ones are not listed here -- the fix and its reasoning live in the commit

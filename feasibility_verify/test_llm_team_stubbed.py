@@ -60,6 +60,7 @@ class StubClient:
         self.last_interrupt_prompt = None
         self.text_calls = 0
         self.last_text_prompt = None
+        self.text_prompts = []
         self.interrupt_script = {}
 
     def _members_in(self, messages):
@@ -86,6 +87,11 @@ class StubClient:
         """Plain text, for a follower composing its report."""
         self.text_calls += 1
         self.last_text_prompt = messages[-1]["content"]
+        self.text_prompts.append(messages[-1]["content"])
+        # A leader assigning and a follower answering get different texts, so
+        # a test can tell the two apart in one record.
+        if "assign this round's work" in messages[-1]["content"]:
+            return "follow: take C1 with your drone; we take the rest", dict(USAGE)
         return "we will take the west apples, leave the east to you", dict(USAGE)
 
     def generate_team_interrupt_decision(self, messages, temperature=0.7):
@@ -682,13 +688,14 @@ def main() -> int:
     # rendering of a team's own state cannot propose anything.
     agents[ids[0]].plan = None
     before = client.text_calls
-    reply = follower._compose_report()
+    reply = follower._compose_response()
     assert client.text_calls == before + 1, "the report was not composed by the model"
     assert reply == "we will take the west apples, leave the east to you"
     # Grounded: the assembled facts go into the prompt, not onto the wire.
     assert "in empty_room_0" in client.last_text_prompt
     assert "holding apple.n.01_2" in client.last_text_prompt
     assert "nearest target coffee_table.n.01_1 (in range)" in client.last_text_prompt
+    assert "Your leader assigned TEAM team_1" in client.last_text_prompt, "the reply answers an assignment"
 
     # A failure degrades to the assembled report, not to silence.
     class Mute(StubClient):
@@ -702,7 +709,7 @@ def main() -> int:
     )
     muted["agent_4"].symbolic_view = view
     muted["agent_4"].observe({}, 0)
-    fallback = muted["agent_4"].brain._compose_report()
+    fallback = muted["agent_4"].brain._compose_response()
     assert "in empty_room_0" in fallback and "holding apple.n.01_2" in fallback
     ok("the model writes it from the facts, and a dead model falls back to them")
 

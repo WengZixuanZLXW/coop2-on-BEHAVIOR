@@ -278,6 +278,7 @@ class PlanningEnvWrapper:
                         coop_config=coop_config,
                         symbolic_view=symbolic_view,
                         target_hints=target_hints,
+                        world_observation=agent_info.get('symbolic_world_state'),
                     )
                 # Give initial observation to agents
                 agent.observe(obs_dict[agent_id], self._current_step)
@@ -637,6 +638,7 @@ class PlanningEnvWrapper:
                         coop_config=coop_config,
                         symbolic_view=symbolic_view,
                         target_hints=target_hints,
+                        world_observation=agent_info.get('symbolic_world_state'),
                     )
                 agent.observe(obs_dict[agent_id], self._current_step)
 

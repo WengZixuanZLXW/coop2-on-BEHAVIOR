@@ -99,6 +99,24 @@ def main() -> int:
     system, user = built[0]["content"], built[1]["content"]
     assert "You command TEAM 'team_0'" in system, system.splitlines()[0]
     assert "TEAM CONTROLLER" in system
+    # No world observation yet -> no roster, no lift table; nothing invented.
+    assert "THIS TEAM'S ROBOTS" not in system and "WHO MAY LIFT WHAT" not in system
+    # With one (as plan_env_wrapper hands it over via set_env_info), the roster
+    # and the activity's lift table appear in section 3.
+    from types import SimpleNamespace as NS
+    def fake_obs(agent_id, **flags):
+        me = NS(name=agent_id, is_carrier=flags.get("is_carrier", False),
+                base_locked_while_holding=flags.get("base_locked", False), lift_role=flags.get("lift_role", "arm"))
+        return NS(agent_id=agent_id, entities={agent_id: me}, lift_rules={"notebook.n.01": ("arm",), "die.n.01": ("arm", "drone")})
+    agents["agent_0"].set_env_info(symbolic_view="view for agent_0", world_observation=fake_obs("agent_0", base_locked=True))
+    agents["agent_1"].set_env_info(symbolic_view="view for agent_1", world_observation=fake_obs("agent_1", is_carrier=True))
+    agents["agent_2"].set_env_info(symbolic_view="view for agent_2", world_observation=fake_obs("agent_2", lift_role="drone"))
+    system2 = brain._system_prompt(brain.members[members[0]])
+    sec3 = system2.split("## 3. ROBOT CAPABILITIES", 1)[1].split("## 4.", 1)[0]
+    assert "THIS TEAM'S ROBOTS:" in sec3 and "WHO MAY LIFT WHAT" in sec3, sec3[-600:]
+    assert "agent_0: ARM, base LOCKS while holding" in sec3 and "agent_1: CARRIER" in sec3 and "agent_2: DRONE" in sec3, sec3[-600:]
+    assert "agent_3" not in sec3.split("THIS TEAM'S ROBOTS:")[1], "a robot without an observation is left out, not guessed"
+    assert "notebook.n.01: arm" in sec3 and "die.n.01: arm, drone" in sec3
     for name in members:
         assert f"=== ROBOT {name} ===" in user
         assert user.count(f"view for {name}") == 1

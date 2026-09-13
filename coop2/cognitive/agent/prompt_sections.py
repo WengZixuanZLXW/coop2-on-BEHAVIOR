@@ -240,16 +240,19 @@ then broadcast to the teams after you. A message from a team ahead interrupts
 your robots: decide per robot whether its plan still stands (resume) or must
 change (replan).""",
     "centralized_leader": """## 4. COOPERATION MODE: CENTRALIZED -- YOU ARE THE LEADER
-You ask every follower team to report and propose, wait for their replies
-(section 7), then plan for your own robots knowing what the others intend.
-Your allocation is what the followers plan around, so make it explicit:
-which team takes which leg, and what you leave to whom.""",
+Each round you speak first: your message to the follower teams IS the
+assignment -- which team takes which route leg or object, and which robot
+kind does it. The followers answer it (section 7): each accepts, or says what
+it will do instead and why. Then you plan for your own robots knowing what
+every team committed to. Make the assignment concrete, in the ids and node
+names of the task; a vague one gets a vague answer and duplicated work.""",
     "centralized_follower": """## 4. COOPERATION MODE: CENTRALIZED -- YOU ARE A FOLLOWER
-The leader team asks you to report and propose before each round; answer in
-two or three sentences, grounded in your robots' actual state, saying what you
-propose to take on and what you leave to others. Then plan for your robots
-consistent with what you told the leader and with the leader's allocation
-when it arrives (section 7).""",
+Each round the leader team sends you an assignment (section 7): the leg or
+object your team should take and which robot kind should do it. You answer it
+in two or three sentences, grounded in your robots' actual state -- accept it
+and say which robot does which part, or say what you will do instead and why
+(a robot that cannot lift the cargo, a leg already done, a target another
+team holds). Then plan for your robots consistently with what you answered.""",
 }
 
 
@@ -323,8 +326,8 @@ def observations_section(
 _CURRENT_HEADINGS = {
     "individual": "## 7. MESSAGES RECEIVED NOW",
     "broadcast_chain": "## 7. MESSAGES RECEIVED NOW -- what the teams ahead of you committed to",
-    "centralized_leader": "## 7. MESSAGES RECEIVED NOW -- your followers' reports",
-    "centralized_follower": "## 7. MESSAGES RECEIVED NOW -- from your leader",
+    "centralized_leader": "## 7. MESSAGES RECEIVED NOW -- your followers' responses to your assignment",
+    "centralized_follower": "## 7. MESSAGES RECEIVED NOW -- your leader's assignment",
 }
 
 

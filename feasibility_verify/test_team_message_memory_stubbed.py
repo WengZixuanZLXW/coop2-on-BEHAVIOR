@@ -57,7 +57,7 @@ def centralized_pair():
 
 
 def main() -> int:
-    print("test 1: what the leader asked is in the leader's own record")
+    print("test 1: what the leader assigned is in the leader's own record")
     client, agents, broker = centralized_pair()
     lead, follow = agents["agent_0"].brain, agents["agent_2"].brain
     for name in ("agent_0", "agent_1"):
@@ -67,7 +67,8 @@ def main() -> int:
     assert len(asks) == 1, asks
     block = lead._messages_block()
     assert "You told follow" in block, block
-    assert "Leader planning request" in block, block
+    # The leader's first word is the assignment, written by the (stub) model.
+    assert "take C1 with your drone" in block, block
     assert "(new)" not in block, "the team's own words are never news to it"
     ok("sent once, recorded once, as the team's own words")
 
@@ -142,6 +143,32 @@ def main() -> int:
     line = [l for l in follow._messages_block().splitlines() if "step 500" in l][0]
     assert long_text not in line and line.endswith("..."), line
     ok("the record is context and is trimmed; the news is not")
+
+    print("test 6: the leader's assignment is written from the full task and its own robots' views")
+    client, agents, broker = centralized_pair()
+    for name in ("agent_0", "agent_1"):
+        agents[name].symbolic_view = (
+            f"Step 0/100 | you are {name} in kitchen_0\nHolding: nothing\n\nkitchen_0:\n  - die.n.01_1  -> grasp\n"
+            "\nYOUR TASK, in the ids it is written in:\n  Route R, carry die.n.01_1 through these in order:\n"
+            "  NEXT  C1  ontop(die.n.01_1, cabinet.n.01_1)   [childs_room]\n        C2  ontop(die.n.01_1, bookcase.n.01_1)   [kitchen]")
+        agents[name].observe({}, 0)
+    for name in ("agent_0", "agent_1"):
+        agents[name].handle_reasoning()
+    assignment_prompt = client.text_prompts[0] if hasattr(client, "text_prompts") else client.last_text_prompt
+    for wanted in ("THE TEAM'S TASK", "C2  ontop(die.n.01_1, bookcase.n.01_1)", "=== ROBOT agent_0 ===",
+                   "=== ROBOT agent_1 ===", "die.n.01_1  -> grasp", "assign this round's work", "follow"):
+        assert wanted in assignment_prompt, f"assignment prompt lacks {wanted!r}"
+    asks = [m for m in broker.get_message_log() if (m.get("metadata") or {}).get("type") == "leader_broadcast"]
+    assert asks and asks[0]["content"].startswith("[lead]"), asks
+    # And the record is in time order: assignment first, response second --
+    # the follower answers when it plans (it was in R, not interruptible).
+    for name in ("agent_2", "agent_3"):
+        agents[name].handle_reasoning()
+    lead = agents["agent_0"].brain
+    lead._collect_heard()
+    block = lead._messages_block()
+    assert block.index("You told follow") < block.index("From follow"), block
+    ok("the assignment prompt carries the task, both robots' listings and the follower names; history is in time order")
 
     print("\nALL TESTS PASSED")
     return 0

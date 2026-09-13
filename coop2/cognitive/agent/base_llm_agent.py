@@ -105,11 +105,21 @@ class BaseLLMAgent(Agent):
         coop_config: Optional[str] = None,
         symbolic_view: Optional[str] = None,
         target_hints: Optional[str] = None,
+        world_observation: Any = None,
     ):
-        """Set environment info for prompts."""
+        """Set environment info for prompts.
+
+        @world_observation is the structured ``SymbolicObservation`` behind the
+        rendered view (``info[agent]["symbolic_world_state"]``); the team prompt
+        reads this robot's own flags off it for the roster in section 3.
+        ``observe()`` receives the raw obs dict, which does not carry it -- the
+        first S1-HH run's prompts had no roster and no lift table for that.
+        """
         self.coop_config = coop_config
         self.symbolic_view = symbolic_view
         self.target_hints = target_hints
+        if world_observation is not None:
+            self.world_observation = world_observation
 
     def _should_print_llm_io(self) -> bool:
         """Return True when either agent or client verbose mode wants prompt IO."""

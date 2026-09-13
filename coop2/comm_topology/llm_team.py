@@ -425,6 +425,12 @@ class TeamBrain:
         skip = {identity(m) for m in (exclude or [])}
         new = {identity(m) for m in self._heard}
         events = [e for e in self.memory.get_messages() if identity(e) not in skip]
+        # In the order they happened, not the order they were filed: a reply
+        # is filed when the team next drains its inboxes, which can be after
+        # the team's own later message was recorded (user, 2026-09-13). The
+        # broker stamps every message; a stable sort keeps ties in file order.
+        events = sorted(enumerate(events), key=lambda ie: (float(ie[1].get("timestamp") or 0.0), ie[0]))
+        events = [e for _, e in events]
         if not events:
             return ""
         lines = [f"\n{heading} (oldest first):"]
@@ -450,7 +456,13 @@ class TeamBrain:
         broker = self._broker()
         if not self.send_to or broker is None:
             return
+        # Stamped before it goes out: a reply written synchronously inside the
+        # delivery (a follower answering from on_interrupt) would otherwise be
+        # stamped earlier than the message it answers, and the history sorted
+        # by time would show the answer first.
+        sent_at = time.time()
         broker.send_team_message(
+            timestamp=sent_at,
             sender_team=self.team_name,
             recipients=list(self.send_to),
             content=content,
@@ -465,7 +477,9 @@ class TeamBrain:
         # teams' words and none of its own.
         self.memory.record_message_out(
             sender=self.team_name, recipients=list(self.send_to), content=content,
-            env_step=self._env_step(),
+            # On the broker's clock (relative to the agents' start), the same
+            # clock every incoming message carries, so the two sort together.
+            timestamp=broker._relative(sent_at, list(self.member_ids)), env_step=self._env_step(),
         )
         if self.verbose:
             print(f"  [{self.team_name}] -> {self.send_to} ({kind}): {content[:60]}...")
@@ -1030,6 +1044,9 @@ class TeamBrain:
     @staticmethod
     def _world_observation(member: "LLMTeamAgent"):
         """The member's SymbolicObservation, if its last observe() carried one."""
+        direct = getattr(member, "world_observation", None)
+        if direct is not None:
+            return direct
         raw = getattr(member, "observation", None)
         if isinstance(raw, dict):
             return raw.get("symbolic_world_state")
@@ -1307,14 +1324,60 @@ class LeaderTeamBrain(TeamBrain):
     COOPERATION_MODE = "centralized_leader"
 
     def before_plan(self) -> None:
-        self._say(
-            f"[{self.team_name}] Leader planning request: report each robot's position, "
-            "what it holds, one useful target it can reach, and what it proposes to do next. "
-            "Keep it short.",
-            "leader_broadcast",
-            interrupts=True,
-        )
+        """Assign, hear the responses, then plan.
+
+        The leader's first word of a round is the assignment itself -- which
+        team takes which leg -- not a request for status (user, 2026-09-13).
+        The followers answer the assignment; the leader plans its own robots
+        knowing what they said. The wire type stays ``leader_broadcast``: the
+        broker treats that name as interrupting, and the interrupt tests pin it.
+        """
+        self._say(self._compose_assignment(), "leader_broadcast", interrupts=True)
         self._await_replies()
+
+    def _compose_assignment(self) -> str:
+        """The round's assignment for the follower teams, written by the model
+        from what the leader can see: its own robots' observations, the team
+        task, and the record of what was said before. Falls back to a plain
+        instruction if the model fails, so the round still opens."""
+        members = [self.members[n] for n in self.member_ids if n in self.members]
+        followers = list(self.send_to) or ["the other teams"]
+        fallback = (f"[{self.team_name}] Assignment: {', '.join(followers)} -- each team takes the "
+                    "next uncompleted leg of the route nearest to its robots; reply with what you take.")
+        if not members:
+            return fallback
+        anchor = members[0]
+        new = list(self._heard)
+        user = assemble_user_prompt(
+            observations=observations_section(
+                anchor.env_step, self.team_name,
+                [self._member_block(m) for m in members],
+                task_block=self._team_task_block(members),
+                goal_instruction=self.goal_instruction,
+                reserved_task_observation=getattr(self, "reserved_task_observation", ""),
+                preface=(f"\nYou lead. Before planning your own robots, assign this round's work "
+                         f"to the follower teams: {', '.join(followers)}."),
+            ),
+            current_messages=current_messages_section(self.COOPERATION_MODE, new, self._render_message),
+            conversation_history=conversation_history_section(
+                self._messages_block("## 8. CONVERSATION HISTORY", exclude=new)),
+            action_history=action_history_section([self._action_history_block(m) for m in members]),
+            closing=("Write the assignment as one message to all follower teams: for each team, "
+                     "which route leg or object it should take this round and which robot kind should "
+                     "do it (an arm, a carrier, a drone), using the ids above and the route's node "
+                     "names. Say what you will do yourselves in one clause. Three to five sentences. "
+                     "No preamble."),
+        )
+        prompt = [
+            {"role": "system", "content": self._system_prompt(anchor)},
+            {"role": "user", "content": user},
+        ]
+        if anchor._should_print_llm_io():
+            anchor._print_llm_messages(f"Leader Assignment [{self.team_name}]", prompt)
+        text = anchor._generate_text_from_messages(
+            messages=prompt, fallback=fallback, label=f"Leader Assignment [{self.team_name}]")
+        text = " ".join(str(text).split())
+        return text if text.startswith(f"[{self.team_name}]") else f"[{self.team_name}] {text}"
 
     def _await_replies(self, timeout: float = LEADER_REPLY_TIMEOUT) -> None:
         """Block until every follower team has reported, then plan.
@@ -1356,11 +1419,11 @@ class LeaderTeamBrain(TeamBrain):
 
 
 class FollowerTeamBrain(TeamBrain):
-    """Waits for the leader's request, answers for its robots, then plans.
+    """Waits for the leader's assignment, answers it for its robots, then plans.
 
-    The answer is assembled from the team's own state rather than generated:
-    it is a status report, and spending an LLM call to paraphrase facts the
-    brain already has would double this topology's cost for nothing.
+    The answer is written by the model (accept, or say what the team will do
+    instead and why), grounded in the assembled status of its robots, which
+    goes into the prompt and not onto the wire.
     """
 
     COOPERATION_MODE = "centralized_follower"
@@ -1405,7 +1468,7 @@ class FollowerTeamBrain(TeamBrain):
         # the members inside that barrier are in R and R is not interruptible,
         # so the team would split.
         self._say(
-            self._compose_report(), "follower_response",
+            self._compose_response(), "follower_response",
             interrupts=False, expected_reply=True,
         )
 
@@ -1416,57 +1479,50 @@ class FollowerTeamBrain(TeamBrain):
             for message in self._heard
         )
 
-    def _compose_report(self) -> str:
-        """The reply the leader gets: written by the model, grounded in facts.
+    def _compose_response(self) -> str:
+        """The reply the leader gets: the team's answer to the assignment,
+        written by the model and grounded in facts.
 
-        Upstream's follower writes its own answer (`_build_follower_response` is
-        `self._generate_message(self.last_leader_request)`), and this port had
-        replaced it with the assembled report on the grounds that paraphrasing
-        facts the brain already holds doubles the topology's cost. That saved a
-        call and lost the point of asking: a leader allocating work wants to be
-        told what a team *proposes*, and a rendering of its own state cannot
-        propose anything.
-
-        So the model writes it, and `_status_report` goes into the prompt rather
-        than onto the wire -- the answer is grounded in the same facts it used
-        to be limited to, and the model cannot invent a position or a holding.
-        On any failure the assembled report is what gets sent, so this degrades
-        to the previous behaviour rather than to silence.
-
-        It costs one call per leader round, which the leader now blocks for.
-        That is one model round trip with the world frozen -- the same price
-        every reasoning step in this design pays, and the reason the request
-        asks for a proposal rather than a status.
+        The leader's message is an assignment (user, 2026-09-13), so the reply
+        is a response to it -- we take it / we cannot and here is what we do
+        instead -- not a status report. `_status_report` goes into the prompt
+        so the model cannot invent a position or a holding; on any failure it is
+        what gets sent, so this degrades to a report rather than to silence.
+        One call per leader round, which the leader blocks for.
         """
         members = [self.members[n] for n in self.member_ids if n in self.members]
         if not members:
             return self._status_report()
         anchor = members[0]
-        request = next(
+        assignment = next(
             (str(m.get("content", "")) for m in reversed(self._heard)
              if (m.get("metadata") or {}).get("type") == "leader_broadcast"),
-            "Report your robots' status and what you propose to do next.",
+            "Take the next uncompleted leg of the route nearest to you.",
         )
         prompt = [
             {"role": "system", "content": self._system_prompt(anchor)},
             {"role": "user", "content": "\n".join([
                 f"=== STEP {anchor.env_step} ===",
-                f"\nYour leader asked TEAM {self.team_name}:",
-                f"  {request}",
+                f"\nYour leader assigned TEAM {self.team_name}:",
+                f"  {assignment}",
                 "\nWhat your robots are actually doing right now:",
                 f"  {self._status_report()}",
-                "\nReply in two or three sentences, as this team, to the leader. "
-                "Say what you propose to take on and what you would rather leave "
-                "to the other teams. Use only the object ids above. No preamble.",
+                "\nReply in two or three sentences, as this team, to the leader: accept the "
+                "assignment and say which robot does which part, or say what you will do instead "
+                "and why (a robot that cannot lift the cargo, a leg already done, a target another "
+                "team holds). Use only the object ids above. No preamble.",
             ])},
         ]
         if anchor._should_print_llm_io():
-            anchor._print_llm_messages(f"Team Report [{self.team_name}]", prompt)
+            anchor._print_llm_messages(f"Team Response [{self.team_name}]", prompt)
         return anchor._generate_text_from_messages(
             messages=prompt,
             fallback=self._status_report(),
-            label=f"Team Report [{self.team_name}]",
+            label=f"Team Response [{self.team_name}]",
         )
+
+    # The old name, for callers that still use it.
+    _compose_report = _compose_response
 
     def _status_report(self) -> str:
         """Answer the four things the leader asks, for each robot.
