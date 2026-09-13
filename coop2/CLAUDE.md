@@ -1664,6 +1664,43 @@ The die beside the Jackal in the video (7.0-7.5 s, ticks 840-900) sits inside
 log records object poses. Recorded as unexplained rather than fixed. What the
 next run's videos show, with the ten-tick settles, is the test.
 
+## The videos were lying: one camera, nine files (2026-09-13)
+
+The user noticed that `episode_drone_1.mp4` and `episode_drone_2.mp4` of the
+second routed run showed the same drone, and that it stopped moving after
+about 20 s. Both true, for two different reasons.
+
+**The same drone.** `MultiViewRecorder` had one viewer camera and moved it to
+nine poses per capture, rendering and reading after each move. A probe that
+set four far-apart poses and compared what came back against converged
+references showed the camera's new pose reaching the renderer only
+*sometimes* before the frame was read: the first slot of a pass came back as
+the previous pass's last view, some later slots as their predecessor, and
+neither two nor three renders per view nor rendering until two consecutive
+reads agreed made it reliable -- a frame can be stable and still be the wrong
+pose. So `episode_drone_2` held drone_1's view, and at 30 s, when drone_2 was
+in the kitchen placing the die on the bookcase, its file showed the child's
+room. Every file was one view behind its name.
+
+The fix removes the moving part. When `video_path` is set, `coop_env`
+declares one `VisionSensor` per robot in the OmniGibson env config
+(`external_sensors`, `coop2_view_<name>`, 1280x720, the wide lens, parked
+off-scene) and `MultiViewRecorder` takes them as `cameras`: each capture
+poses all nine, renders once, and each writer reads its own sensor. A camera
+that never changes owner has nothing to mix up; a pose that lands one render
+late shows the same robot four ticks earlier. Nine captures of a nine-robot
+scene came out as nine correct, centred views (drone_k and jackal_k
+coincide at spawn, as they should -- the drone hovers over its Jackal), at
+5.6 s per 60 ticks. The shared-camera path remains as the fallback when the
+sensors are missing.
+
+**It stopped moving.** That was drone_1, in both files. From env_step 2064
+to 8000 every plan its team gave it was `wait`: "Drone_1 remains idle
+because the die is already claimed", "drone_1 waits because it cannot lift
+the die" (it can; the team's brain misread the lift rule for the die), and
+so on for six rounds. The robot did what it was told. The misreading is a
+prompt problem to watch, not an engine one.
+
 ## Open defects
 
 Fixed ones are not listed here -- the fix and its reasoning live in the commit

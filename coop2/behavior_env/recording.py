@@ -263,8 +263,12 @@ class ViewerRecorder:
             self._writer = create_video_writer(fpath=self.path, resolution=(height, width), rate=self.fps)
         return self._writer
 
-    def capture(self) -> None:
-        """Render one frame and append it. Safe to call directly."""
+    def capture(self, render: bool = True) -> None:
+        """Render one frame and append it. Safe to call directly.
+
+        ``render=False`` reads the camera's last rendered buffer without
+        rendering: for several cameras captured in one pass, the caller renders
+        once and each writer reads its own."""
         # get_obs() reads the sensor's last rendered buffer, so a render has to
         # have happened this tick. env.step does not necessarily render when
         # headless, hence the explicit call.
@@ -275,8 +279,9 @@ class ViewerRecorder:
         # four rounds of identical "the camera is looking at a wall" frames
         # from four completely different computed poses -- the poses were never
         # the problem, they had simply not been applied yet.
-        og.sim.render()
-        og.sim.render()
+        if render:
+            og.sim.render()
+            og.sim.render()
         frame = self.camera.get_obs()[0]["rgb"][:, :, :3].cpu().numpy()
         from omnigibson.eval.utils.obs_utils import write_video  # noqa: PLC0415
 
@@ -318,7 +323,7 @@ class MultiViewRecorder:
         fps: frames per second written into each file.
     """
 
-    def __init__(self, views, path_for, every: int = 4, fps: int = 30, focal_lengths=None):
+    def __init__(self, views, path_for, every: int = 4, fps: int = 30, focal_lengths=None, cameras=None):
         if not views:
             raise ValueError("MultiViewRecorder needs at least one view")
         if every < 1:
@@ -329,9 +334,20 @@ class MultiViewRecorder:
         #: focal length is swapped per view along with the pose.
         self.focal_lengths = dict(focal_lengths or {})
         self.every = int(every)
+        #: ``{view name: VisionSensor}`` -- a camera of its own per view. With
+        #: these, a capture poses every camera and renders ONCE; each writer
+        #: reads its own sensor. Without them (None) the shared viewer camera
+        #: is moved view by view, which mixed views up -- see ``capture``.
+        self.cameras = dict(cameras) if cameras else None
+        if self.cameras is not None and set(self.cameras) != set(self.views):
+            raise ValueError("cameras must be given for exactly the views: "
+                             f"{sorted(set(self.views) ^ set(self.cameras))}")
         self._writers = {
-            name: ViewerRecorder(path_for(name), every=1, fps=fps) for name in self.views
+            name: ViewerRecorder(path_for(name), every=1, fps=fps,
+                                 camera=(self.cameras[name] if self.cameras else None))
+            for name in self.views
         }
+        self._focal_applied = False
 
     @property
     def frames(self) -> int:
@@ -339,6 +355,9 @@ class MultiViewRecorder:
         return next(iter(self._writers.values())).frames
 
     def capture(self) -> None:
+        if self.cameras is not None:
+            self._capture_own_cameras()
+            return
         camera = og.sim.viewer_camera
         restore = camera.get_position_orientation()
         restore_focal = camera.focal_length
@@ -374,6 +393,28 @@ class MultiViewRecorder:
             camera.set_position_orientation(position=restore[0], orientation=restore[1])
             if camera.focal_length != restore_focal:
                 camera.focal_length = restore_focal
+
+    def _capture_own_cameras(self) -> None:
+        """Pose every camera, render once, read each. No camera changes hands,
+        so no frame can land in another view's file; a pose that reaches the
+        renderer one render late shows the same robot four ticks earlier."""
+        if not self._focal_applied:
+            for name, camera in self.cameras.items():
+                focal = self.focal_lengths.get(name)
+                if focal is not None and camera.focal_length != focal:
+                    camera.focal_length = focal
+            self._focal_applied = True
+        live = []
+        for name, pose_fn in self.views.items():
+            pose = pose_fn()
+            if pose is None:
+                continue
+            self.cameras[name].set_position_orientation(position=pose[0], orientation=pose[1])
+            live.append(name)
+        og.sim.render()
+        og.sim.render()
+        for name in live:
+            self._writers[name].capture(render=False)
 
     def __call__(self, env_step: int) -> None:
         if env_step % self.every == 0:

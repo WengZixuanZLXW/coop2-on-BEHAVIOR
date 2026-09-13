@@ -265,6 +265,31 @@ class CooperativeBehaviorEnv:
                 if self.team_layout is not None else None
             ),
         )
+        if self.video_path:
+            # One camera per robot, declared with the scene. The alternative --
+            # one shared viewer camera moved N times per capture -- put the
+            # previous view's image into the next view's file often enough
+            # that two drones' videos showed the same drone (2026-09-13): the
+            # camera's new pose reached the renderer only sometimes before the
+            # frame was read, and no number of extra renders made it reliable.
+            # A camera that never changes owner has nothing to mix up. Parked
+            # off-scene like the robots; the recorder poses it every capture.
+            from coop2.behavior_env.recording import WIDE_FOCAL_LENGTH  # noqa: PLC0415
+
+            config["env"]["external_sensors"] = [
+                {
+                    "sensor_type": "VisionSensor",
+                    "name": f"coop2_view_{name}",
+                    "relative_prim_path": f"/coop2_view_{name}",
+                    "modalities": ["rgb"],
+                    "sensor_kwargs": {"image_height": 720, "image_width": 1280,
+                                      "focal_length": WIDE_FOCAL_LENGTH},
+                    "include_in_obs": False,
+                    "position": [-50.0 - 2.0 * i, -55.0, 3.0],
+                    "orientation": [0.0, 0.0, 0.0, 1.0],
+                }
+                for i, name in enumerate(self.agent_names)
+            ]
         self.env = og.Environment(configs=config)
         self._enforce_controller_config(config)
 
@@ -467,6 +492,12 @@ class CooperativeBehaviorEnv:
 
         from coop2.behavior_env.recording import WIDE_FOCAL_LENGTH  # noqa: PLC0415
 
+        sensors = getattr(self.env, "external_sensors", None) or {}
+        cameras = {name: sensors[f"coop2_view_{name}"] for name in views if f"coop2_view_{name}" in sensors}
+        if len(cameras) != len(views):
+            print(f"[video] {len(cameras)} of {len(views)} per-robot cameras found; "
+                  "falling back to the shared viewer camera")
+            cameras = None
         self.recorder = MultiViewRecorder(
             views=views,
             path_for=lambda name: f"{base}_{name}{extension}",
@@ -476,9 +507,12 @@ class CooperativeBehaviorEnv:
             # metre above the robot's head, and 63 deg from there frames little
             # more than the head.
             focal_lengths={name: WIDE_FOCAL_LENGTH for name in views},
+            cameras=cameras,
         )
         self.engine.on_tick = chain(self.engine.on_tick, self.recorder)
-        print(f"[video] recording {len(views)} views: {', '.join(views)}")
+        print(f"[video] recording {len(views)} views"
+              + (" on per-robot cameras" if cameras else " on the shared viewer camera")
+              + f": {', '.join(views)}")
 
     def _enforce_controller_config(self, config: Dict[str, Any]) -> None:
         """Apply our controller config to whatever robots the scene ended up with.
