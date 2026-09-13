@@ -46,18 +46,28 @@ def main() -> int:
             f"{instance} leaked: naming the apples deletes the exploration problem")
     assert "every apple.n.01" in text, text
 
-    print("\n4. a flat goal is unchanged, and still says which room to carry it to")
+    print("\n4. a flat goal is unchanged, and names no room (user, 2026-09-13)")
     v4 = render_goal_terms(V4_GOAL, V4_INIT)
     print(f"   {v4}")
-    assert v4 == "ontop(packing_box.n.02_1, floor.n.01_2)   [floor.n.01_2 is in the bedroom]", v4
+    assert v4 == "ontop(packing_box.n.02_1, floor.n.01_2)", v4
 
-    print("\n5. the room note follows a concrete id out of a quantifier")
+    print("\n5. nor does a concrete id out of a quantifier carry one")
     scoped = render_goal_terms(
         [["forall", ["?apple.n.01", "-", "apple.n.01"],
           ["ontop", "?apple.n.01", "?coffee_table.n.01_1"]]],
         [["inroom", "coffee_table.n.01_1", "living_room"]])
     print(f"   {scoped}")
-    assert "[coffee_table.n.01_1 is in the living_room]" in scoped, scoped
+    assert "is in the" not in scoped and "coffee_table.n.01_1" in scoped, scoped
+
+    print("\n5b. every activity we run has a natural-language description beside its BDDL")
+    from coop2.behavior_env.task_description import load_task_description
+    for activity in ("coop_two_apples_pomaria", "coop_nine_apples_hall",
+                     *[f"v4_s{s}_v4_{l}" for s in (1, 2, 3) for l in ("ll", "lh", "hl", "hh")]):
+        text = load_task_description(activity)
+        assert text and len(text) > 40 and "\n" not in text, (activity, text)
+    assert load_task_description("no_such_activity_xyz") is None
+    assert load_task_description(None) is None
+    print("   14 descriptions, one line each; an unknown activity gives None")
 
     print("\n6. nesting and the shapes we do not use are rendered, not crashed")
     for goal in (

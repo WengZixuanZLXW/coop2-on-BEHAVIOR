@@ -277,10 +277,14 @@ def main() -> int:
     from coop2.behavior_env.symbolic_view import render_route_block
     world = StubWorld()
     tracker = RouteTracker(world, serial_spec())
-    text = render_route_block(tracker.spec, tracker.progress())
+    text = render_route_block(tracker.spec, tracker.progress(), description="Carry the die from A to B.")
+    assert text.splitlines()[0] == "Carry the die from A to B.", "the description opens the block"
     rows = [l for l in text.splitlines() if l.startswith("  ") and not l.startswith("  it starts")]
     assert len(rows) == 4, text                      # every node, from step 0
-    assert rows[0].startswith("  NEXT  C1") and "[childs_room]" in rows[0], rows[0]
+    assert rows[0].startswith("  NEXT  C1"), rows[0]
+    # No room on any line (user, 2026-09-13): the description says where in
+    # words; the state is ids only.
+    assert "[" not in text, text
     assert "done" not in text
     if tracker.spec.routes[0].start_support:
         assert "it starts ontop(die.n.01_1" in text, text
@@ -289,11 +293,11 @@ def main() -> int:
     assert "it starts" not in text, text             # moved: the done marks say where it is
     rows = [l for l in text.splitlines() if l.startswith("  ")]
     assert rows[0].startswith("  done  C1") and rows[1].startswith("  NEXT  C2"), text
-    assert rows[2].startswith("        C3") and "[bedroom]" in rows[2], rows[2]
+    assert rows[2].startswith("        C3") and "[" not in rows[2], rows[2]
     assert "does not count" in text and "NEXT" in text.splitlines()[-1]
     for node in ("C1", "C2", "C3", "D"):
         assert node in text
-    ok("all nodes listed, done/NEXT marks move, each support's room stated")
+    ok("all nodes listed, done/NEXT marks move, no rooms on the state lines")
 
     print("test 13: a completed route is one line; parallel routes are one block each")
     world = StubWorld()

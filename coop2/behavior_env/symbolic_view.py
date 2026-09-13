@@ -35,19 +35,21 @@ _QUANTIFIER_WORDS = {
 }
 
 
-def render_route_block(spec, progress) -> str:
+def render_route_block(spec, progress, description: Optional[str] = None) -> str:
     """The task as an ordered route, marked with where the cargo is on it.
 
     The whole route, not only the next node (user, 2026-09-12), as COOHAVIOR
     gives its model all ten nodes: the list of supports is the *task*, not the
-    world. Each support's room comes from the BDDL ``inroom`` the route file
-    was validated against, so stating it discloses nothing the activity did not
-    -- the same argument that lets ``render_goal_terms`` say which room a
-    destination is in. The room listing stays strictly local either way.
+    world. Since 2026-09-13 (user) the state lines carry no room: the task is
+    stated in natural language first (@description, from the activity's
+    description.txt) and the nodes are ids only. Where a support is, a robot
+    finds out by going there. The room listing stays strictly local either way.
 
     @spec is a ``RouteSpec``; @progress is ``RouteTracker.progress()``.
     """
     lines: List[str] = []
+    if description:
+        lines.append(description)
     for route in spec.routes:
         state = progress.get(route.id)
         done = set(state.completed) if state else set()
@@ -59,12 +61,10 @@ def render_route_block(spec, progress) -> str:
         if not done and getattr(route, "start_support", None):
             # Until the first node is credited the cargo is where the activity
             # put it; after that the done marks say where it has been.
-            where = f"   [{route.start_room}]" if getattr(route, "start_room", None) else ""
-            lines.append(f"  it starts ontop({route.cargo}, {route.start_support}){where}")
+            lines.append(f"  it starts ontop({route.cargo}, {route.start_support})")
         for node in route.nodes:
             mark = "done" if node.id in done else ("NEXT" if node.id == nxt else "    ")
-            where = f"   [{node.room}]" if node.room else ""
-            lines.append(f"  {mark}  {node.id:<3} {node.predicate}({node.cargo}, {node.support}){where}")
+            lines.append(f"  {mark}  {node.id:<3} {node.predicate}({node.cargo}, {node.support})")
     lines.append("A support reached out of order does not count, and nothing is lost by it: "
                  "progress resumes when the NEXT one holds.")
     return "\n".join(lines)
@@ -90,22 +90,15 @@ def render_goal_terms(
     if not goal_clauses:
         return None
 
-    rooms: Dict[str, str] = {}
-    for clause in (initial_clauses or []):
-        # `inroom <obj> <room type>` is part of the activity definition, so
-        # saying it here reveals nothing the task did not already state.
-        if isinstance(clause, list) and len(clause) == 3 and clause[0] == "inroom":
-            rooms[clause[1]] = clause[2]
-
+    # @initial_clauses used to supply "[x is in the bedroom]" notes from the
+    # BDDL's inroom; the task state names no rooms since 2026-09-13 (user).
+    # The activity's description.txt says the task in words instead.
     lines: List[str] = []
     for clause in goal_clauses:
         if not isinstance(clause, list) or not clause:
             continue
         named: List[str] = []
-        text = _render_goal_clause(clause, {}, named)
-        where = "; ".join(f"{name} is in the {rooms[name]}"
-                          for name in dict.fromkeys(named) if name in rooms)
-        lines.append(text + (f"   [{where}]" if where else ""))
+        lines.append(_render_goal_clause(clause, {}, named))
     return "\n  ".join(lines) or None
 
 

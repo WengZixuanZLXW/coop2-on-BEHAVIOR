@@ -144,6 +144,8 @@ class CooperativeBehaviorEnv:
         #: route.json beside its BDDL. Decides `terminated` when present.
         self.route_tracker = None
         self.route_spec = None
+        #: The activity's description.txt, read on first use by _task_block.
+        self.task_description = None
         self._closed = False
         import os as _os
         self.engine_verbose = bool(kwargs.get('engine_verbose') or _os.environ.get('COOP2_ENGINE_VERBOSE'))
@@ -880,11 +882,19 @@ class CooperativeBehaviorEnv:
         """What goes under YOUR TASK: the route, marked, when there is one;
         else the BDDL goal in its own ids."""
         route_tracker = getattr(self, "route_tracker", None)
+        description = getattr(self, "task_description", None)
+        if description is None and getattr(self, "bddl_activity", None):
+            from coop2.behavior_env.task_description import load_task_description  # noqa: PLC0415
+
+            description = self.task_description = load_task_description(self.bddl_activity)
         if route_tracker is not None:
             from coop2.behavior_env.symbolic_view import render_route_block  # noqa: PLC0415
 
-            return render_route_block(self.route_spec, route_tracker.progress())
-        return self._goal_terms()
+            return render_route_block(self.route_spec, route_tracker.progress(), description=description)
+        goal = self._goal_terms()
+        if description and goal:
+            return f"{description}\n  {goal}"
+        return goal or description
 
     def _build_info(self) -> Dict[str, Any]:
         from coop2.behavior_env.symbolic_view import render_symbolic_view, target_hints  # noqa: PLC0415

@@ -1792,6 +1792,20 @@ OMNIGIBSON_HEADLESS=1 python -u -m coop2.experiment.run_individual \
 --room bedroom_0 --bddl-activity v4_s3_v4_ll`.) No episode has been run on
 S2/S3 yet.
 
+## The task in one sentence, and no rooms in the state (2026-09-13)
+
+Each activity now has a `description.txt` beside its `problem0.bddl`
+(`coop2/behavior_env/task_description.py` loads it): one sentence saying
+what is carried from where to where -- "Carry the die (8 g; an arm or a drone
+can lift it) from the child's-room floor to the bed in the child's room,
+visiting the route's supports in order on the way: kitchen, dining room,
+living room, bedroom, then back." It opens THE TEAM'S TASK; the route block
+follows in ids, and the state lines carry no room any more (user: the task
+state should not show where each node is). `render_goal_terms` likewise
+dropped its `[x is in the bedroom]` notes. Fourteen descriptions, one line
+each, checked by `test_goal_terms_stubbed` 5b; `test_route_tracker` 12 checks
+the block opens with the description and has no bracket on any line.
+
 ## Open defects
 
 Fixed ones are not listed here -- the fix and its reasoning live in the commit
