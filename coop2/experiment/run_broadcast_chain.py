@@ -69,6 +69,7 @@ def run_broadcast_chain_experiment(
     keep_viewer=False,
     team_config=None,
     team_size=None,
+    run_name=None,
 ):
     """
     Run the Broadcast Chain condition.
@@ -98,10 +99,12 @@ def run_broadcast_chain_experiment(
     results_root = output_root or os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'runs'
     )
+    # --run-name replaces the generated folder name (a grid names its runs by
+    # mode, layout and task); the parent is still --output-root.
     output_dir = os.path.join(
         results_root,
         f'broadcast_chain_agents{n_agents}_{repair_label}_seed{seed}_{timestamp}',
-    )
+    ) if not run_name else os.path.join(results_root, run_name)
     os.makedirs(output_dir, exist_ok=True)
     print(f"\nResults will be saved to: {output_dir}\n")
     
@@ -404,6 +407,9 @@ if __name__ == "__main__":
                         help="JSON describing the robots: model, start position "
                              "(exact [x, y] or a room instance) and team, per robot. "
                              "Overrides --agents. See coop2/behavior_env/team_config.py.")
+    parser.add_argument("--run-name", type=str, default=None, metavar="NAME",
+                        help="Folder name for this run under --output-root, instead of the "
+                             "generated <topology>_agents<N>_..._<timestamp>.")
     parser.add_argument("--gui", action="store_true",
                         help="Open the Isaac Sim viewport. Needs a DISPLAY, and note that "
                              "--show is a no-op: the visualisation wrapper is a stub, and "
@@ -436,4 +442,5 @@ if __name__ == "__main__":
         keep_viewer=args.keep_viewer,
         team_config=args.team_config,
         team_size=args.team_size,
+        run_name=args.run_name,
     )

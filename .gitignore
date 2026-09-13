@@ -10,3 +10,4 @@ outputs/
 __pycache__/
 .codex
 .env
+experiment_log/
