@@ -1,6 +1,7 @@
 {
   "_comment": [
     "Robot layout for v4_s1_v4_hh (COOHAVIOR's S1-V4-HH), ported to Merom_1_int.",
+    "Robot names are type + team number (user, 2026-09-13): ridgeback_5 / jackal_5 / drone_5 are the M5 set's arm, carrier and drone; LL/LH's alpha is 1 and bravo is 2.",
     "",
     "Cargo is notebook-aanuhi, not a packing box. The authority on box mass is",
     "COOHAVIOR/behavior_style_task/tasks.modified.json: box_mass_kg 0.008 in LL",
@@ -60,7 +61,7 @@
   ],
   "robots": [
     {
-      "name": "agent_0",
+      "name": "ridgeback_5",
       "model": "v4_ridgeback_ur5",
       "position": [
         -1.1703,
@@ -75,7 +76,7 @@
       "base_locked_while_holding": true
     },
     {
-      "name": "agent_1",
+      "name": "jackal_5",
       "model": "v4_jackal",
       "position": [
         -0.8904,
@@ -89,7 +90,7 @@
       "scale": 0.7
     },
     {
-      "name": "agent_2",
+      "name": "drone_5",
       "model": "v4_crazyflie_cf2x",
       "position": [
         -1.2314,
@@ -104,7 +105,7 @@
       "drone": true
     },
     {
-      "name": "agent_3",
+      "name": "ridgeback_3",
       "model": "v4_ridgeback_ur5",
       "position": [
         -2.2202,
@@ -119,7 +120,7 @@
       "base_locked_while_holding": true
     },
     {
-      "name": "agent_4",
+      "name": "jackal_3",
       "model": "v4_jackal",
       "position": [
         -1.58,
@@ -137,7 +138,7 @@
       ]
     },
     {
-      "name": "agent_5",
+      "name": "drone_3",
       "model": "v4_crazyflie_cf2x",
       "position": [
         -1.8,
@@ -156,7 +157,7 @@
       "drone": true
     },
     {
-      "name": "agent_6",
+      "name": "ridgeback_2",
       "model": "v4_ridgeback_ur5",
       "position": [
         0.0,
@@ -175,7 +176,7 @@
       ]
     },
     {
-      "name": "agent_7",
+      "name": "jackal_2",
       "model": "v4_jackal",
       "position": [
         0.13,
@@ -194,7 +195,7 @@
       "_stands_in": "living_room_0"
     },
     {
-      "name": "agent_8",
+      "name": "drone_2",
       "model": "v4_crazyflie_cf2x",
       "position": [
         -0.3834,
@@ -209,7 +210,7 @@
       "drone": true
     },
     {
-      "name": "agent_9",
+      "name": "ridgeback_1",
       "model": "v4_ridgeback_ur5",
       "position": [
         1.6935,
@@ -224,7 +225,7 @@
       "base_locked_while_holding": true
     },
     {
-      "name": "agent_10",
+      "name": "jackal_1",
       "model": "v4_jackal",
       "position": [
         1.9734,
@@ -238,7 +239,7 @@
       "scale": 0.7
     },
     {
-      "name": "agent_11",
+      "name": "drone_1",
       "model": "v4_crazyflie_cf2x",
       "position": [
         1.6324,
@@ -253,7 +254,7 @@
       "drone": true
     },
     {
-      "name": "agent_12",
+      "name": "ridgeback_4",
       "model": "v4_ridgeback_ur5",
       "position": [
         2.2227,
@@ -268,7 +269,7 @@
       "base_locked_while_holding": true
     },
     {
-      "name": "agent_13",
+      "name": "jackal_4",
       "model": "v4_jackal",
       "position": [
         2.5026,
@@ -282,7 +283,7 @@
       "scale": 0.7
     },
     {
-      "name": "agent_14",
+      "name": "drone_4",
       "model": "v4_crazyflie_cf2x",
       "position": [
         2.1616,

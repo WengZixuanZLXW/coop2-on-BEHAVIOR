@@ -248,7 +248,7 @@ The three robots are already imported and registered. A fourth would need
 OMNIGIBSON_HEADLESS=1 python -m coop2.experiment.inspect_scene \
   --scene <scene> --room <room> --bddl-activity <activity> \
   --team-config coop2/team_layouts/<activity>.json \
-  --view agent_0 --shot /tmp/scene.png
+  --view ridgeback_1 --shot /tmp/scene.png
 ```
 
 Loads everything and stops -- no agents, no LLM, no plan loop. Check:

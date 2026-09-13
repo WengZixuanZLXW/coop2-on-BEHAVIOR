@@ -424,7 +424,7 @@ things to read (see the memory note on ignoring constraint metrics).
    adds `Y_task`, node counts, `out_of_order_visits`, `route_complete` and
    `S_team` (credited by team via `team_timeline.json`, `unattributed` kept
    apart) -- all CPU-tested on a fabricated run dir before any GPU run.
-   `inspect_scene --view agent_0` on LL renders the ten-node block from the
+   `inspect_scene --view ridgeback_1` on LL renders the ten-node block from the
    real instance. One thing the suite caught: a CPU test builds the env with
    `object.__new__`, so a new attribute set in `__init__` does not exist there
    -- every read of `route_tracker` goes through `getattr(..., None)`.

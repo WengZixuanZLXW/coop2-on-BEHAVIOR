@@ -1412,7 +1412,7 @@ YOUR TASK, in the ids it is written in:
 A support reached out of order does not count, and nothing is lost by it: progress resumes when the NEXT one holds.
 ```
 
-That is `inspect_scene --view agent_0` on the re-sampled LL instance, verbatim.
+That is `inspect_scene --view ridgeback_1` on the re-sampled LL instance, verbatim.
 Both system prompts carry one rule saying what a route is and that progress is
 judged on where the cargo rests; `test_team_prompt`'s shared-rule check holds
 both to it.
@@ -1486,6 +1486,19 @@ where the other three took `_2`. `_apply_scene_edits` keeps whatever the BDDL
 bound off V4's deactivate list, so LL's scene has one armchair more than V4's;
 none of it changes a route.
 
+## Robots are named by type and team number (2026-09-13)
+
+`agent_0 .. agent_14` said nothing about what a robot was, and the model had
+to learn "agent_1 has no arm" from a bracket. The V4 layouts now name each
+robot `<type>_<team number>`: `ridgeback_5`, `jackal_5`, `drone_5` are the M5
+set's arm, carrier and drone (`m<k>` -> k); LL/LH's `alpha` is 1 and `bravo`
+2, so LL is `ridgeback_1`, `jackal_1`, `drone_2` and the one-team variant
+`drone_1`. Names are free strings everywhere -- the layout is the only source,
+`env_setup` makes them the robot names, the world model keys entities on them
+-- so nothing in code changed; `make_s1_shared_spawn_layouts.py` emits the
+same scheme. The `agent_N` fallback still applies to layouts without names
+and to `--agents N`. Commands below use the new names (`--view drone_2`).
+
 ## The lift gate (2026-09-12)
 
 COOHAVIOR's one constraint we had no word for: the Crazyflie may carry the
@@ -1520,10 +1533,10 @@ the route file's `lift` table is where it lives (`"notebook.n.01": ["arm"]`,
 CPU: `test_carrier_view_stubbed` 8b (drone gets `grasp(die)` only, no mark,
 header says `(drone)`; arm gets both; a carrier gets no grasp regardless) and
 8c (unload withheld the same way); `test_team_config_stubbed` parses and
-refuses a non-bool `drone`. GPU: `inspect_scene --view agent_2` on LH prints
+refuses a non-bool `drone`. GPU: `inspect_scene --view drone_2` on LH prints
 `[route] lift rules: notebook.n.01 -> arm`, the header reads
-`you are agent_2 (drone) in childs_room_0`, and the notebook's line carries
-no `grasp` while agent_0's reads `-> grasp, navigate_to`.
+`you are drone_2 (drone) in childs_room_0`, and the notebook's line carries
+no `grasp` while ridgeback_1's reads `-> grasp, navigate_to`.
 
 ## Open defects
 

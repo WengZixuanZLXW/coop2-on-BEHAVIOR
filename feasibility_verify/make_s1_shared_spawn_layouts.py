@@ -134,7 +134,10 @@ for k in range(1,6):
     for i,p in enumerate(order[:3*k]):
         kind=kinds[p]; model,scale,lock=MODEL[kind]
         pos=list(placed[p])+([HOVER_Z] if kind=="crazyflie" else [])
-        e={"name":f"agent_{i}","model":model,"position":pos,"team":p.rsplit("_",1)[-1],
+        team=p.rsplit("_",1)[-1]
+        # type + team number (user, 2026-09-13): ridgeback_5 / jackal_5 / drone_5
+        e={"name":f"{ {'ridgeback_franka':'ridgeback','jackal':'jackal','crazyflie':'drone'}[kind] }_{team[1:]}",
+           "model":model,"position":pos,"team":team,
            "_v4_prim":p,"_v4_staged_position":list(full[p]),"scale":scale}
         if lock: e["base_locked_while_holding"]=True
         robots.append(e)

@@ -1,6 +1,7 @@
 {
   "_comment": [
     "COOHAVIOR S1 robots, 2 sets (6 robots), for Merom_1_int -- all spawned together.",
+    "Robot names are type + team number (user, 2026-09-13): ridgeback_5 / jackal_5 / drone_5 are the M5 set's arm, carrier and drone; LL/LH's alpha is 1 and bravo is 2.",
     "",
     "Everyone starts in living_room_0, packed around the centroid of its largest free",
     "region (decision: user, 2026-09-12). The room is the most open one measured as",
@@ -25,7 +26,7 @@
   ],
   "robots": [
     {
-      "name": "agent_0",
+      "name": "ridgeback_5",
       "model": "v4_ridgeback_ur5",
       "position": [
         2.44,
@@ -41,7 +42,7 @@
       "base_locked_while_holding": true
     },
     {
-      "name": "agent_1",
+      "name": "jackal_5",
       "model": "v4_jackal",
       "position": [
         2.44,
@@ -56,7 +57,7 @@
       "scale": 0.7
     },
     {
-      "name": "agent_2",
+      "name": "drone_5",
       "model": "v4_crazyflie_cf2x",
       "position": [
         2.44,
@@ -73,7 +74,7 @@
       "drone": true
     },
     {
-      "name": "agent_3",
+      "name": "ridgeback_3",
       "model": "v4_ridgeback_ur5",
       "position": [
         2.44,
@@ -89,7 +90,7 @@
       "base_locked_while_holding": true
     },
     {
-      "name": "agent_4",
+      "name": "jackal_3",
       "model": "v4_jackal",
       "position": [
         1.69,
@@ -104,7 +105,7 @@
       "scale": 0.7
     },
     {
-      "name": "agent_5",
+      "name": "drone_3",
       "model": "v4_crazyflie_cf2x",
       "position": [
         1.69,

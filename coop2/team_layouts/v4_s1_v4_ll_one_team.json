@@ -1,6 +1,7 @@
 {
   "_comment": [
     "As v4_s1_v4_ll.json, with all three robots in ONE team.",
+    "Robot names are type + team number (user, 2026-09-13): ridgeback_5 / jackal_5 / drone_5 are the M5 set's arm, carrier and drone; LL/LH's alpha is 1 and bravo is 2.",
     "",
     "The split in the original is deliberate -- two teams give chain and",
     "centralized inter-team traffic to carry. This variant removes that so the",
@@ -13,7 +14,7 @@
   ],
   "robots": [
     {
-      "name": "agent_0",
+      "name": "ridgeback_1",
       "model": "v4_ridgeback_ur5",
       "position": [
         -1.1703,
@@ -25,7 +26,7 @@
       "base_locked_while_holding": true
     },
     {
-      "name": "agent_1",
+      "name": "jackal_1",
       "model": "v4_jackal",
       "position": [
         -0.8904,
@@ -36,7 +37,7 @@
       "scale": 0.7
     },
     {
-      "name": "agent_2",
+      "name": "drone_1",
       "model": "v4_crazyflie_cf2x",
       "position": [
         -1.2314,
