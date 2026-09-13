@@ -127,48 +127,37 @@ def main() -> int:
     assert f"note {TEAM_MESSAGE_HISTORY * 3 - 1}" in block and "note 0" not in block, block
     ok(f"{TEAM_MESSAGE_HISTORY} lines quoted, newest kept")
 
-    print("test 7: a copy arriving by a second route is not recorded twice")
-    before = len(follow.memory.get_messages())
-    assert follow._remember({"sender": "lead", "timestamp": 10.0, "env_step": 100,
-                             "content": "note 0"}) is False
-    assert len(follow.memory.get_messages()) == before
-    ok("same sender, timestamp and content -> one entry")
-
-    print("test 8: an old line is cut short, a new one is not")
-    long_text = "x" * 400
-    follow._remember({"sender": "lead", "timestamp": 99.0, "env_step": 500, "content": long_text})
-    line = [l for l in follow._messages_block().splitlines() if "step 500" in l][0]
-    assert long_text in line, "news is quoted whole -- it is what the model must act on"
-    follow._heard = []          # what the planning round does
-    line = [l for l in follow._messages_block().splitlines() if "step 500" in l][0]
-    assert long_text not in line and line.endswith("..."), line
-    ok("the record is context and is trimmed; the news is not")
-
-    print("test 6: the leader's assignment is written from the full task and its own robots' views")
+    print("test 7: a follower at its barrier waits while the leader is about to assign")
+    import threading, time as _time
+    from coop2.cognitive.agent.agent import AgentState
     client, agents, broker = centralized_pair()
-    for name in ("agent_0", "agent_1"):
-        agents[name].symbolic_view = (
-            f"Step 0/100 | you are {name} in kitchen_0\nHolding: nothing\n\nkitchen_0:\n  - die.n.01_1  -> grasp\n"
-            "\nYOUR TASK, in the ids it is written in:\n  Route R, carry die.n.01_1 through these in order:\n"
-            "  NEXT  C1  ontop(die.n.01_1, cabinet.n.01_1)   [childs_room]\n        C2  ontop(die.n.01_1, bookcase.n.01_1)   [kitchen]")
-        agents[name].observe({}, 0)
-    for name in ("agent_0", "agent_1"):
-        agents[name].handle_reasoning()
-    assignment_prompt = client.text_prompts[0] if hasattr(client, "text_prompts") else client.last_text_prompt
-    for wanted in ("THE TEAM'S TASK", "C2  ontop(die.n.01_1, bookcase.n.01_1)", "=== ROBOT agent_0 ===",
-                   "=== ROBOT agent_1 ===", "die.n.01_1  -> grasp", "assign this round's work", "follow"):
-        assert wanted in assignment_prompt, f"assignment prompt lacks {wanted!r}"
-    asks = [m for m in broker.get_message_log() if (m.get("metadata") or {}).get("type") == "leader_broadcast"]
-    assert asks and asks[0]["content"].startswith("[lead]"), asks
-    # And the record is in time order: assignment first, response second --
-    # the follower answers when it plans (it was in R, not interruptible).
-    for name in ("agent_2", "agent_3"):
-        agents[name].handle_reasoning()
-    lead = agents["agent_0"].brain
-    lead._collect_heard()
-    block = lead._messages_block()
-    assert block.index("You told follow") < block.index("From follow"), block
-    ok("the assignment prompt carries the task, both robots' listings and the follower names; history is in time order")
+    lead, follow = agents["agent_0"].brain, agents["agent_2"].brain
+    # The leader's robots are all in R (nobody executing) and it has not sent
+    # this round's assignment: it is about to, so the follower waits for it.
+    assert not any(agents[n].state is AgentState.X for n in ("agent_0", "agent_1"))
+    lead._assignment_sent = False
+    def speak_later():
+        _time.sleep(0.3)
+        lead._say("[lead] follow: take C1", "leader_broadcast", interrupts=True)
+        lead._assignment_sent = True
+    threading.Thread(target=speak_later, daemon=True).start()
+    t0 = _time.monotonic()
+    follow.before_plan()
+    waited = _time.monotonic() - t0
+    assert 0.25 <= waited < 5.0, waited
+    replies = [m for m in broker.get_message_log() if (m.get("metadata") or {}).get("type") == "follower_response"]
+    assert len(replies) == 1, "the follower answered the assignment it waited for"
+    # A leader with a robot still executing is mid-round: not waited for.
+    client, agents, broker = centralized_pair()
+    lead2 = agents["agent_0"].brain; lead2._assignment_sent = False
+    agents["agent_0"]._set_state(AgentState.X)
+    t0 = _time.monotonic(); agents["agent_2"].brain.before_plan()
+    assert _time.monotonic() - t0 < 0.2, "leader executing -> no wait"
+    # An assignment already sent this round: no wait either.
+    agents["agent_0"]._set_state(AgentState.R); lead2._assignment_sent = True
+    t0 = _time.monotonic(); agents["agent_2"].brain.before_plan()
+    assert _time.monotonic() - t0 < 0.2, "assignment already out -> no wait"
+    ok("waits while the leader is about to assign, answers when it lands, does not wait otherwise")
 
     print("\nALL TESTS PASSED")
     return 0

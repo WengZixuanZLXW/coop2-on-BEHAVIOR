@@ -1825,6 +1825,20 @@ in section 7. Sections 4 and 7 say so in both roles' words. The wire type is
 still `leader_broadcast`, because the broker treats that name as interrupting
 and the interrupt tests pin it. `_compose_report` remains as an alias.
 
+**Followers wait for the assignment.** The first GPU run of this showed the
+gap: at step 0 every team is at its barrier, the assignment is an LLM call,
+and both followers planned before it arrived -- the leader then waited 30 s
+for replies from teams that had already planned, and the run's only message
+was the assignment. A follower at its barrier now waits (up to 90 s) for an
+unanswered assignment *while the leader is about to assign*: it has not sent
+this round's assignment and none of its robots is executing (all in R/W, so
+it is at or a thread switch from its own barrier). Two earlier versions lost
+the step-0 race -- one read `_deciding`, the interrupt-round flag; one read a
+flag set only once the leader's own members had all arrived, which a
+follower can beat. A leader with a robot executing is mid-round and is not
+waited for: waiting would freeze the world it needs to finish. Mid-execution
+followers are still interrupted and answer from `on_interrupt`, as before.
+
 **History in time order.** The conversation record sorted by filing order
 showed a reply above the message it answered: a follower that answers from
 `on_interrupt` writes its reply inside the delivery of the assignment, before

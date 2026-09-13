@@ -154,6 +154,12 @@ CHAIN_RELAY_TIMEOUT = 30.0
 #: `on_interrupt`, a team already at its own barrier answers from `before_plan`.
 #: So this is a backstop, not the mechanism.
 LEADER_REPLY_TIMEOUT = 30.0
+#: How long a follower at its planning barrier waits for the leader's
+#: assignment while the leader is composing one. At step 0 every team reaches
+#: its barrier at once, and the assignment is an LLM call: without this the
+#: followers planned before it arrived, and the leader then waited 30 s for
+#: replies from teams that had already planned (run ..._062528, 2026-09-13).
+FOLLOWER_ASSIGNMENT_TIMEOUT = 90.0
 
 #: How long a member waits in R for a team call that is already under way,
 #: before giving up and holding. Long, because it is bounding an LLM call that
@@ -1322,6 +1328,7 @@ class LeaderTeamBrain(TeamBrain):
     """
 
     COOPERATION_MODE = "centralized_leader"
+    _assignment_sent = False
 
     def before_plan(self) -> None:
         """Assign, hear the responses, then plan.
@@ -1333,7 +1340,14 @@ class LeaderTeamBrain(TeamBrain):
         broker treats that name as interrupting, and the interrupt tests pin it.
         """
         self._say(self._compose_assignment(), "leader_broadcast", interrupts=True)
+        # Read by followers at their own barrier (`_await_assignment`): False
+        # from the end of one round to the send in the next, i.e. exactly while
+        # an assignment is still to come.
+        self._assignment_sent = True
         self._await_replies()
+
+    def after_plan(self) -> None:
+        self._assignment_sent = False
 
     def _compose_assignment(self) -> str:
         """The round's assignment for the follower teams, written by the model
@@ -1444,20 +1458,62 @@ class FollowerTeamBrain(TeamBrain):
 
     def before_plan(self) -> None:
         # Still needed, and not a duplicate: a follower team that was already at
-        # its own planning barrier when the request arrived was in R, which the
-        # broker does not interrupt, so `on_interrupt` never fired for it. That
-        # is the case the run's first round is always in.
-        if not self._was_asked():
-            self._collect_heard()
+        # its own planning barrier when the assignment arrived was in R, which
+        # the broker does not interrupt, so `on_interrupt` never fired for it.
+        # That is the case the run's first round is always in -- and there the
+        # assignment may not have arrived yet, because the leader is still
+        # writing it: wait for it while the leader is deciding.
+        self._await_assignment()
         self._answer_leader()
 
-    def _answer_leader(self) -> None:
-        """Report once per request, from whichever path gets there first."""
-        pending = [
+    def _await_assignment(self, timeout: float = FOLLOWER_ASSIGNMENT_TIMEOUT) -> None:
+        """Block until an unanswered assignment is in hand, while the leader is
+        about to assign (`_assignment_still_coming`). Returns at once otherwise:
+        nothing is coming."""
+        leader = next((self.peers.get(t) for t in self.wait_for if self.peers.get(t) is not None), None)
+        deadline = time.monotonic() + timeout
+        while True:
+            self._collect_heard()
+            if self._pending_assignments():
+                return
+            if not self._assignment_still_coming(leader):
+                return
+            if time.monotonic() >= deadline:
+                print(f"  [{self.team_name}] waited {timeout:.0f}s for {self.wait_for}'s assignment; "
+                      "planning without it")
+                return
+            time.sleep(0.05)
+
+    @staticmethod
+    def _assignment_still_coming(leader) -> bool:
+        """Is the leader about to assign, so that waiting is worth it?
+
+        Yes when it has not sent this round's assignment and none of its robots
+        is executing: a leader whose robots are all in R/W is at (or a thread
+        switch away from) its own barrier, which opens with the assignment. At
+        step 0 that is every team at once -- a version that tested a flag the
+        leader sets only once its own members have all arrived lost that race,
+        because a follower can reach its barrier first. A leader with a robot
+        still executing is mid-round: waiting for it would freeze the world it
+        needs to finish, so no.
+        """
+        if leader is None or getattr(leader, "_assignment_sent", False):
+            return False
+        members = list(getattr(leader, "members", {}).values())
+        if not members:
+            return False
+        return not any(getattr(m, "state", None) is AgentState.X for m in members)
+
+    def _pending_assignments(self) -> List[Dict]:
+        return [
             message for message in self._heard
             if (message.get("metadata") or {}).get("type") == "leader_broadcast"
             and (message.get("sender"), message.get("timestamp")) not in self._answered
         ]
+
+    def _answer_leader(self) -> None:
+        """Report once per request, from whichever path gets there first."""
+        pending = self._pending_assignments()
         if not pending:
             return
         for message in pending:
@@ -1515,11 +1571,14 @@ class FollowerTeamBrain(TeamBrain):
         ]
         if anchor._should_print_llm_io():
             anchor._print_llm_messages(f"Team Response [{self.team_name}]", prompt)
-        return anchor._generate_text_from_messages(
+        text = anchor._generate_text_from_messages(
             messages=prompt,
             fallback=self._status_report(),
             label=f"Team Response [{self.team_name}]",
         )
+        # One model appended a ```yaml block restating its reasoning; the
+        # sentences before the fence are the reply.
+        return " ".join(str(text).split("```")[0].split())
 
     # The old name, for callers that still use it.
     _compose_report = _compose_response
