@@ -1,0 +1,33 @@
+(define (problem v4_s1_v4_hl-0)
+    (:domain behavior-1k)
+
+    (:objects
+        die.n.01_1 die.n.01_2 die.n.01_3 die.n.01_4 die.n.01_5 - die.n.01
+        floor.n.01_1 floor.n.01_2 floor.n.01_3 floor.n.01_4 floor.n.01_5 - floor.n.01
+        agent.n.01_1 - agent.n.01
+    )
+
+    (:init
+        (ontop die.n.01_1 floor.n.01_5)
+        (inroom floor.n.01_5 childs_room)
+        (ontop die.n.01_2 floor.n.01_3)
+        (inroom floor.n.01_3 kitchen)
+        (ontop die.n.01_3 floor.n.01_2)
+        (inroom floor.n.01_2 dining_room)
+        (ontop die.n.01_4 floor.n.01_1)
+        (inroom floor.n.01_1 living_room)
+        (ontop die.n.01_5 floor.n.01_4)
+        (inroom floor.n.01_4 bedroom)
+        (ontop agent.n.01_1 floor.n.01_5)
+    )
+
+    (:goal
+        (and
+            (ontop die.n.01_1 floor.n.01_5)
+            (ontop die.n.01_2 floor.n.01_3)
+            (ontop die.n.01_3 floor.n.01_2)
+            (ontop die.n.01_4 floor.n.01_1)
+            (ontop die.n.01_5 floor.n.01_4)
+        )
+    )
+)

@@ -332,6 +332,18 @@ class PlanningEnvWrapper:
                     self.logger.log_plan_ended_elsewhere(
                         current, self._current_step, "Superseded by a new plan"
                     )
+                # From the agent's side a replaced plan is an outcome too: it
+                # decided on it and then decided against it. Left unrecorded,
+                # the history the model reads skipped from #5 to #7 and the
+                # plan it had just abandoned looked like one it had never
+                # tried. Recalled team holds land here as well; they are
+                # recorded and hidden at render time (`format_plan_history`).
+                if hasattr(agent, "record_plan_outcome"):
+                    agent.record_plan_outcome(
+                        current, False,
+                        "you replanned after an interrupt, before it finished",
+                        self._current_step, status="replaced",
+                    )
                 self._reset_symbolic_action_state(agent_id)
             self.logger.log_plan_created(plan)
             self.coop2_trace.log(

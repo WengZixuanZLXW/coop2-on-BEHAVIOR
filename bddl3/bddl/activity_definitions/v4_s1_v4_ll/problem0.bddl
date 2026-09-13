@@ -2,13 +2,13 @@
     (:domain behavior-1k)
 
     (:objects
-        packing_box.n.02_1 - packing_box.n.02
+        die.n.01_1 - die.n.01
         floor.n.01_1 floor.n.01_2 - floor.n.01
         agent.n.01_1 - agent.n.01
     )
 
     (:init
-        (ontop packing_box.n.02_1 floor.n.01_1)
+        (ontop die.n.01_1 floor.n.01_1)
         (inroom floor.n.01_1 childs_room)
         (inroom floor.n.01_2 bedroom)
         (ontop agent.n.01_1 floor.n.01_1)
@@ -16,7 +16,7 @@
 
     (:goal
         (and
-            (ontop packing_box.n.02_1 floor.n.01_2)
+            (ontop die.n.01_1 floor.n.01_2)
         )
     )
 )

@@ -136,7 +136,9 @@ which 84 do. **Do not remove what the BDDL binds to.** V4's own filter keeps
 the beds, the coffee table, the shelf and the fridge for exactly that reason;
 its header comment lists them.
 
-`box_mass_kg` is `v4:physical_mass_kg` off the staged box. V4 sets 8 g so a
+`box_mass_kg` comes from `COOHAVIOR/behavior_style_task/tasks.modified.json`,
+`tasks[].box_mass_kg` -- the staging USD's `v4:physical_mass_kg` agrees for S1
+and is absent for S2/S3. V4 sets 8 g so a
 7 cm drone's suction cup can lift it. The symbolic grasp does not read mass --
 it teleports and welds -- but the physics after a release does.
 
@@ -191,6 +193,26 @@ needed.
   ]
 }
 ```
+
+**The per-set-count layouts live in `coop2/team_layouts/s1/sets_<k>.json`**,
+k = 1..5 -- the audit's `robot_set_count`, 3k robots -- and they do **not** use
+V4's staged poses. Everyone spawns together in the most open room (decision:
+user, 2026-09-12), packed around the centroid of that room's largest free
+region, nearest-first in V4's route order M5, M3, M2, M1, M4, so `sets_<k>` is
+exactly the first 3k robots of `sets_5`. "Most open" is measured, not eyeballed:
+traversable floor from the no-object map, minus the oriented footprint of every
+object V4 keeps, eroded by the largest robot footprint (a 0.7 m Jackal). For
+Merom_1_int, in m2: living_room_0 12.0, childs_room_0 4.9, bedroom_0 3.6,
+kitchen_0 2.7, corridor_0 0.6, dining_room_0 0.00. Clearances are square
+(Chebyshev), matching the footprints -- a circular erosion under-protects a
+square robot's corners by ~0.1 m and let one Jackal nick the coffee table.
+
+Why not the staged poses: four of V4's fifteen are inside furniture the filter
+keeps -- the kitchen Jackal and drone in `furniture_sink_czyfhq_0`, the dining
+Jackal and Ridgeback in `breakfast_table_skczfi_0`'s footprint -- and the dining
+room cannot hold a Jackal at all (0.00 m2 admissible). Found by footprint
+geometry, not by eye: a robot inside a sink renders fine from above. The staged
+pose is kept on each robot as `_v4_staged_position` for reference.
 
 **`scale` is not optional.** V4 stages its three robots within half a metre of
 each other, which only fits because it shrinks them -- Ridgeback 0.5, Jackal
@@ -263,6 +285,144 @@ cover twelve tasks, and S2-LL and S2-LH differ in nothing our symbolic layer
 models: their scenes, robots and boxes are all the same, and the difference V4
 intends lives in a package dependency graph we do not implement.
 
+## What the second and third ports found (2026-09-12)
+
+`v4_s1_v4_lh`, `v4_s1_v4_hh` and `v4_s1_v4_hl` are done, sampled and inspected. Doing them
+turned up eight things the LL port had not, six of which fail *silently*.
+
+### S1-V4-HL: the goal holds at t=0, and that is the task
+
+All five of its goals are `ontop(box_i, floor.n.01_target_i)` where the target
+floor is `inroom` the **same room** the box already stands in. V4's targets are
+marker positions on a floor; ours is a room-level predicate over floor objects,
+and Merom_1_int has exactly one floor object per room -- measured, all twelve.
+So the BDDL collapses each start/target pair to one floor instance (BDDL's
+parser could not carry two `- floor.n.01` lines anyway), and every goal clause
+is literally an initial condition.
+
+That is accepted rather than worked around (user, 2026-09-12): COOHAVIOR's
+real task structure is the ordered checkpoint sequence of each route in
+`tasks.modified.json` -- not `packages[].depends_on`, which no runtime code
+reads -- and a supervision layer will enforce it. The design for that layer,
+and for the `route.json` sidecar that states the sequence, is
+`coop2/ROUTE_SUPERVISION_PLAN.md`. The BDDL goal is only the final state.
+`sample_v4_s1_task.py` has an `allow_trivial_goal` switch for this one task
+and no other. **Until that layer exists, `check_goal` is the sole authority
+over `terminated`, and a run of `v4_s1_v4_hl` ends at env_step 0.**
+
+The same collapse applies to S2-HL and S3-HL when they are ported.
+
+### The two box weights are two objects now
+
+`COOHAVIOR/behavior_style_task/tasks.modified.json` is the authority on box mass:
+`tasks[].box_mass_kg` is 0.008 for LL and HL, 0.02 for LH and HH, and V4 calls
+every one of them `packing_box.n.02_N`. Nothing symbolic could tell them apart.
+The light cargo is `die.n.01` (dice-iswudu) and the heavy one `notebook.n.01`
+(notebook-aanuhi); the mass is still set explicitly. (The S1 staging USDs carry
+the same numbers as `v4:physical_mass_kg`; S2/S3's carry none.)
+
+**The weight is a capability constraint, and it is not enforced yet.** The same
+file's `condition_physical_execution_contract` says the drone "may
+suction-lift/transport an 8 g box" and "is not a load-bearing role for the 20 g
+box"; light packages need only a `push_car`, heavy ones need `pull_car +
+push_car + robot_arm` together. That is the whole reason the two weights had
+to become two objects -- so "the Crazyflie may grasp a die but not a notebook"
+can be *said*. Saying it is the next step: the symbolic grasp is mass-blind, and
+`target_hints` will still offer the drone `grasp(notebook.n.01_1)`. A per-robot
+payload limit belongs in the v4 primitives YAML (the drone's is 8 g), gated in
+`symbolic_contention` the way `_require_arm` is and withheld from the listing
+the same way -- both sides, or the agent burns a plan learning it.
+
+A side effect worth having: the notebook is 0.151 x 0.120 x 0.028, against the
+packing box's 0.380 x 0.468. All five HH cargoes now sit at V4's exact staged
+coordinates. The packing box could not -- `box_s1_m2` is staged at precisely
+the coordinate the same file moves `armchair_qplklw_2` to, so a box with
+collision lands on the armchair and its own `ontop(..., floor)` is false. V4's
+box asset is documented "visual-only until collision is deliberately authored",
+which is how its staging can contradict its own BDDL.
+
+### `seg_map_resolution: 1.0` decides room membership, and gets it wrong
+
+The shipped primitives configs set 1 m. At 1 m the whole of Merom_1_int is a
+**20x20 grid** and an object's room is whichever of 400 cells its centre lands
+in. Measured against the scene's own `in_rooms` annotations, 13 of 13 cabinets
+agree at 0.1 and **4 of 13 at 1.0**: seven land on a boundary cell and read as
+no room at all, and both bedroom cabinets near the party wall read as
+`childs_room_0`.
+
+That is not cosmetic. It turned `v4_s1_v4_lh` from "carry it to the bedroom"
+into "put it on the cabinet behind you" -- the cabinet appeared in the agent's
+own room listing 2.6 m away -- and left `v4_s1_v4_hh`'s dining-room notebook in
+no room at all. `coop2/robot_configs/v4_*_primitives.yaml` are now 0.1. The
+shipped R1 and Tiago configs still say 1.0 and are left alone: these tasks
+only have to run under the three v4 configs (user, 2026-09-12).
+
+### Sample against the map of the scene you actually run
+
+`sample_kinematics(use_trav_map=True)` is a *reachability* test: it erodes the
+floor map by the robot's radius and dilates by arm reach. The baked
+`floor_trav_0.png` includes all the furniture COOHAVIOR deactivates, so it
+describes a scene the task is not in. Free area per room after eroding by R1's
+0.62 m, with objects -> without:
+
+    dining_room_0   0.00 -> 1.23        living_room_0  3.65 -> 11.33
+    childs_room_0   0.36 -> 5.35        bedroom_0      0.67 ->  7.06
+    kitchen_0       0.41 -> 3.98
+
+`dining_room_0` is **zero** with objects, so `ontop(cargo, that floor)` could
+never sample at any attempt count -- it dropped the dining room out of the room
+intersection and failed the whole activity. Thirty attempts bought four and a
+half minutes of failure. The other four rooms scraped through on tenths of a
+square metre, which is why only one room looked like the problem. Pass
+`trav_map_with_objects: False`. Removing the objects first does **not** work:
+the map is a baked PNG and deleting objects at runtime does not redraw it.
+
+### Do not remove what the BDDL bound to
+
+`inroom` binds by room *type* and a room holds several objects of a category --
+bedroom_0 has four cabinets, dining_room_0 three `qplklw` armchairs -- so the
+sampler may bind the very instance V4's filter deactivates. It did, on the first
+LH draw. Nothing raises: the template saves, loads, and the goal names an object
+that is not in the scene. `_apply_scene_edits` now skips anything in
+`task.object_scope` and says which.
+
+### Check room membership by the seg map, not by `in_rooms`
+
+They disagree. `bottom_cabinet_jrhgeu_1` is annotated `bedroom_0` and, at the
+runtime resolution, stands in `childs_room_0`. The world model, the room
+listing and `inspect_scene` all read the seg map, so the seg map is what the
+agent is shown -- and an assertion against the annotation passes while the port
+is wrong.
+
+### `scene.robots` is alphabetical, and two places paired it positionally
+
+`scene_base.robots` returns `sorted(..., key=lambda x: x.name)`. At ten agents
+that is agent_0, agent_1, agent_10, agent_11, ..., agent_2, while `agent_names`
+is the layout's order. `coop_env` zipped the two to build the controller map
+and to apply `base_locked_while_holding` / `carrier`, and `inspect_scene` zipped
+them to print its table: at 15 robots agent_2's controller drove the robot named
+agent_10, and the base lock landed on whichever robot sorted into that slot.
+Invisible below ten agents, where the orders coincide -- the same trap as the
+2026-09-11 `entity_id_for` bug. Fixed by keying on name in all three places.
+**Any run with ten or more agents predates this fix.**
+
+### Dice and Crazyflie are scale 2.0, for every port from here on
+
+Decided 2026-09-12: the die (`iswudu`, 1.8 cm native) and the Crazyflie
+(12 cm native) are both scaled x2, uniformly. The die's scale is the one-element
+list in the sampler whitelist (`{"iswudu": [2.0]}` -- one dimension means scale,
+three mean a bounding box) and is baked into the cached instance; the drone's is
+`"scale": 2.0` in the layout. S2 and S3 use the same values.
+
+### The scales in the LL layout are not V4's
+
+`S1-V4-*.usda` says jackal 0.5, ridgeback_franka **1.0**, crazyflie 0.6. The LL
+layout and Step 4 above both say "Ridgeback 0.5, Jackal 0.7, Crazyflie 0.6,
+read off `xformOp:scale`", and two of the three do not match the file. LL solves
+at env_step 504 with its numbers, so LH and HH keep them rather than change
+quietly to V4's. Unresolved.
+
+
 ## Known gaps
 
 * **The Jackal cannot grasp** -- no arm, by construction. It navigates, waits,
@@ -270,5 +430,38 @@ intends lives in a package dependency graph we do not implement.
 * **HL/HH have five boxes and checkpoint FANUC arms.** The FANUC is not
   imported; its URDF ships with Isaac but its meshes do not, so it needs the
   ~614 MB `fanuc_description` clone.
-* **Materials are lost** in the URDF -> USD import. Every imported robot is
-  white. Harmless for symbolic tasks, awkward in a replay video.
+* **`base_footprint_link_name` must be the link below all six virtual joints.**
+  The drone's said `base_footprint_z` -- the link *above* the z joint, which
+  does not move when z does -- so every pose readout (`get_position_orientation`,
+  `inspect_scene`'s z, drift, room) came from a link that stays at 0.05 while
+  the body was at 1.2 m. Measured link by link before believing a single number.
+  It also decides gravity: only that link's fixed subtree keeps it, so the body
+  had been floating weightless. Now `world` (the importer's name for the root
+  body), like every other robot's real base link.
+* **A drone's z joint is free unless you drive it.** The holonomic import puts
+  a `PhysicsDriveAPI` on x, y and rz only -- what the 3-DOF base controller
+  owns -- so once the body has weight a free z joint falls. `coop2/omnigibson_definitions/fix_drone_altitude_drive.py`
+  applies a driven linear z joint (kp 100, kd 10) after import; upstream refuses
+  a driven joint no controller owns, so the model YAML gives z to the drone's
+  otherwise joint-less `arm_0` JointController (idle command = current position),
+  and `place_robots` aims it at the spawn altitude, so a layout `[x, y, z]` holds. Spawn the Crazyflie 1.2 m above its own Jackal and the trio is born in
+  one spot.
+* **Every navigate lowered the drone by 5 cm.** Upstream's
+  `_get_robot_pose_from_2d_pose` returns a holonomic base's z *joint* value as a
+  *world* z; the joint is measured from the root anchor at the 0.05 m spawn
+  height, so each teleport re-lands the body 5 cm under where it was. Measured
+  1.200 -> 1.150 -> 1.100 -> 1.050 over three navigates. Wheeled bases never
+  show it (the floor pushes back). `NavigableSymbolicActionPrimitives` now
+  overrides it to keep the body's current world z.
+* **Mesh colours are dropped by the URDF importer, and put back by a script.**
+  Isaac 5.1's importer writes a URDF `<material>` only onto primitive visuals
+  (a `<cylinder>`, a `<box>`); every `<mesh>` visual gets a white
+  `DefaultMaterial*` per mesh *file* instead, and the coloured `material_<name>`
+  Looks it does create end up bound to nothing the mesh inherits. Measured:
+  Jackal 7 of 7 mesh prims white, Ridgeback+UR5 23 of 23 (the UR5's DAE parts
+  carry their own colours), Crazyflie 0 (a DAE). Run
+  `coop2/omnigibson_definitions/fix_robot_visual_materials.py` after every
+  import: it walks the resolved URDF for link -> mesh -> colour and rebinds each
+  white Mesh prim, per mesh rather than by recolouring the shared default --
+  Ridgeback's `lights.stl` is white on the front link and black on the rear and
+  both share one DefaultMaterial. Leaves `<name>.usda.orig` beside the file.

@@ -285,11 +285,19 @@ class CooperativeBehaviorEnv:
         # about to teleport to, so concurrent samplers cannot all pick spots
         # around the same object and interpenetrate on arrival.
         self.destinations = DestinationRegistry()
+        # By name, never by position. `scene.robots` is
+        # `sorted(..., key=lambda x: x.name)` -- *alphabetical* -- so at ten or
+        # more agents it runs agent_0, agent_1, agent_10, agent_11, ... while
+        # `agent_names` is the layout's own order. Zipping the two gave agent_2
+        # the controller for the robot named agent_10. Invisible below ten
+        # agents, where the two orders coincide; the same trap as the 2026-09-11
+        # `entity_id_for` bug, in a different place.
+        robots_by_name = self._robots_by_name()
         self.controllers = {
             agent_id: ContentiousSymbolicActionPrimitives(
-                self.env, robot, destinations=self.destinations
+                self.env, robots_by_name[agent_id], destinations=self.destinations
             )
-            for agent_id, robot in zip(self.agent_names, self.env.robots)
+            for agent_id in self.agent_names
         }
         self.engine = MultiAgentPrimitiveEngine(
             self.env,
@@ -728,9 +736,13 @@ class CooperativeBehaviorEnv:
         if self.team_layout is None:
             return
         by_name = {spec.name: spec for spec in self.team_layout.robots}
-        for agent_id, robot in zip(self.agent_names, self.env.robots):
+        # By name -- see `_robots_by_name`. Zipping put the base lock and the
+        # carrier flag on whichever robot happened to sort into that position.
+        robots_by_name = self._robots_by_name()
+        for agent_id in self.agent_names:
+            robot = robots_by_name.get(agent_id)
             spec = by_name.get(agent_id)
-            if spec is None:
+            if robot is None or spec is None:
                 continue
             robot.base_locked_while_holding = bool(spec.base_locked_while_holding)
             if spec.carrier is not None:
@@ -739,6 +751,26 @@ class CooperativeBehaviorEnv:
         if locked:
             print(f"[setup] base locked while holding: {', '.join(locked)}"
                   f" -- they must hand cargo to a carrier to move it")
+
+    def _robots_by_name(self) -> Dict[str, Any]:
+        """The scene's robots keyed by name.
+
+        `scene.robots` sorts by name, which is alphabetical, not the order the
+        config declared them in: at ten agents it yields agent_0, agent_1,
+        agent_10, agent_11, ..., agent_2. Anything that pairs it positionally
+        with `agent_names` is wrong from the third robot onwards, and silently
+        so -- with identical robots the only symptom is that the wrong one
+        moves.
+        """
+        robots = {robot.name: robot for robot in self.env.robots}
+        missing = [name for name in self.agent_names if name not in robots]
+        if missing:
+            raise RuntimeError(
+                f"robots named {missing} are not in the scene; it has {sorted(robots)}. "
+                "The names in the layout are the keys of the action and observation "
+                "dicts, so this cannot be papered over by position."
+            )
+        return robots
 
     def _goal_terms(self) -> Optional[str]:
         """The activity's goal in BDDL's own ids, plus which room each is in.

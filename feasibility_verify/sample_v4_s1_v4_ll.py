@@ -50,10 +50,19 @@ BOX_XY = (-0.0672, 0.415)
 #: goal is a room-level predicate (`ontop` the bedroom floor), not this point.
 DESTINATION_XY = (-1.5553878130256362, -1.0229410990222918)
 
-#: One model exists for this synset, so pinning it changes nothing today and
-#: keeps a re-sample from silently swapping the object if more are added.
+#: LL is V4's *light* task: `tasks[].box_mass_kg` is 0.008 in
+#: COOHAVIOR/behavior_style_task/tasks.modified.json, the authority on box mass (the staging
+#: USD agrees), against 0.02 for LH and HH. Per that file's execution contract
+#: the drone may lift and carry the 8 g box; it may not lift the 20 g one --
+#: which is why the weights have to be two objects. V4 gives both
+#: weights the same name -- every one of them is `packing_box.n.02_N` -- so the
+#: distinction is invisible to anything symbolic. Here the two weights are two
+#: objects: `die.n.01` (dice-iswudu, 1.8 cm) for the 8 g cargo and
+#: `notebook.n.01` (notebook-aanuhi) for the 20 g. Three dice models exist, so
+#: pinning the model is what keeps a re-sample from swapping it.
+CARGO = "die.n.01"
 SAMPLING_WHITELIST = {
-    "packing_box.n.02": {"packing_box": {"cjhskr": None}},
+    "die.n.01": {"dice": {"iswudu": 2.0}},
 }
 
 #: The scene edits V4 makes, as a file rather than a literal: 84 objects to
@@ -114,8 +123,22 @@ def _apply_scene_edits(env, edits):
     before the dump is simply absent from the cached instance every later run
     loads.
     """
-    removed, missing = [], []
+    # Never remove what the BDDL bound to. `inroom` binds by room *type*, and
+    # a room can hold several objects of one category -- dining_room_0 has
+    # three `qplklw` armchairs and bedroom_0 four cabinets -- so the sampler
+    # may well bind the very instance V4's filter deactivates. Removing it
+    # leaves the goal naming an object that is not in the scene, and nothing
+    # raises: the template saves, loads, and the task is simply unachievable.
+    # Costs nothing on v4_s1_v4_ll, whose scope is floors and a box.
+    bound = {getattr(getattr(entity, "wrapped_obj", entity), "name", None)
+             for entity in (env.task.object_scope or {}).values()}
+    bound.discard(None)
+
+    removed, missing, protected = [], [], []
     for name in edits.get("deactivate", []):
+        if name in bound:
+            protected.append(name)
+            continue
         obj = env.scene.object_registry("name", name)
         if obj is None:
             missing.append(name)
@@ -124,6 +147,8 @@ def _apply_scene_edits(env, edits):
         removed.append(name)
     print(f"\nremoved {len(removed)} objects V4 filters out"
           + (f"; {len(missing)} were not in this scene: {missing[:4]}" if missing else ""))
+    if protected:
+        print(f"  kept {len(protected)} the BDDL binds to: {protected}")
 
     import torch as th  # noqa: PLC0415
 
@@ -139,22 +164,31 @@ def _apply_scene_edits(env, edits):
 
     mass = edits.get("box_mass_kg")
     if mass:
-        box = (env.task.object_scope or {}).get("packing_box.n.02_1")
-        box = getattr(box, "wrapped_obj", box)
-        if box is not None:
+        # Every piece of cargo, not just the first: S1-V4-HH and -HL stage five.
+        # The synset is the task's, because V4's two box weights are now two
+        # different objects -- `die.n.01` at 8 g, `notebook.n.01` at 20 g.
+        prefix = edits.get("cargo_prefix", "packing_box.n.02") + "_"
+        for entity_id, entity in sorted((env.task.object_scope or {}).items()):
+            if not entity_id.startswith(prefix):
+                continue
+            box = getattr(entity, "wrapped_obj", entity)
+            if box is None:
+                continue
             try:
-                # V4 stages the box at 8 g so a 7 cm drone's suction cup can
+                # V4 stages the cargo light so a 7 cm drone's suction cup can
                 # lift it. The symbolic grasp does not read mass -- it teleports
                 # and welds -- but the physics after a release does.
                 box.root_link.mass = float(mass)
                 print(f"  set {box.name} mass to {mass} kg")
             except Exception as error:  # noqa: BLE001
-                print(f"  could not set box mass: {type(error).__name__}: {error}")
+                print(f"  could not set {entity_id} mass: {type(error).__name__}: {error}")
 
 
-def _written_template_path(save_dir, fname):
+def _written_template_path(save_dir, fname, scene_model=None):
     """Where save_task put @fname, or None."""
     import omnigibson as og  # noqa: PLC0415
+
+    scene_model = scene_model or SCENE_MODEL
 
     candidates = []
     if save_dir:
@@ -166,9 +200,9 @@ def _written_template_path(save_dir, fname):
     for root in (getattr(og.macros.gm, "DATASET_PATH", None),
                  getattr(og.macros.gm, "CUSTOM_DATASET_PATH", None)):
         if isinstance(root, str) and root:
-            candidates.append(os.path.join(root, "scenes", SCENE_MODEL, "json", f"{fname}.json"))
+            candidates.append(os.path.join(root, "scenes", scene_model, "json", f"{fname}.json"))
     for base in ("datasets/2026-challenge-task-instances", "datasets/behavior-1k-assets"):
-        candidates.append(os.path.join(base, "scenes", SCENE_MODEL, "json", f"{fname}.json"))
+        candidates.append(os.path.join(base, "scenes", scene_model, "json", f"{fname}.json"))
     for path in candidates:
         if path and os.path.exists(path):
             return path
@@ -196,7 +230,7 @@ def main():
     print(f"\nSampling succeeded for {ACTIVITY} on {SCENE_MODEL}")
 
     scope = env.task.object_scope
-    box = scope["packing_box.n.02_1"]
+    box = scope[f"{CARGO}_1"]
     floor_a = scope["floor.n.01_1"]
     floor_b = scope["floor.n.01_2"]
     assert scope["agent.n.01_1"] is env.robots[0], "agent.n.01_1 is not env.robots[0]"
@@ -209,7 +243,7 @@ def main():
 
     sampled_xy = box.get_position_orientation()[0][:2]
     print(f"\nbound scope:")
-    print(f"  packing_box.n.02_1 -> {box.name} ({box.category}-{box.model})")
+    print(f"  {CARGO}_1{'':<{max(0, 18 - len(CARGO))}} -> {box.name} ({box.category}-{box.model})")
     print(f"  floor.n.01_1       -> {floor_a.name}   (childs_room per the BDDL)")
     print(f"  floor.n.01_2       -> {floor_b.name}   (bedroom per the BDDL)")
     print(f"\nthe sampler put the box at ({float(sampled_xy[0]):+.3f}, {float(sampled_xy[1]):+.3f})"
@@ -230,7 +264,8 @@ def main():
     if os.path.exists(SCENE_EDITS):
         with open(SCENE_EDITS) as handle:
             edits = json.load(handle)
-        _apply_scene_edits(env, edits)
+        # 0.008 kg in that file, which is LL's own staged mass.
+        _apply_scene_edits(env, dict(edits, cargo_prefix=CARGO))
 
     # Wake the task objects, or every check below reads a lie: a sleeping PhysX
     # actor reports no contacts, so OnTop comes back False for a box that is
@@ -262,12 +297,12 @@ def main():
     print(f"\nafter a {args.settle}-step settle:")
     print(f"  box at ({float(final[0]):+.3f}, {float(final[1]):+.3f}, {float(final[2]):+.3f})"
           f"  in {room_of([float(final[0]), float(final[1])])}")
-    print(f"  ontop(packing_box.n.02_1, floor.n.01_1): {on_a}")
+    print(f"  ontop({CARGO}_1, floor.n.01_1): {on_a}")
     drift = float(th.norm(final[:2] - th.tensor(BOX_XY, dtype=final.dtype)))
     print(f"  drift from the V4 coordinate: {drift:.3f} m")
 
     if not on_a:
-        print("\nBOX IS NOT ON THE CHILD'S ROOM FLOOR -- not saving")
+        print("\nCARGO IS NOT ON THE CHILD'S ROOM FLOOR -- not saving")
         og.shutdown()
         sys.exit(1)
 

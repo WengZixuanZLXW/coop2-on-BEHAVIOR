@@ -27,7 +27,8 @@ from coop2.cognitive.agent.llm_client import (
     LLMPlanResponse, NavigateToAction, Task, TaskSpecification,
 )
 from coop2.cognitive.agent.prompts import build_observation_prompt, format_plan_history
-from coop2.cognitive.plan.plan import SymbolicPlanStatus
+from coop2.cognitive.action.action import SymbolicAction
+from coop2.cognitive.plan.plan import SymbolicPlan, SymbolicPlanStatus
 
 
 def ok(message: str) -> None:
@@ -125,6 +126,65 @@ def main() -> int:
     block = format_plan_history(many, limit=5)
     assert "spec_19" in block and "spec_15" in block and "spec_14" not in block, block
     ok("5 most recent kept, older ones dropped")
+    block = format_plan_history(many)
+    assert "spec_19" in block and "spec_17" in block and "spec_16" not in block, block
+    ok("and the default is the last three")
+
+    print("test 7: the plan's actions are in the record, not only its goal")
+    # Two plans can share "ontop(apple, table)" and differ in every step; "do
+    # not do that again" needs the steps.
+    block = format_plan_history(agent.plan_history)
+    assert "plan: navigate_to(apple.n.01_1)" in block, block
+    assert block.index("#1 [DONE]") < block.index("plan: navigate_to") < block.index("you chose it because"), block
+    ok("each entry lists its actions, between the goal and the reasoning")
+
+    print("test 8: a plan replaced after an interrupt is an outcome, marked as one")
+    replaced = parse_plan_response(response, agent_id="agent_0", env_step=90, plan_id=3)
+    agent.record_plan_outcome(
+        replaced, False, "you replanned after an interrupt, before it finished",
+        env_step=95, status="replaced",
+    )
+    block = format_plan_history(agent.plan_history)
+    assert "#3 [REPLACED]" in block, block
+    assert "it was abandoned because: you replanned" in block, block
+    assert "#3 [FAILED]" not in block, "abandoning a plan is not failing it"
+    assert agent.plan_history[-1]["status"] == "replaced"
+    assert agent.plan_history[0]["status"] == "done" and agent.plan_history[1]["status"] == "failed"
+    ok("REPLACED is its own mark, and older entries still derive their status")
+
+    print("test 9: a team hold is not a plan the model made, and is hidden")
+    hold = SymbolicPlan(
+        specification="wait_for_team(alpha)",
+        actions=[SymbolicAction(action_type="wait", args={"ticks": 600})] * 30,
+        plan_id=4, agent_id="agent_0", created_at_step=100,
+    )
+    agent.record_plan_outcome(hold, False, "recalled", env_step=700, status="replaced")
+    block = format_plan_history(agent.plan_history)
+    assert "wait_for_team" not in block and "#4" not in block, block
+    assert "#3 [REPLACED]" in block, "hiding the hold must not hide its neighbours"
+    assert format_plan_history([agent.plan_history[-1]]) == "", "a history of only holds is no history"
+    ok("recorded for the metrics, absent from the prompt")
+
+    print("test 10: the record survives into the team prompt, per robot")
+    from coop2.comm_topology.llm_team import create_llm_team_topology
+
+    class Stub:
+        model = "stub"
+
+    agents = create_llm_team_topology(
+        llm_client=Stub(), teams={"alpha": ["agent_0", "agent_1"]}, verbose=False,
+    )
+    brain = agents["agent_0"].brain
+    for a in agents.values():
+        a.symbolic_view = f"view for {a.agent_id}"
+        a.observe({}, 0)
+    agents["agent_0"].plan_history = agent.plan_history
+    user = brain._build_team_prompt([brain.members["agent_0"], brain.members["agent_1"]])[1]["content"]
+    a0 = user.index("=== ROBOT agent_0 ==="); a1 = user.index("=== ROBOT agent_1 ===")
+    assert "YOUR FINISHED PLANS" in user[a0:a1], "agent_0's history is missing from its own block"
+    assert "YOUR FINISHED PLANS" not in user[a1:], "agent_1 has no history and must show none"
+    assert "plan: navigate_to(apple.n.01_1)" in user[a0:a1]
+    ok("each robot's block carries its own plans and their actions")
 
     print("\nALL TESTS PASSED")
     return 0

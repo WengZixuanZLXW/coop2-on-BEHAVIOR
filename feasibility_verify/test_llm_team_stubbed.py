@@ -388,7 +388,7 @@ def main() -> int:
     # quote the same request four times in the prompt.
     follow = agents["agent_2"].brain
     follow._collect_heard()
-    assert follow._heard_block().count("From lead:") == 1, follow._heard_block()
+    assert follow._messages_block().count("From lead") == 1, follow._messages_block()
 
     for name in ("agent_2", "agent_3"):
         agents[name].handle_reasoning()

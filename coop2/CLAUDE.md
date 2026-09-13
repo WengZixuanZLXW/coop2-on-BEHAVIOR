@@ -28,16 +28,26 @@ This file is only the operational summary.
 | L1 facade | `coop2/behavior_env/coop_env.py` | **done, GPU-verified** (M5) |
 | L0 N-robot env config + startup ritual | `coop2/behavior_env/env_setup.py` | **done, GPU-verified** 2026-09-05 |
 | — repair shim, viz stub | `coop2/_repair_shim/`, `coop2/cognitive/viz/` | **done** (no-op by design) |
-| BDDL tasks + cached instances | `bddl3/.../{coop_two_apples_pomaria,coop_nine_apples_hall,v4_s1_v4_ll}/`, `feasibility_verify/sample_*.py` | **three activities, all GPU-verified**; two and nine apples solve, v4_s1_v4_ll solves at env_step 504 |
-| Robots from outside BEHAVIOR | `coop2/robot_configs/`, `coop2/team_layouts/` | **Ridgeback+UR5 and Crazyflie imported from upstream URDFs** (2026-09-11) |
+| BDDL tasks + cached instances | `bddl3/.../{coop_two_apples_pomaria,coop_nine_apples_hall,v4_s1_v4_ll}/`, `feasibility_verify/sample_*.py` | **three activities, all GPU-verified and all solved**; two apples solves, v4_s1_v4_ll at env_step 504, nine apples at 4434 (2026-09-12) |
+| Robots from outside BEHAVIOR | `coop2/robot_configs/`, `coop2/omnigibson_definitions/fix_*.py` | **Ridgeback+UR5, Jackal and Crazyflie imported from upstream URDFs** (2026-09-11); URDF colours restored by `fix_robot_visual_materials.py`; the Crazyflie holds altitude (driven z joint owned by `arm_0`, `base_footprint_link_name: world`, navigate keeps world z) (2026-09-12) |
+| COOHAVIOR S1 family | `bddl3/.../v4_s1_v4_{ll,lh,hl,hh}/`, `feasibility_verify/sample_v4_s1_task.py`, `coop2/team_layouts/s1/sets_{1..5}.json` (shared spawn in living_room_0, drones hovering at 1.2 m over their Jackal; generator `make_s1_shared_spawn_layouts.py`) | **all four S1 tasks sampled and inspected** (2026-09-12); cargo is `die.n.01` (8 g) or `notebook.n.01` (20 g) per `tasks.modified.json`; HL's goal holds at t=0 by design -- see `PORTING_COOHAVIOR.md` |
 | M9 wiring (BehaviorTask + `check_goal` termination) | `coop2/behavior_env/coop_env.py` | **done**, commits `e4d28a98`…`5fda3d28` |
 
-## Where we are (2026-09-11)
+## Where we are (2026-09-12)
 
-Three BDDL activities run end to end. `coop_two_apples_pomaria` and
-`v4_s1_v4_ll` reach their goals; `coop_nine_apples_hall` is the hard one and
-gets 6 of 9 apples in 8000 steps. Twelve robots as three teams of four, and
-nine as three teams of three, run all three topologies without stalling.
+**All three BDDL activities now reach their goals.** `coop_nine_apples_hall`
+was the one that never had -- 6 of 9 apples in 8000 steps was its ceiling --
+and `individual`, twelve robots as three teams of four, solved it at env_step
+**4434** on 2026-09-12. Twelve robots as three teams of four, and nine as three
+teams of three, run all three topologies without stalling.
+
+**Next: route supervision.** A COOHAVIOR task is an *ordered* sequence of
+`ontop` sub-goals on one box, and BDDL can only state the last one -- which is
+why `v4_s1_v4_hl` ends at env_step 0. `coop2/ROUTE_SUPERVISION_PLAN.md` is the
+design: a `route.json` sidecar per activity, a state-evaluated `RouteTracker`
+in L1d that decides `terminated` and renders the route into the prompt, and
+the mass-based lift gate. Read it before touching termination or the
+`YOUR TASK` block.
 
 **Two lines of work are open**, and neither is a milestone from
 PORTING_PLAN.md section 7:
@@ -789,9 +799,10 @@ front of it. The pieces existed and the chain was broken twice:
 `AgentMemory` is a ring buffer shared with message traffic, so a chatty round
 evicts the plan events -- a history that silently forgets is worse in a prompt
 than none. Outcomes go in a dedicated `agent.plan_history` now, recorded where a
-plan actually terminates. An interrupt is excluded *structurally* rather than
-filtered: only the SUCCESS and FAILED transitions record anything, so an
-interrupt-and-resume cannot produce an entry for a plan still running.
+plan actually terminates. An interrupt-and-*resume* is excluded structurally
+rather than filtered: it is the same plan still running, and no transition
+records anything for it. (A plan interrupted and *replaced* is recorded, as of
+2026-09-12 -- see "Memory in the prompt" below.)
 
 ### Making the destination visible fixed one task and broke the benchmark
 
@@ -998,6 +1009,324 @@ Three ways out, cheapest first, none implemented:
 `coop2/team_layouts/v4_s1_v4_ll_one_team.json` is the second configuration,
 kept because the comparison is the evidence for all of the above.
 
+## Memory in the prompt: the last three plans, and both sides of every message (2026-09-12)
+
+Asked for two things: that an agent planning sees its own last three plans
+with their content and, where they failed, why; and that it sees the messages
+it has received *and sent*. Checked upstream first (`coop2-llm-mas/ma_crafter`)
+so as not to rebuild it. The honest finding is that most of it existed, in
+pieces that did not reach the prompt that matters:
+
+| piece | upstream | this port before | gap |
+|---|---|---|---|
+| `AgentMemory` ring buffer of `message_in/out` + `plan` events, `format_memory` | yes | yes, verbatim | rendered only by `build_observation_prompt`, the per-robot path -- and **every run now plans through `TeamBrain`**, which never read it |
+| `agent.plan_history` -> "YOUR FINISHED PLANS" | no | yes, per member in the team prompt | showed the goal, the reasoning and the failure -- **not the actions**; limit 5; a plan interrupted and *replaced* left no entry |
+| team `_heard` -> "WHAT THE OTHER TEAMS SAID" | no | yes | received only, and **cleared every round**: the model saw the latest turn and nothing before it |
+| team `_say` | no | yes | sent to the broker and recorded **nowhere on the team's side** |
+
+So the team quoted the other teams' words and none of its own, and forgot
+both at the next plan. On `centralized_agents8_..._174328` the leader's
+planning request appears in the follower's prompt exactly once, in the round
+it arrived; the reply it sent is in no prompt at all.
+
+### What changed
+
+**Plans.** `record_plan_outcome` now stores the plan's actions
+(`navigate_to(apple.n.01_6) -> grasp(apple.n.01_6) -> ...`) and a `status`:
+`done`, `failed`, or `replaced`. `format_plan_history` renders the last
+**three**, each with its `plan:` line between the goal and the reasoning:
+
+```
+YOUR FINISHED PLANS (most recent last):
+  #2 [DONE] ontop(apple.n.01_1, coffee_table.n.01_1)
+      plan: navigate_to(apple.n.01_1) -> grasp(apple.n.01_1) -> navigate_to(coffee_table.n.01_1) -> place_on_top(coffee_table.n.01_1)
+      you chose it because: Assigned apple 1 exclusively to agent_0.
+  #3 [FAILED] ontop(apple.n.01_6, coffee_table.n.01_1)
+      plan: navigate_to(apple.n.01_6) -> grasp(apple.n.01_6) -> ...
+      it failed because: grasp: PRE_CONDITION_ERROR: apple_137 is currently held by agent_9 ...
+  #6 [REPLACED] ontop(apple.n.01_5, coffee_table.n.01_1)
+      plan: wait(600)
+      it was abandoned because: you replanned after an interrupt, before it finished
+```
+
+A plan that was interrupted and **replaced** is an outcome now -- the agent
+decided on it and then decided against it -- recorded in
+`_sync_committed_plans`, the one place the wrapper knows a plan has been
+superseded. It is marked REPLACED, not FAILED: abandoning is not failing.
+Resume is still excluded structurally. The recall of a team hold takes the
+same path, so holds are recorded too and **hidden at render time**
+(`_TEAM_HOLD_PREFIX`): a hold is the barrier's mechanics, not a plan the model
+made, and listing it read as "you planned to wait" three times over.
+
+**Messages.** `TeamBrain` keeps an `AgentMemory` -- the same class every robot
+has, reused rather than re-invented, holding only messages so a chatty round
+cannot evict anything else. `_say` records `message_out`; both routes in
+(`_collect_heard`, `_file_heard`) go through one `_remember`, which de-dupes
+across rounds as well as within one and records `message_in`. `_heard` keeps
+its meaning -- what arrived since the last plan -- because `_was_asked`,
+`_heard_from` and the chain's relay logic are queries against it; it now
+supplies the `(new)` mark. One block, both directions, oldest first, replaces
+"WHAT THE OTHER TEAMS SAID":
+
+```
+MESSAGES THIS TEAM SENT AND RECEIVED (oldest first):
+  [step 0] You told follow: [team_0] Leader planning request: report each robot's ...
+  [step 0] From follow: we will take the west apples, leave the east to you
+  [step 1961] From follow (new): apple.n.01_5 is now on the table ...
+```
+
+News is quoted whole; older lines are cut at 240 chars -- the record is
+context, the news is what the model must act on. The interrupt prompt gets
+the record as "EARLIER MESSAGES" *minus* the messages it is deciding on, which
+are quoted in full under "MESSAGES" right after it; before this an
+interrupting message that had also been filed appeared twice. Bounded at
+`TEAM_MESSAGE_HISTORY = 8` quoted of `TEAM_MESSAGE_MEMORY = 32` kept.
+
+`TEAM_ROLE` says what the two blocks are for in one sentence each, so the
+model is told to read them rather than left to notice them.
+
+Tests: `test_plan_history_stubbed.py` (7-10: actions, REPLACED, hidden holds,
+the team prompt), `test_recalled_hold_stubbed.py` (a replaced plan reaches the
+agent's record; a recalled hold reaches it and not the prompt), and new
+`test_team_message_memory_stubbed.py` (eight checks on the message record,
+driven through a real broker and the centralized pair).
+
+**Measured on GPU the same day** (`individual_agents9_..._202823`, section
+below): across the three second-round team calls, every robot whose history
+showed a `[FAILED]` entry -- five of five -- chose a different target, and the
+allocation text cited the record ("Apples 1 and 9 are already held by other
+teams"). The record also produced the run's most expensive decision: see
+"the model read three identical failures" there. Both are the mechanism
+working; what it is fed is the next problem.
+
+## Nine robots, three teams, and the apple nobody could deliver (2026-09-12)
+
+`individual`, 9 R1s as three teams of three, seed 0, 8000 steps, gpt-5.6-luna,
+first run with the prompt memory above. Goal at **env_step 7244**. Run folder
+`individual_agents9_repair_off_seed0_20260912_202823_973907`.
+
+| | 9 robots (3x3) | 12 robots (3x4), earlier today |
+|---|---|---|
+| apples | **9/9 at 7244** | 9/9 at 4434 |
+| Y_plan | 0.833 | 0.588 |
+| plans | 111 (60 ok / 12 failed / 39 cut), 30 of them holds | 64 (20 / 14 / 30), 24 holds |
+| LLM calls | 27 | 10 |
+| tokens | 207 956 | 88 330 |
+| idle | 22.0 % (14 331 of 65 196 robot-steps) | 32.6 % |
+
+Failures on work plans: `OBJECT_CLAIMED` 7, `NO_SPACE_AROUND_TARGET` 3,
+`TOO_FAR` 1, one empty-hand `PRE_CONDITION`. Apples on the table, read from
+the `Relations:` section of each prompt: 2 at 1970, 3 at 2119, 4 at 2508, 6 at
+3121, **8 at 3722** -- then the ninth took 3500 steps. Every step of that is
+in the run folder, and it is three separate things.
+
+### The table holds six intents, and the seventh fails (Open defect 7)
+
+agent_5 picked up apple 5 at ~3000 and its `navigate_to(coffee_table)` failed
+three times over the next 1300 steps (plans #3, #4, #6), every time with the
+same attribution:
+
+    rejected_by: {'room': 0, 'trav': 2, 'robots': 198}    target_xy: [-11.97, -18.8]
+
+198 of 200 candidate poses rejected *by other robots*. `room: 0` and a fixed
+`target_xy` rule out the drifting-table event of 2026-09-09. Five robots --
+agent_1, 3, 6, 7, 8 -- listed the table as **in range**, all finished, all
+holding `wait(600)` where they had placed; the first reading of this was
+"five parked bodies fill the ring".
+
+**That reading was too generous to bodies.** The chain run the same evening
+(`broadcast_chain_agents9_..._210451`) hit the identical failure at steps
+**1343, 1622 and 1796 -- before any robot had delivered** (first placement at
+1871), `rejected_by robots: 199/200`. The six `[nav]` lines before it are
+robots that had *sampled* a pose at the table and were still 37-42 m away.
+What blocks a candidate is in `_clear_of_other_robots`: bodies **and**
+`DestinationRegistry` reservations, at the same 1.24 m separation -- and the
+reservation is made in `_sample_pose_near_object`, on the primitive's first
+`next()`, *before* the contention layer's ~1100 travel ticks. So a robot's
+spot at the table is taken the moment it decides to go, for the whole trip.
+A coffee table's 1.24-1.84 m annulus holds about **six** such intents; the
+seventh, eighth and ninth samplers fail, one per team in the chain run,
+whoever they are and however well the teams coordinated. That is a capacity of
+the receptacle, and no allocation of nine robots to one table gets round it.
+
+### The model read three identical failures and did the reasonable wrong thing
+
+With `[FAILED] ... no free floor space around it` three times in its history
+block, agent_5's team wrote: "the coffee table has repeatedly been unreachable
+because its surrounding floor is congested -- stage the held apple on the
+nearby chair so agent_3 can retrieve it". It put apple 5 back on chair 5, 37 m
+from the table. Given what it could see this was sound; what it could not see
+is that the congestion was its own teammates and the other teams' finished
+robots, and that they would still be there when agent_3 arrived. The prompt
+carries object distances per robot and no robot-to-robot distances.
+
+Then `_ensure_task_terminal_action` appended `place_on_top(coffee_table)` to
+the staging plan, because the specification was still `ontop(apple_5, table)`
+and the actions did not end in a placement. Empty hand, 37 m away, `TOO_FAR`,
+51 ticks. The guard is doing what it was written to do; "put this down
+somewhere else on purpose" is not a shape it knows. (Open defect 8.)
+
+### One apple left a hand it was welded to (open, not diagnosed)
+
+agent_3 fetched apple 5 from the chair (grasp OK at 5658), teleport-navigated
+35.6 m to the table (navigate OK at 6830, 1067 travel + settle), and the next
+precondition said it was holding nothing. At 6881 the world read
+`ontop(apple.n.01_5, floor.n.01_1)`, and agent_3's re-fetch `navigate_to`
+cost 127 ticks -- under a metre -- so the apple fell **at the table**, during
+the navigate's own post-teleport settle. No PhysX warning in the log.
+
+Once, in roughly twenty welded long teleports across today's two runs. The
+12-robot run's one empty-hand placement (agent_10, #4 at 1961) is a different
+thing: the robot had *already* delivered in plan #2 and the model wrote a lone
+`place_on_top` anyway -- stale belief, not a broken weld. Upstream's symbolic
+`_navigate_to_pose` is `robot.set_position_orientation(...)` then
+`_settle_robot()`; the held object is not moved, it rides the AG FixedJoint
+and PhysX closes a 35 m constraint violation in the following steps. That it
+usually works is the measured fact; why it did not once is not. Neither run
+logs robot positions per step, so whether agent_3 arrived into a parked robot
+cannot be read off this run. The discriminating measurement is a
+`feasibility_verify` script that teleports a robot with a welded apple N times
+to an annulus with 0 and with 5 parked robots and counts detachments.
+
+## The chain, seen through its prompts (2026-09-12, evening)
+
+`broadcast_chain`, 9 R1s as three teams of three, **3000 steps** -- a budget
+chosen to read prompts, not to solve. Run folder
+`broadcast_chain_agents9_repair_off_seed0_20260912_210451_851009`.
+
+| | value |
+|---|---|
+| apples at 3000 | 6/9 (2, 3, 4, 5, 8, 9), sixth at 2555 |
+| plans | 27 (8 ok / 3 failed / 7 cut on work plans; 9 holds) |
+| failures | `NO_SPACE_AROUND_TARGET` 3 -- the only code that fired |
+| LLM calls / tokens | 9 / 71 537 |
+| messages | 5, cascade ordered: team_1's relay 3.8 s after team_0's round-2 broadcast |
+| idle | 18.7 % |
+| Y_plan | 0.727 |
+
+**What the memory blocks looked like, from the run's own `llm_calls.jsonl`:**
+
+* Round one: team_0 has no message block (nothing is upstream of it); team_1
+  quotes team_0's allocation once, `(new)`; team_2 quotes team_0 then team_1,
+  oldest first, both `(new)`.
+* Round two (team_0, env_step 2346): `[step 0] You told team_1, team_2: ...`
+  -- the team's own words survived the round that clears `_heard`.
+* Interrupts (2346, 2477): the record under `EARLIER MESSAGES`, the arriving
+  broadcast under `MESSAGES:`. Compared by exact content, **0 duplicates** in
+  all three interrupt prompts. (A first check by 60-char prefix reported one;
+  team_0's two allocations share their first 75 characters and differ only at
+  `apple.n.01_03` vs `apple.n.01_1`. Compare whole contents.) team_2's 2346
+  prompt carried team_0's new allocation *and* team_1's relay together, which
+  is the cascade working. Every decision was `resume`, so no `[REPLACED]`
+  entry could appear -- a correct absence, not a gap.
+
+**What the communication bought.** Round one partitioned the nine apples
+perfectly -- 1-3 / 4-6 / 7-9 -- with no cross-team duplicate, where the
+`individual` run at the same moment had two pairs of teams each sending a robot
+to the same apple. Zero `OBJECT_CLAIMED` all run.
+
+**What it could not buy.** All nine robots headed for one table at once, and
+the table takes six (defect 7): the third robot of every team failed
+`NO_SPACE` at 1343, 1622 and 1796, before anyone had delivered. Two of them
+then read that failure in their history and **released** the apple where they
+stood -- agent_0 with apple 1 at 2346, agent_5 with apple 6 at 2477, "so the
+table-side agent can take over its long delivery" -- 37-42 m from the table.
+The same reasonable wrong thing as the staging in the individual run, from the
+same cause: the model is told the ring is full and not that the crowd is six
+reservations in transit that will have turned over by the time it arrives.
+
+## A goal is a tree, and reading it as a row killed both apple tasks (2026-09-12)
+
+`_goal_terms` -- "Tell the agent its task", `c1a46d978` -- read every goal
+clause as a predicate with atom arguments:
+
+```python
+predicate, args = clause[0], clause[1:]
+where = "; ".join(f"{a} is in the {rooms[a]}" for a in args if a in rooms)
+```
+
+A goal is not that. It is a tree of quantifiers and connectives over
+predicates, and both apple activities are quantified:
+
+    coop_nine_apples_hall  [["forall", ["?apple.n.01", "-", "apple.n.01"],
+                             ["ontop", "?apple.n.01", "?coffee_table.n.01_1"]]]
+    coop_two_apples_pomaria  the same clause, verbatim
+    v4_s1_v4_ll            [["ontop", "packing_box.n.02_1", "floor.n.01_2"]]
+
+So `a` was a list, `a in rooms` raised `TypeError: unhashable type: 'list'`,
+and **the first `env.reset()` died** -- on both apple tasks, for a day. Three
+things kept it hidden:
+
+* `v4_s1_v4_ll` has the only flat goal in the repo and was the task in hand
+  when the code was written. Every run between the two dates was that task.
+* **Isaac swallows the exception and the process still exits 0.** A crashed run
+  is indistinguishable from a finished one by exit code; the traceback is in
+  the log, prefixed `[py stderr]` by `omni.kit.app`, and nothing else says so.
+* No CPU test could reach it: the renderer lived on a method of a class that
+  imports OmniGibson.
+
+Quantification exposed a second thing that the flat goal never could: **BDDL
+prefixes every term inside a goal with `?`**, a bound variable and a concrete
+instance alike, so the goal names the table `?coffee_table.n.01_1`. Nothing
+here resolves that id, and the model already mangles instance suffixes.
+
+Rendering is `symbolic_view.render_goal_terms` now -- L1b, where the prompt
+text is made and where a CPU test can read it without Isaac. `coop_env`'s job
+is only to find the two parsed condition lists on the `BehaviorTask`.
+
+**A quantifier is stated, not expanded.** `forall ?apple.n.01` over nine
+declared apples would name all nine in every prompt from step 0, which is the
+same harm as showing the agent every room, and it would delete the exploration
+`coop_nine_apples_hall` exists to pose. What the agent gets is what the goal
+says:
+
+    YOUR TASK, in the ids it is written in:
+      ontop(every apple.n.01, coffee_table.n.01_1)
+
+`feasibility_verify/test_goal_terms_stubbed.py` asserts the crash shape, the
+`?` stripping, that no `apple.n.01_N` leaks, and that `forpairs`/`forn` -- which
+no activity of ours uses -- render rather than crash.
+
+## coop_nine_apples_hall, solved (2026-09-12)
+
+`individual`, 12 R1s as three teams of four, seed 0, 8000-step budget,
+`--time-limit-seconds 0`, gpt-5.6-luna. Goal at **env_step 4434**;
+`check_goal` reports `{'satisfied': [0], 'unsatisfied': []}`. Run folder
+`individual_agents12_repair_off_seed0_20260912_163009_025018`.
+
+| | this run | `broadcast_chain` 12 (3x4), 8000 steps |
+|---|---|---|
+| apples | **9/9 at 4434** | 6/9, full budget |
+| Y_plan | 0.588 | — |
+| plans | 64 (20 ok / 14 failed / 30 cut), 24 of them team holds | 183 (66 / 30 / 87) |
+| LLM calls | **10** | 55 |
+| tokens | **88 330** | 706 467 |
+| idle | 32.6 % (17 367 of 53 208 robot-steps) | 23.7 % |
+
+Failures: `OBJECT_CLAIMED` 9, `TOO_FAR` 4, one other. Actions: grasp 9 ok /
+13 failed, place_on_top 8 ok / 1 failed / 14 in flight at the end, navigate_to
+28 ok. **Zero `NO_SPACE_AROUND_TARGET`** -- the flying-receptacle signature did
+not appear. Zero LLM errors, 5.8 s average latency. 10 calls x 4 robots = 40
+work plans, and 64 - 24 holds = 40.
+
+**This is not a topology comparison and must not be read as one.** Four things
+landed between the chain run and this one, all of which change what the model
+is shown: the listing scoped to the activity's objects, plan history in the
+prompt, the task stated in its own ids, and the goal-rendering fix above. The
+8x token drop is most plausibly the scoping, not the topology. Comparing
+topologies needs all three re-run against the current prompt.
+
+### The prompt states intent in the same syntax as fact
+
+Counting delivered apples by grepping a prompt for
+`ontop(apple.n.01_N, coffee_table.n.01_1)` gives the wrong answer, and gave one
+here mid-run. A team prompt lists each of its four robots' plan
+*specifications*, in exactly that form, four times over -- plus the plan
+history's `#4 [FAILED] ontop(...)` lines. Only the `Relations:` section states
+facts. Read against it, the run went 2 apples at env_step 1961, 5 at 2536, 6 at
+2699, 7 at 3137, 8 at 3467, and stayed at 8 until the last one landed at 4434 --
+967 steps for the ninth.
+
 ## Open defects
 
 Fixed ones are not listed here -- the fix and its reasoning live in the commit
@@ -1040,6 +1369,35 @@ and in the code comment at the site. What is still true:
    `log()` discards them. Harmless while repair is unported -- nothing reads
    the file -- but the events are gone, and `plan_logs.json` does not carry the
    remaining-action list they had.
+7. **A receptacle's annulus holds about six intents, bodies or reservations
+   alike.** `DestinationRegistry` reserves a standing pose when the navigate
+   is *sampled* -- ~1100 ticks before the body arrives -- and the sampler
+   rejects candidates within 1.24 m of any reservation or body. A coffee
+   table's 1.24-1.84 m ring therefore fills at six robots heading for it,
+   and every later sampler gets `NO_SPACE_AROUND_TARGET` with
+   `rejected_by robots: 198-199`. Measured twice on 2026-09-12: once per team
+   at 1343/1622/1796 in `broadcast_chain_agents9_..._210451` before any
+   delivery, and three times on the last carrier in
+   `individual_agents9_..._202823`. It terminates the plan (by design, see
+   TERMINATES_PLAN), so the model reads it as "the table is congested" and
+   twice released or staged the apple tens of metres away. Options: a
+   reservation could expire or be released on arrival so the ring turns over;
+   NO_SPACE on a *moving* crowd could be a wait-and-retry rather than a plan
+   failure; or the prompt could say the crowd is in transit. None exists.
+8. **`_ensure_task_terminal_action` cannot tell staging from forgetting.** A
+   plan whose actions end in `place_on_top(<somewhere else>)` gets a
+   `place_on_top(<the goal's reference>)` appended, because the specification
+   still names the goal. Deliberately putting an object down for a teammate
+   is therefore always followed by an empty-hand `TOO_FAR` (51 ticks). Same
+   run, plan #7 of agent_5.
+9. **A team broadcasts its holds as if they were plans.** `_plan_summary` and
+   `_current_allocation` print every member's specification, so team_2 was
+   told `agent_3: wait_for_team(team_1); agent_5: wait_for_team(team_1)` in
+   the chain run -- barrier mechanics that mean nothing to another team, the
+   same leak `format_plan_history` now filters on the history side. The
+   model's own id spelling travels raw too: team_0 wrote `apple.n.01_03`,
+   `resolve_target` fixed it locally and agent_1 delivered apple 3, but the
+   other two teams read `_03` and one wrote "likely 3".
 
 See also "Open, not yet diagnosed" near the end of this file for behaviour that
 is understood but not yet explained.
@@ -1676,6 +2034,12 @@ Same shape as #2, where four rounds of guessing lost to one cProfile run.
   `_place_with_predicate` where the object has been released but not yet placed.
 - **`progress 0/4`** reads as "nothing started" when it means "action 1 is still
   running". Cosmetic, but it misled a diagnosis once.
+- **A welded object left the hand during a teleport-navigate's settle**, once
+  in ~20 such trips (agent_3, `individual_agents9_..._202823`, 6830). The
+  apple fell at the destination, not at the origin, so it made the 35.6 m
+  jump and detached afterwards. Not the same as the 12-robot run's empty-hand
+  placement, which was a model writing `place_on_top` after it had already
+  delivered. See "One apple left a hand it was welded to".
 
 ## Deliberately not implemented
 

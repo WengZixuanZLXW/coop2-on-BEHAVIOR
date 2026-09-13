@@ -30,7 +30,10 @@ class FakeEngine:
 
 
 class FakeAgent:
-    def __init__(self, plan): self.ready, self.plan = True, plan
+    def __init__(self, plan): self.ready, self.plan, self.plan_history = True, plan, []
+    def record_plan_outcome(self, plan, succeeded, reason="", env_step=None, status=None):
+        self.plan_history.append({"plan_id": plan.plan_id, "specification": plan.specification,
+                                  "succeeded": succeeded, "status": status, "reason": reason})
 
 
 class FakeTrace:
@@ -100,11 +103,30 @@ def main() -> int:
     logger.log_plan_created(live)
     logger.log_plan_started(live, 0)
     engine = FakeEngine(active={"agent_1"})
-    _wrapper(logger, FakeAgent(_plan("ontop(b, t)", 2, [])), engine)._sync_committed_plans()
+    agent = FakeAgent(_plan("ontop(b, t)", 2, []))
+    _wrapper(logger, agent, engine)._sync_committed_plans()
     assert logger.plan_history[0]["status"] == "interrupted"
     assert logger.plan_history[0]["failure_reason"] == "Replanned"
     assert engine.aborted == ["agent_1"]
-    print("  ok: the replan path is unchanged")
+    # And the agent's own record gets the abandoned plan, marked as such --
+    # not as a failure, which it was not, and not omitted, which left a hole in
+    # the history the model reads.
+    assert [(e["plan_id"], e["status"]) for e in agent.plan_history] == [(1, "replaced")], agent.plan_history
+    assert not agent.plan_history[0]["succeeded"]
+    print("  ok: the replan path is unchanged, and the replaced plan is an outcome")
+
+    print("\ntest: a recalled hold reaches the agent's record but not its prompt")
+    from coop2.cognitive.agent.prompts import format_plan_history
+    logger = SymbolicPlanLogger()
+    hold = _plan("wait_for_team(team_0)", 5, [SymbolicAction(action_type="wait", args={"ticks": 600})])
+    logger.log_plan_created(hold)
+    logger.log_plan_started(hold, 2840)
+    hold.status = SymbolicPlanStatus.INTERRUPTED
+    agent = FakeAgent(_plan("ontop(b, t)", 6, []))
+    _wrapper(logger, agent, FakeEngine(active=set()))._sync_committed_plans()
+    assert agent.plan_history and agent.plan_history[0]["status"] == "replaced"
+    assert format_plan_history(agent.plan_history) == "", format_plan_history(agent.plan_history)
+    print("  ok: recorded, hidden -- a hold is not a plan the model made")
 
     print("\ntest: a wait-only plan keeps its shape")
     actions = [SymbolicAction(action_type="wait", args={"ticks": 600})]

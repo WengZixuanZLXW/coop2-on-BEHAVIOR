@@ -208,6 +208,7 @@ def plot_agent_state_timeline(
     messages: Optional[List[Dict[str, Any]]] = None,
     teams: Optional[Dict[str, Any]] = None,
     holds: Optional[Dict[str, List[Any]]] = None,
+    legend: bool = True,
 ) -> Optional[str]:
     """Write a Gantt-style figure of agent states. Returns the path, or None.
 
@@ -224,6 +225,13 @@ def plot_agent_state_timeline(
         teams: team_timeline.json's contents, or None. When present each team
             gets a lane above its robots, and messages are drawn between those
             lanes instead of between the members that carried them.
+        legend: draw the key below the axes. Turn it off when several of these
+            are composed into one figure with a shared key -- and note it also
+            changes the *plot* width, not only what is under it: `tight_layout`
+            runs with the legend in place and narrows the axes to fit it, so a
+            run with more legend entries draws a narrower plot. Panels meant to
+            be read side by side have to be drawn without it, or the same
+            second is a different number of pixels in each.
     """
     if not agent_states:
         return None
@@ -401,11 +409,12 @@ def plot_agent_state_timeline(
                 alpha=1.0 if interrupting else 0.55,
                 label=f"{label} (n={count})",
             ))
-    axes.legend(
-        handles=handles,
-        loc="upper center", bbox_to_anchor=(0.5, -0.28),
-        ncol=len(handles) or 1, frameon=False,
-    )
+    if legend:
+        axes.legend(
+            handles=handles,
+            loc="upper center", bbox_to_anchor=(0.5, -0.28),
+            ncol=len(handles) or 1, frameon=False,
+        )
 
     figure.tight_layout()
     directory = os.path.dirname(os.path.abspath(output_path))

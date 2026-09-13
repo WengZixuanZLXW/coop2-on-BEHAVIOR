@@ -36,7 +36,15 @@ scene:
   load_room_types: null
   load_room_instances: null
   load_task_relevant_only: false
-  seg_map_resolution: 1.0
+  # 0.1, not the shipped 1.0. At 1 m the whole of Merom_1_int is a 20x20 grid
+  # and room membership is decided by which of 400 cells an object's centre
+  # lands in -- which is wrong, not merely coarse. Measured against the scene's
+  # own in_rooms annotations, 13 of 13 cabinets agree at 0.1 and only 4 at 1.0:
+  # seven land on a boundary cell and read as no room at all, and the two
+  # bedroom cabinets nearest the party wall read as childs_room_0. That turned
+  # v4_s1_v4_lh from 'carry it to the bedroom' into 'put it on the cabinet
+  # behind you', and left v4_s1_v4_hh's dining-room notebook in no room.
+  seg_map_resolution: 0.1
   scene_source: OG
   include_robots: false
 

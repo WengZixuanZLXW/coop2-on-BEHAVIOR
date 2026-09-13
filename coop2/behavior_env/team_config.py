@@ -332,7 +332,9 @@ def _normalise_position(raw: Any, where: str) -> Tuple[float, float, float]:
         raise ValueError(f"{where}: 'position' must be numbers, got {raw!r}") from error
     if len(values) == 2:
         # Spawn height, not floor height. place_robots uses the same default and
-        # then corrects: the robot is dropped a few centimetres and settles.
+        # then corrects: the robot is dropped a few centimetres and settles. Give a
+        # third value to spawn higher -- a drone at 1.2 m stays there and can share
+        # x, y with the ground vehicle under it.
         values.append(0.05)
     return (values[0], values[1], values[2])
 

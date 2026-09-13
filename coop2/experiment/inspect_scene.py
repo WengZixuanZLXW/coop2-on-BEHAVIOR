@@ -127,7 +127,12 @@ def main() -> int:
     print(f"\n=== ROBOTS after a {args.settle}-step settle ===")
     print(f"{'agent':<10} {'model':<20} {'asked for':<26} {'actual':<26} {'moved':>7}  "
           f"{'size WxDxH (m)':<18} room")
-    for name, robot in zip(env.agent_names, env.env.robots):
+    # By name. `scene.robots` sorts alphabetically, so positional pairing
+    # mislabels every robot from the third onwards once there are ten of them --
+    # which is exactly when you most want this table to be right.
+    by_name = {robot.name: robot for robot in env.env.robots}
+    for name in env.agent_names:
+        robot = by_name[name]
         spec = wanted.get(name)
         actual = _xyz(robot)
         if spec is not None and spec.position is not None:
@@ -212,9 +217,9 @@ def _save_shot(env, path, focus=None):
     import omnigibson.utils.transform_utils as T  # noqa: PLC0415
 
     if focus:
-        chosen = [
-            robot for name, robot in zip(env.agent_names, env.env.robots) if name == focus
-        ]
+        # By name: `scene.robots` is alphabetical, so a positional lookup
+        # focuses the camera on the wrong robot once there are ten of them.
+        chosen = [robot for robot in env.env.robots if robot.name == focus]
         if not chosen:
             print(f"no such robot to focus on: {focus!r}; have {list(env.agent_names)}")
             return

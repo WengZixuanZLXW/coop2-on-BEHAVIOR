@@ -1,0 +1,42 @@
+(define (problem v4_s1_v4_hh-0)
+    (:domain behavior-1k)
+
+    (:objects
+        notebook.n.01_1 notebook.n.01_2 notebook.n.01_3 notebook.n.01_4 notebook.n.01_5 - notebook.n.01
+        floor.n.01_1 floor.n.01_2 floor.n.01_3 floor.n.01_4 floor.n.01_5 - floor.n.01
+        bookcase.n.01_1 - bookcase.n.01
+        armchair.n.01_1 - armchair.n.01
+        coffee_table.n.01_1 - coffee_table.n.01
+        bed.n.01_1 bed.n.01_2 - bed.n.01
+        agent.n.01_1 - agent.n.01
+    )
+
+    (:init
+        (ontop notebook.n.01_1 floor.n.01_5)
+        (inroom floor.n.01_5 childs_room)
+        (inroom bookcase.n.01_1 kitchen)
+        (ontop notebook.n.01_2 floor.n.01_3)
+        (inroom floor.n.01_3 kitchen)
+        (inroom armchair.n.01_1 dining_room)
+        (ontop notebook.n.01_3 floor.n.01_2)
+        (inroom floor.n.01_2 dining_room)
+        (inroom coffee_table.n.01_1 living_room)
+        (ontop notebook.n.01_4 floor.n.01_1)
+        (inroom floor.n.01_1 living_room)
+        (inroom bed.n.01_2 bedroom)
+        (ontop notebook.n.01_5 floor.n.01_4)
+        (inroom floor.n.01_4 bedroom)
+        (inroom bed.n.01_1 childs_room)
+        (ontop agent.n.01_1 floor.n.01_5)
+    )
+
+    (:goal
+        (and
+            (ontop notebook.n.01_1 bookcase.n.01_1)
+            (ontop notebook.n.01_2 armchair.n.01_1)
+            (ontop notebook.n.01_3 coffee_table.n.01_1)
+            (ontop notebook.n.01_4 bed.n.01_2)
+            (ontop notebook.n.01_5 bed.n.01_1)
+        )
+    )
+)

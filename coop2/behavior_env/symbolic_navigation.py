@@ -160,6 +160,38 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
             for reproducing the old behaviour.
     """
 
+    def _get_robot_pose_from_2d_pose(self, pose_2d):
+        """(x, y, yaw) -> world pose, keeping the altitude the robot has *now*.
+
+        Upstream builds the z of a holonomic base from its z *joint*, which is
+        measured from the root anchor, and hands that joint value back as a
+        *world* z. The anchor sits at the spawn height (0.05 m), so every
+        teleport re-applies the pose 5 cm lower than the body actually is.
+        A wheeled base never notices -- the floor pushes it back up. A drone
+        holding altitude on a driven z joint does: measured 1.200 -> 1.150 ->
+        1.100 -> 1.050 over three navigates, a steady 5 cm per hop.
+
+        The right z for a teleport in the plane is the one the body already has.
+        Orientation follows upstream (rx, ry from the joints, yaw from the
+        command).
+        """
+        import importlib  # noqa: PLC0415
+        import torch as th  # noqa: PLC0415
+
+        # By name, not `import a.b.c as T`: the latter also walks the parent
+        # packages, which the CPU stub tests do not provide.
+        T = importlib.import_module("omnigibson.utils.transform_utils")
+
+        if not self.robot.is_holonomic_base:
+            return super()._get_robot_pose_from_2d_pose(pose_2d)
+        world_z = float(self.robot.get_position_orientation()[0][2])
+        q = self.robot.get_joint_positions()
+        idx = [int(i) for i in self.robot.base_idx]          # x, y, z, rx, ry, rz
+        pos = th.tensor([float(pose_2d[0]), float(pose_2d[1]), world_z], dtype=th.float32)
+        eulers = th.tensor([float(q[idx[3]]), float(q[idx[4]]), float(pose_2d[2])], dtype=th.float32)
+        orn = T.mat2quat(T.euler_intrinsic2mat(eulers))
+        return pos, orn
+
     def __init__(
         self,
         env,

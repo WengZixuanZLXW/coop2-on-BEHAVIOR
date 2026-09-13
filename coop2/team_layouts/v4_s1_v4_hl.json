@@ -1,0 +1,260 @@
+{
+  "_comment": [
+    "Robot layout for v4_s1_v4_hl (COOHAVIOR's S1-V4-HL), ported to Merom_1_int.",
+    "",
+    "Five boxes, five rooms, V4's full five-set configuration -- poses are",
+    "audit_index.json's own, robot_set_count 5, and are identical to HH's to the",
+    "last decimal (same stations M5, M3, M2, M1, M4; the FANUC checkpoint arms",
+    "dropped as elsewhere). One team per station, each starting in the room its",
+    "own box is in.",
+    "",
+    "Cargo is dice-iswudu at 0.008 kg: tasks.modified.json makes HL a *light*",
+    "task, like LL, so per its execution contract the drone may lift and carry",
+    "it and a package needs only a push_car. That is what separates HL from HH,",
+    "whose 20 g notebooks the drone may not touch.",
+    "",
+    "THE BDDL GOAL HOLDS AT t=0. V4's HL goals are ontop(box_i, floor_target_i)",
+    "with the target floor inroom the same room the box starts in -- its targets",
+    "are positions on a floor, ours is a room-level predicate over one floor",
+    "object per room, so start and goal are the same object. That is accepted",
+    "on purpose (user, 2026-09-12): COOHAVIOR's real structure is the ordered",
+    "package sequence in tasks.modified.json, to be enforced by a supervision",
+    "layer later; the BDDL goal is only the final state. Until that layer",
+    "exists, check_goal is the sole authority over `terminated` and an episode",
+    "of this activity ends at env_step 0.",
+    "",
+    "Scales are the ones v4_s1_v4_ll was verified with, not V4's own (the",
+    "staging USD says jackal 0.5, ridgeback 1.0, Crazyflie 0.6 (now 2.0, see below)). Unresolved.",
+    "",
+    "Dice and Crazyflie are at scale 2.0 -- twice native -- by decision (user,",
+    "2026-09-12), and every later port keeps that: a 1.8 cm die and a 12 cm drone",
+    "were too small to see or to reason about at room scale. The drone's 2.0",
+    "replaces the 0.6 above; the dice's 2.0 is set in the sampler whitelist and",
+    "baked into the cached instance, so a re-sample is needed to change it.",
+    "",
+    "4 robot(s) relocated off V4's staged pose (see _relocated_from): V4 staged them inside",
+    "furniture_sink_czyfhq_0 / breakfast_table_skczfi_0. The canonical per-set-count",
+    "This file keeps V4's per-station spawn (with the four stuck poses moved to the",
+    "nearest open point). The shared-spawn variant -- everyone in living_room_0 --",
+    "is coop2/team_layouts/s1/sets_5.json; sets_1 is the three-robot equivalent for ll/lh."
+  ],
+  "robots": [
+    {
+      "name": "agent_0",
+      "model": "v4_ridgeback_ur5",
+      "position": [
+        -1.1703,
+        0.4624
+      ],
+      "team": "m5",
+      "_v4_prim": "ridgeback_franka_s1_m5",
+      "_station_room": "childs_room_0",
+      "_station_box": "die.n.01_1",
+      "scale": 0.5,
+      "base_locked_while_holding": true
+    },
+    {
+      "name": "agent_1",
+      "model": "v4_jackal",
+      "position": [
+        -0.8904,
+        -0.035
+      ],
+      "team": "m5",
+      "_v4_prim": "jackal_s1_m5",
+      "_station_room": "childs_room_0",
+      "_station_box": "die.n.01_1",
+      "scale": 0.7
+    },
+    {
+      "name": "agent_2",
+      "model": "v4_crazyflie_cf2x",
+      "position": [
+        -1.2314,
+        0.0176
+      ],
+      "team": "m5",
+      "_v4_prim": "crazyflie_s1_m5",
+      "_station_room": "childs_room_0",
+      "_station_box": "die.n.01_1",
+      "scale": 2.0
+    },
+    {
+      "name": "agent_3",
+      "model": "v4_ridgeback_ur5",
+      "position": [
+        -2.2202,
+        5.5688
+      ],
+      "team": "m3",
+      "_v4_prim": "ridgeback_franka_s1_m3",
+      "_station_room": "kitchen_0",
+      "_station_box": "die.n.01_2",
+      "scale": 0.5,
+      "base_locked_while_holding": true
+    },
+    {
+      "name": "agent_4",
+      "model": "v4_jackal",
+      "position": [
+        -1.58,
+        5.07
+      ],
+      "team": "m3",
+      "_v4_prim": "jackal_s1_m3",
+      "_station_room": "kitchen_0",
+      "_station_box": "die.n.01_2",
+      "scale": 0.7,
+      "_relocated_from": [
+        -1.9403,
+        5.0714
+      ]
+    },
+    {
+      "name": "agent_5",
+      "model": "v4_crazyflie_cf2x",
+      "position": [
+        -1.8,
+        5.58
+      ],
+      "team": "m3",
+      "_v4_prim": "crazyflie_s1_m3",
+      "_station_room": "kitchen_0",
+      "_station_box": "die.n.01_2",
+      "scale": 2.0,
+      "_relocated_from": [
+        -2.2813,
+        5.124
+      ]
+    },
+    {
+      "name": "agent_6",
+      "model": "v4_ridgeback_ur5",
+      "position": [
+        0.0,
+        7.59
+      ],
+      "team": "m2",
+      "_v4_prim": "ridgeback_franka_s1_m2",
+      "_station_room": "dining_room_0",
+      "_station_box": "die.n.01_3",
+      "scale": 0.5,
+      "base_locked_while_holding": true,
+      "_relocated_from": [
+        -0.3223,
+        7.4371
+      ]
+    },
+    {
+      "name": "agent_7",
+      "model": "v4_jackal",
+      "position": [
+        0.13,
+        6.9
+      ],
+      "team": "m2",
+      "_v4_prim": "jackal_s1_m2",
+      "_station_room": "dining_room_0",
+      "_station_box": "die.n.01_3",
+      "scale": 0.7,
+      "_relocated_from": [
+        -0.0424,
+        6.9397
+      ],
+      "_stands_in": "living_room_0"
+    },
+    {
+      "name": "agent_8",
+      "model": "v4_crazyflie_cf2x",
+      "position": [
+        -0.3834,
+        6.9923
+      ],
+      "team": "m2",
+      "_v4_prim": "crazyflie_s1_m2",
+      "_station_room": "dining_room_0",
+      "_station_box": "die.n.01_3",
+      "scale": 2.0
+    },
+    {
+      "name": "agent_9",
+      "model": "v4_ridgeback_ur5",
+      "position": [
+        1.6935,
+        8.4945
+      ],
+      "team": "m1",
+      "_v4_prim": "ridgeback_franka_s1_m1",
+      "_station_room": "living_room_0",
+      "_station_box": "die.n.01_4",
+      "scale": 0.5,
+      "base_locked_while_holding": true
+    },
+    {
+      "name": "agent_10",
+      "model": "v4_jackal",
+      "position": [
+        1.9734,
+        7.9971
+      ],
+      "team": "m1",
+      "_v4_prim": "jackal_s1_m1",
+      "_station_room": "living_room_0",
+      "_station_box": "die.n.01_4",
+      "scale": 0.7
+    },
+    {
+      "name": "agent_11",
+      "model": "v4_crazyflie_cf2x",
+      "position": [
+        1.6324,
+        8.0497
+      ],
+      "team": "m1",
+      "_v4_prim": "crazyflie_s1_m1",
+      "_station_room": "living_room_0",
+      "_station_box": "die.n.01_4",
+      "scale": 2.0
+    },
+    {
+      "name": "agent_12",
+      "model": "v4_ridgeback_ur5",
+      "position": [
+        2.2227,
+        0.7049
+      ],
+      "team": "m4",
+      "_v4_prim": "ridgeback_franka_s1_m4",
+      "_station_room": "bedroom_0",
+      "_station_box": "die.n.01_5",
+      "scale": 0.5,
+      "base_locked_while_holding": true
+    },
+    {
+      "name": "agent_13",
+      "model": "v4_jackal",
+      "position": [
+        2.5026,
+        0.2075
+      ],
+      "team": "m4",
+      "_v4_prim": "jackal_s1_m4",
+      "_station_room": "bedroom_0",
+      "_station_box": "die.n.01_5",
+      "scale": 0.7
+    },
+    {
+      "name": "agent_14",
+      "model": "v4_crazyflie_cf2x",
+      "position": [
+        2.1616,
+        0.2601
+      ],
+      "team": "m4",
+      "_v4_prim": "crazyflie_s1_m4",
+      "_station_room": "bedroom_0",
+      "_station_box": "die.n.01_5",
+      "scale": 2.0
+    }
+  ]
+}

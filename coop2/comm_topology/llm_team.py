@@ -68,7 +68,10 @@ from coop2.cognitive.agent import LLMClient
 from coop2.cognitive.agent.base_llm_agent import BaseLLMAgent
 from coop2.cognitive.agent.cognitive_agent import parse_plan_response
 from coop2.cognitive.agent.llm_client import InterruptDecision
-from coop2.cognitive.agent.prompts import build_team_system_prompt, format_plan_history
+from coop2.cognitive.agent.memory import AgentMemory
+from coop2.cognitive.agent.prompts import (
+    build_team_system_prompt, format_message_content_for_prompt, format_plan_history,
+)
 from coop2.cognitive.action.action import SymbolicAction
 from coop2.cognitive.agent.agent import AgentState
 from coop2.cognitive.plan import SymbolicPlan
@@ -99,7 +102,17 @@ per robot, in that same call.
   short ones.
 - Other teams are driven by their own controllers, not by you. You coordinate
   with them only through the messages quoted in this prompt.
+- Under each robot are its last few plans, with their actions and how each
+  ended; at the end are the messages this team has sent and received so far.
+  A plan that failed for a reason that still holds will fail the same way
+  again, and a question you already asked has its answer in the record.
 """
+
+#: How many of the team's own messages -- sent and received, oldest first --
+#: the prompt quotes. The memory keeps more (`TEAM_MESSAGE_MEMORY`), so this
+#: is a rendering choice rather than a loss.
+TEAM_MESSAGE_HISTORY = 8
+TEAM_MESSAGE_MEMORY = 32
 
 #: Ticks a member holds for while it waits for the rest of the team. Short
 #: relative to a navigate (~100 ticks of settle plus 60/m) so the team regroups
@@ -266,6 +279,16 @@ class TeamBrain:
         self.peers: Dict[str, "TeamBrain"] = {}
         #: What this team heard since it last planned, folded into its prompt.
         self._heard: List[Dict] = []
+        #: Every message this team has sent or received, oldest first. ``_heard``
+        #: is cleared each round, so on its own the model saw only the latest
+        #: turn: it re-asked questions it had asked and re-announced allocations
+        #: it had made, with the earlier exchange nowhere in front of it. This
+        #: is the same ring buffer every robot already keeps (`AgentMemory`),
+        #: holding only messages, so a chatty round cannot evict anything else.
+        self.memory = AgentMemory(max_size=TEAM_MESSAGE_MEMORY)
+        #: Keys of every message ever filed, so a copy that reaches the team by
+        #: a second route in a later round is not recorded twice.
+        self._remembered: set = set()
         #: When the team itself was thinking. Recorded first-hand: the team is
         #: the thing that thinks here, and only it knows when it started. (Its
         #: messages need no such record -- addressed as a team, they are already
@@ -327,7 +350,6 @@ class TeamBrain:
         second call simply finds nothing, and what the first call took is still
         in ``_heard`` for the prompt.
         """
-        seen = {self._message_key(m) for m in self._heard}
         for name in self.member_ids:
             member = self.members.get(name)
             if member is None:
@@ -337,11 +359,7 @@ class TeamBrain:
                 # into every member's inbox -- an interrupt has to stop all of
                 # them -- so draining four inboxes yields the same message four
                 # times, and the prompt quoted it four times.
-                key = self._message_key(message)
-                if key in seen:
-                    continue
-                seen.add(key)
-                self._heard.append(message)
+                self._remember(message)
 
     @staticmethod
     def _message_key(message: Dict):
@@ -366,24 +384,63 @@ class TeamBrain:
 
         Callers must hold ``_lock``.
         """
-        seen = {
-            (m.get("sender"), m.get("timestamp"), str(m.get("content")))
-            for m in self._heard
-        }
         for message in messages or []:
-            key = (message.get("sender"), message.get("timestamp"),
-                   str(message.get("content")))
-            if key in seen:
-                continue
-            seen.add(key)
-            self._heard.append(message)
+            self._remember(message)
 
-    def _heard_block(self) -> str:
-        if not self._heard:
+    def _remember(self, message: Dict) -> bool:
+        """File one incoming message: into this round's ``_heard`` and into the
+        team's memory. Returns False if it was already there.
+
+        Both routes in -- draining inboxes and the interrupt handler -- can
+        deliver the same message, and each member holds a copy, so the
+        de-duplication lives here rather than in each caller.
+        """
+        key = self._message_key(message)
+        if key in self._remembered:
+            return False
+        self._remembered.add(key)
+        self._heard.append(message)
+        self.memory.record_message_in(
+            sender=message.get("sender", "unknown"),
+            recipients=[self.team_name],
+            content=message.get("content", ""),
+            timestamp=message.get("timestamp"),
+            env_step=message.get("env_step") or 0,
+        )
+        return True
+
+    def _env_step(self) -> int:
+        return max((getattr(m, "env_step", 0) or 0 for m in self.members.values()), default=0)
+
+    def _messages_block(self, heading: str = "MESSAGES THIS TEAM SENT AND RECEIVED",
+                        exclude: Optional[List[Dict]] = None) -> str:
+        """What this team has said and been told, oldest first.
+
+        Both directions. A team shown only what it was told re-asks questions
+        it has already asked and re-announces allocations it has already made.
+        What arrived since the last plan is marked ``(new)``, so the model can
+        tell the news from the record; older lines are cut short, because the
+        record is context and the news is what it must act on. @exclude drops
+        messages quoted elsewhere in the same prompt.
+        """
+        def identity(m):
+            return (m.get("sender"), str(m.get("content", "")))
+
+        skip = {identity(m) for m in (exclude or [])}
+        new = {identity(m) for m in self._heard}
+        events = [e for e in self.memory.get_messages() if identity(e) not in skip]
+        if not events:
             return ""
-        lines = ["\nWHAT THE OTHER TEAMS SAID:"]
-        for message in self._heard:
-            lines.append(f"  From {message.get('sender', 'unknown')}: {message.get('content', '')}")
+        lines = [f"\n{heading} (oldest first):"]
+        for event in events[-TEAM_MESSAGE_HISTORY:]:
+            content = " ".join(str(format_message_content_for_prompt(event.get("content", ""))).split())
+            if event.get("type") == "message_out":
+                who, is_new = f"You told {', '.join(event.get('recipients') or [])}", False
+            else:
+                who, is_new = f"From {event.get('sender', 'unknown')}", identity(event) in new
+            if not is_new and len(content) > 240:
+                content = content[:237] + "..."
+            lines.append(f"  [step {event.get('env_step', '?')}] {who}{' (new)' if is_new else ''}: {content}")
         return "\n".join(lines)
 
     def _say(self, content: str, kind: str, interrupts: bool,
@@ -406,6 +463,13 @@ class TeamBrain:
                 "interrupts_execution": interrupts,
                 "expected_reply": expected_reply,
             },
+        )
+        # What the team said is part of its record too: the broker logs it, but
+        # nothing on the team's side did, so its next prompt showed the other
+        # teams' words and none of its own.
+        self.memory.record_message_out(
+            sender=self.team_name, recipients=list(self.send_to), content=content,
+            env_step=self._env_step(),
         )
         if self.verbose:
             print(f"  [{self.team_name}] -> {self.send_to} ({kind}): {content[:60]}...")
@@ -992,9 +1056,9 @@ class TeamBrain:
                      f"{', '.join(m.agent_id for m in members)}")
         for member in members:
             parts.append("\n" + self._member_block(member))
-        heard = self._heard_block()
-        if heard:
-            parts.append(heard)
+        messages = self._messages_block()
+        if messages:
+            parts.append(messages)
         parts.append(
             f"\nReturn exactly {len(members)} plans, one per robot, using each "
             "robot's own ids. Say in `reasoning` how you divided the work."
@@ -1011,6 +1075,11 @@ class TeamBrain:
         parts = [f"=== STEP {anchor.env_step} ===", "\nThe team was interrupted by a message."]
         if self.goal_instruction:
             parts.append(f"\nGLOBAL OBJECTIVE: {self.goal_instruction}")
+        # The record first, minus the messages being decided on -- those are
+        # quoted in full right after it, and were quoted twice before this.
+        earlier = self._messages_block("EARLIER MESSAGES", exclude=messages)
+        if earlier:
+            parts.append(earlier)
         parts.append("\nMESSAGES:")
         for message in messages or []:
             sender = message.get("sender", "unknown")

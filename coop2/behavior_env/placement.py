@@ -252,6 +252,28 @@ def place_robots(
         spec = layout.spec_for(robot.name)
         return (spec.position[0], spec.position[1]) if spec.placed_explicitly else None
 
+    def explicit_z_for(robot):
+        """The layout's own z for a pinned robot, else the shared spawn height.
+
+        A layout may say [x, y, z], and z is not decoration: a drone spawned at
+        1.2 m hovers there (a holonomic base keeps its z through every
+        navigate), so it can share x, y with the ground vehicle beneath it and
+        a team can be born in one spot. [x, y] alone normalises to the same
+        0.05 m this function defaults to, so nothing changes for ground robots.
+        """
+        if layout is None:
+            return z
+        spec = layout.spec_for(robot.name)
+        return float(spec.position[2]) if spec.placed_explicitly else z
+
+    def vertically_apart(a, b, za, zb):
+        """True when two robots' height spans cannot meet, whatever their x, y."""
+        try:
+            ha = float(a.aabb_extent[2]); hb = float(b.aabb_extent[2])
+        except Exception:  # noqa: BLE001 - fall back to "they might touch"
+            return False
+        return abs(za - zb) >= (ha + hb) / 2.0
+
     # Explicit poses are honoured first, so that sampled robots keep clear of
     # them rather than the other way round: a sampled robot can move, a robot
     # the caller pinned to a coordinate cannot.
@@ -259,6 +281,7 @@ def place_robots(
 
     anchors: Dict[str, Any] = {}
     chosen_by_name: Dict[str, Tuple[float, float]] = {}
+    chosen_z_by_name: Dict[str, float] = {}
     chosen: List[Tuple[float, float]] = []
     for robot in order:
         placed = explicit_xy_for(robot)
@@ -269,6 +292,8 @@ def place_robots(
             too_close = [
                 name for name, (x, y) in chosen_by_name.items()
                 if math.hypot(placed[0] - x, placed[1] - y) < separation
+                and not vertically_apart(robot, _robot_named(robots, name),
+                                         explicit_z_for(robot), chosen_z_by_name.get(name, z))
             ]
             if too_close:
                 print(f"[placement] warning: {robot.name} was pinned to "
@@ -308,8 +333,10 @@ def place_robots(
                     [placed[0], placed[1], z], dtype=th.float32
                 )
         chosen_by_name[robot.name] = placed
+        z_here = explicit_z_for(robot)
+        chosen_z_by_name[robot.name] = z_here
         robot.set_position_orientation(
-            position=th.tensor([placed[0], placed[1], z], dtype=th.float32),
+            position=th.tensor([placed[0], placed[1], z_here], dtype=th.float32),
             orientation=th.tensor([0.0, 0.0, 0.0, 1.0], dtype=th.float32),
         )
         # Teleporting does not zero velocity, and a robot can arrive here already
@@ -321,6 +348,7 @@ def place_robots(
         # joint targets it cannot reach. Same defect as the object placement that
         # used to fling apples out of the house; same fix, upstream's own helper.
         robot.keep_still()
+        _hold_altitude(robot)
 
     # Report in env.robots order, not placement order, because every caller
     # zips this against env.robots.
@@ -335,6 +363,33 @@ def place_robots(
     return chosen, chosen_room
 
 
+
+
+def _hold_altitude(robot) -> None:
+    """Point a driven virtual z joint's motor at where the robot now is.
+
+    `set_position_orientation` on a holonomic base writes the six virtual joints
+    as *positions*, not drive targets. The three the base controller owns (x, y,
+    rz) are re-targeted every step from the current pose, so they stay. z is not
+    the controller's -- `HolonomicBaseJointController` is 3-DOF by assertion --
+    so a drone lifted to 1.2 m by the layout would be left with a motor still
+    aiming at 0. (The `z=+0.0500` this was first blamed for turned out to be the
+    pose getter reading `base_footprint_z`, the link *above* the z joint; the
+    body was airborne. The motor target still has to follow the spawn altitude,
+    or the first controller update would pull it down.)
+
+    Only a *driven* z joint has a motor to aim (the Crazyflie's, after
+    `fix_drone_altitude_drive.py`); a wheeled base's free z joint is left alone,
+    the floor holds that one up.
+    """
+    joint = getattr(robot, "joints", {}).get("base_footprint_z_joint")
+    if joint is None or not getattr(joint, "driven", False):
+        return
+    try:
+        current = robot.get_joint_positions()[joint.dof_indices]
+        joint.set_pos(current, drive=True)
+    except Exception as error:  # noqa: BLE001 - a robot that cannot hold altitude still places
+        print(f"[placement] could not pin {robot.name}'s altitude: {type(error).__name__}: {error}")
 
 def report_robot_poses(env, label: str) -> None:
     """Print each robot's pose, tilt and support -- one line per robot.

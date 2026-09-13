@@ -18,7 +18,7 @@
     "deliberately kept: they are BDDL supports the task binds to.",
     "",
     "move: the two objects whose coordinates actually differ from BEHAVIOR*s own.",
-    "box_mass_kg: v4:physical_mass_kg on the staged box, light enough for a 7 cm",
+    "box_mass_kg: tasks[].box_mass_kg for S1-V4-LL in COOHAVIOR/behavior_style_task/tasks.modified.json (0.008; the",
     "drone*s suction cup to lift."
   ],
   "deactivate": [

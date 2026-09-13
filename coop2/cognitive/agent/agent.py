@@ -14,6 +14,14 @@ from ..coop2_messages import has_coop2_repair_message
 from .memory import AgentMemory
 
 
+
+def describe_action(action) -> str:
+    """An action as the agent itself would write it: ``navigate_to(apple.n.01_1)``."""
+    args = getattr(action, "args", None) or {}
+    name = getattr(action, "action_type", None) or str(action)
+    return f"{name}({', '.join(str(v) for v in args.values())})"
+
+
 class AgentState(Enum):
     """Agent execution state in the planning cycle."""
     R = "reasoning"      # Agent is reasoning/generating a plan (not ready)
@@ -374,20 +382,29 @@ class Agent(ABC):
         self.plan_history = []
         self.memory.clear()
     
-    def record_plan_outcome(self, plan, succeeded: bool, reason: str = "", env_step: int = None):
+    def record_plan_outcome(self, plan, succeeded: bool, reason: str = "", env_step: int = None,
+                            status: Optional[str] = None):
         """Record how @plan ended, for this agent's own history.
 
-        Called once per plan, at the moment it reaches SUCCESS or FAILED. An
-        interrupt is not an outcome: the plan either resumes (still the same
-        plan) or is replaced, and neither is something the agent *did*.
+        Called once per plan: at the moment it reaches SUCCESS or FAILED, or --
+        with ``status="replaced"`` -- when a new plan supersedes it before it
+        finished. An interrupt that *resumes* is not an outcome: the plan is
+        still running, and recording it would report the agent as having done
+        something it is in fact still doing.
+
+        The plan's actions are recorded with it. The specification says what
+        the agent wanted; only the actions say what it tried, and the next plan
+        has to be different from *that*.
         """
         if plan is None:
             return
         self.plan_history.append({
             "plan_id": getattr(plan, "plan_id", None),
             "specification": str(getattr(plan, "specification", "")),
+            "actions": [describe_action(a) for a in (getattr(plan, "actions", None) or [])],
             "reasoning": str((getattr(plan, "metadata", None) or {}).get("reasoning", "")),
             "succeeded": bool(succeeded),
+            "status": status or ("done" if succeeded else "failed"),
             "reason": str(reason or ""),
             "env_step": self.env_step if env_step is None else env_step,
         })

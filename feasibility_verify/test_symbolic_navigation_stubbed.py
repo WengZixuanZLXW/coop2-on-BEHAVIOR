@@ -92,6 +92,10 @@ class FakeSymbolicPrimitives:
         for _ in range(3):
             yield "settle"
 
+    def _get_robot_pose_from_2d_pose(self, pose_2d):
+        # Upstream's non-holonomic branch: z forced to 0.0.
+        return FakeVector([pose_2d[0], pose_2d[1], 0.0]), "upstream-orn"
+
 
 def _install_omnigibson_stubs():
     def stub(name, **attrs):
@@ -405,6 +409,31 @@ def main() -> int:
     tight = Navigable(None, mover, robot_separation=0.1, require_traversable=False)
     assert tight.robot_separation == 0.1
     ok("default = 2 x radius, and it is overridable")
+
+    print("test 8: a teleport in the plane keeps the altitude the body has now")
+    # Upstream returns the z *joint* (measured from the root anchor at 0.05 m)
+    # as a *world* z, so every navigate re-lands a hovering drone 5 cm lower.
+    # Measured 1.200 -> 1.150 -> 1.100 -> 1.050 over three hops.
+    fake_T = types.ModuleType("omnigibson.utils.transform_utils")
+    seen = {}
+    fake_T.euler_intrinsic2mat = lambda e: seen.setdefault("eulers", list(e))
+    fake_T.mat2quat = lambda m: "quat-from-eulers"
+    sys.modules["omnigibson.utils.transform_utils"] = fake_T
+    drone = FakeRobot(scene, name="drone", position=(2.44, 7.23, 1.2))
+    drone.is_holonomic_base = True
+    drone.base_idx = [0, 1, 2, 3, 4, 5]
+    drone.get_joint_positions = lambda: FakeVector([2.39, 7.18, 1.15, 0.0, 0.0, 0.3])
+    flyer = Navigable(None, drone, require_traversable=False)
+    pos, orn = flyer._get_robot_pose_from_2d_pose(FakeVector([3.0, 4.0, 0.5]))
+    assert [float(pos[0]), float(pos[1])] == [3.0, 4.0], list(pos)
+    assert abs(float(pos[2]) - 1.2) < 1e-9, f"z came back as {float(pos[2])}, wanted the body's 1.2 not the joint's 1.15"
+    assert seen["eulers"] == [0.0, 0.0, 0.5] and orn == "quat-from-eulers", (seen, orn)
+    ok("holonomic: z is the body's world z (1.2), yaw comes from the command")
+    wheeled = FakeRobot(scene, name="cart", position=(0.0, 0.0, 0.05))
+    wheeled.is_holonomic_base = False
+    pos, orn = Navigable(None, wheeled, require_traversable=False)._get_robot_pose_from_2d_pose(FakeVector([1.0, 1.0, 0.0]))
+    assert float(pos[2]) == 0.0 and orn == "upstream-orn", (list(pos), orn)
+    ok("non-holonomic: falls through to upstream unchanged")
 
     print("\nALL TESTS PASSED")
     return 0

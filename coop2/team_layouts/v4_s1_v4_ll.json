@@ -10,7 +10,7 @@
     "",
     "The scales are not decoration. V4 stages these three within half a metre of",
     "each other, which only fits because it shrinks them -- Ridgeback to 0.5,",
-    "Jackal to 0.7, Crazyflie to 0.6. Loaded at full size, two of them overlap,",
+    "Jackal to 0.7, Crazyflie 0.6 (now 2.0, see below). Loaded at full size, two of them overlap,",
     "place_robots relocates them by 0.8 m and 1.9 m, and the relocation shoves",
     "the task's packing box 1.4 m across the room. Size is part of a layout.",
     "",
@@ -31,7 +31,13 @@
     "not base-locked -- it is the alternative route, and the team has to choose.",
     "",
     "Two teams, so chain and centralized have inter-team traffic to carry;",
-    "individual ignores the split."
+    "individual ignores the split.",
+    "",
+    "Dice and Crazyflie are at scale 2.0 -- twice native -- by decision (user,",
+    "2026-09-12), and every later port keeps that: a 1.8 cm die and a 12 cm drone",
+    "were too small to see or to reason about at room scale. The drone's 2.0",
+    "replaces the 0.6 above; the dice's 2.0 is set in the sampler whitelist and",
+    "baked into the cached instance, so a re-sample is needed to change it."
   ],
   "robots": [
     {
@@ -66,7 +72,7 @@
       ],
       "team": "bravo",
       "_v4_prim": "crazyflie_s1_m5",
-      "scale": 0.6
+      "scale": 2.0
     }
   ]
 }

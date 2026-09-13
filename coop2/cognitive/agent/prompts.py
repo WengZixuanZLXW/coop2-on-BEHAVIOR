@@ -545,38 +545,61 @@ def format_coop2_repair_instruction(messages: Optional[List[Dict]]) -> str:
 # Complete Prompt Building
 # ============================================================================
 
-def format_plan_history(history: List[Dict[str, Any]], limit: int = 5) -> str:
-    """The agent's own finished plans: what it tried, why, and how it ended.
+#: A team hold's specification. A hold is the barrier's mechanics -- the
+#: member was *told* to stand still -- not a plan the model made, and a history
+#: that listed them read as "you planned to wait" three times over.
+_TEAM_HOLD_PREFIX = "wait_for_team"
+
+_OUTCOME_MARKS = {"done": "DONE", "failed": "FAILED", "replaced": "REPLACED"}
+
+
+def format_plan_history(history: List[Dict[str, Any]], limit: int = 3) -> str:
+    """The agent's own last plans: what it tried, why, and how each ended.
 
     Without this every call starts from a blank slate: the model re-proposes
     the plan that just failed, because nothing in the prompt says it failed --
     or worse, the reason it failed (a teammate holds the target, there is no
     floor space around it) is invisible and it fails the same way again.
 
-    Only finished plans appear. A plan that was interrupted and resumed is the
-    same plan still running, and showing it as an outcome would report a robot
-    as having done something it is in fact still doing.
+    Each entry carries the plan's *actions*, not only its goal. Two plans can
+    share a specification and differ in every step, and "do not do that again"
+    needs the steps.
+
+    Only finished plans appear: succeeded, failed, or replaced by a later plan
+    after an interrupt. A plan that was interrupted and resumed is the same
+    plan still running, and showing it as an outcome would report a robot as
+    having done something it is in fact still doing. Team holds are finished
+    plans too, but they are hidden here -- see `_TEAM_HOLD_PREFIX`.
     """
-    if not history:
+    entries = [
+        entry for entry in (history or [])
+        if not str(entry.get("specification", "")).startswith(_TEAM_HOLD_PREFIX)
+    ]
+    if not entries:
         return ""
     lines = ["YOUR FINISHED PLANS (most recent last):"]
-    for entry in history[-limit:]:
-        mark = "DONE" if entry.get("succeeded") else "FAILED"
+    for entry in entries[-limit:]:
+        status = entry.get("status") or ("done" if entry.get("succeeded") else "failed")
+        mark = _OUTCOME_MARKS.get(status, status.upper())
         lines.append(
             f"  #{entry.get('plan_id')} [{mark}] {entry.get('specification', '')}"
         )
+        actions = entry.get("actions") or []
+        if actions:
+            lines.append(f"      plan: {' -> '.join(str(a) for a in actions)}")
         reasoning = (entry.get("reasoning") or "").strip()
         if reasoning:
             lines.append(f"      you chose it because: {reasoning}")
         reason = (entry.get("reason") or "").strip()
-        if reason and not entry.get("succeeded"):
+        if reason and status != "done":
             # One line. A primitive's failure text runs to several sentences
             # with a dict of diagnostics appended, and five of those would be
             # longer than the room listing they are meant to inform.
             reason = " ".join(reason.split())
             if len(reason) > 200:
                 reason = reason[:197] + "..."
-            lines.append(f"      it failed because: {reason}")
+            label = "it was abandoned because" if status == "replaced" else "it failed because"
+            lines.append(f"      {label}: {reason}")
     return "\n".join(lines)
 
 
