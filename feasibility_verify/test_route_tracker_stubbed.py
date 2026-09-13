@@ -273,6 +273,62 @@ def main() -> int:
     assert history[0]["goal"] == ["ontop", "die.n.01_1", "shelf.n.01_1"]
     ok("route_progress.json will carry the same record the run printed")
 
+    print("test 12: the prompt block shows the whole route, marked")
+    from coop2.behavior_env.symbolic_view import render_route_block
+    world = StubWorld()
+    tracker = RouteTracker(world, serial_spec())
+    text = render_route_block(tracker.spec, tracker.progress())
+    rows = [l for l in text.splitlines() if l.startswith("  ")]
+    assert len(rows) == 4, text                      # every node, from step 0
+    assert rows[0].startswith("  NEXT  C1") and "[childs_room]" in rows[0], rows[0]
+    assert "done" not in text
+    world.place("die.n.01_1", "cabinet.n.01_1"); tracker.step(1)
+    text = render_route_block(tracker.spec, tracker.progress())
+    rows = [l for l in text.splitlines() if l.startswith("  ")]
+    assert rows[0].startswith("  done  C1") and rows[1].startswith("  NEXT  C2"), text
+    assert rows[2].startswith("        C3") and "[bedroom]" in rows[2], rows[2]
+    assert "does not count" in text and "NEXT" in text.splitlines()[-1]
+    for node in ("C1", "C2", "C3", "D"):
+        assert node in text
+    ok("all nodes listed, done/NEXT marks move, each support's room stated")
+
+    print("test 13: a completed route is one line; parallel routes are one block each")
+    world = StubWorld()
+    tracker = RouteTracker(world, parallel_spec())
+    world.place("notebook.n.01_1", "shelf.n.01_1"); tracker.step(1)
+    world.place("notebook.n.01_1", "bed.n.01_2"); tracker.step(2)
+    text = render_route_block(tracker.spec, tracker.progress())
+    assert "Route B: complete" in text, text
+    assert "Route A, carry die.n.01_1" in text and "  NEXT  C1" in text
+    ok("finished routes collapse, unfinished ones keep their marks")
+
+    print("test 14: the saver writes what compute_metrics reads, and Y_task counts nodes")
+    import json, tempfile
+    from coop2.cognitive.plan.plan_log_saver import save_route_progress
+    from coop2.cognitive.compute_metrics import compute_task_success_metrics, load_logs
+    world = StubWorld(names={"dice_154": "die.n.01_1"})
+    tracker = RouteTracker(world, serial_spec())
+    world.held = {"dice_154": "agent_0"}; tracker.step(0)
+    world.held = {}; world.place("die.n.01_1", "cabinet.n.01_1")
+    tracker.step(100, acting={"agent_0": None})              # C1 by agent_0
+    world.place("die.n.01_1", "bed.n.01_2"); tracker.step(150)  # C3 out of order
+    world.place("die.n.01_1", "shelf.n.01_1"); tracker.step(200)  # C2, unattributed
+    with tempfile.TemporaryDirectory() as run_dir:
+        save_route_progress(tracker, os.path.join(run_dir, "route_progress.json"))
+        with open(os.path.join(run_dir, "team_timeline.json"), "w") as handle:
+            json.dump({"teams": {"alpha": ["agent_0", "agent_1"]}, "spans": {}}, handle)
+        logs = load_logs(run_dir)
+        assert "route_progress" in logs and "team_timeline" in logs
+        # No plan_logs.json here: an unrouted run returned {} and still does; a
+        # routed one must still report its nodes.
+        metrics = compute_task_success_metrics(logs)
+    assert metrics["required_nodes"] == 4 and metrics["completed_nodes"] == 2
+    assert abs(metrics["Y_task"] - 0.5) < 1e-9, metrics
+    assert metrics["out_of_order_visits"] == 1 and metrics["route_complete"] is False
+    assert metrics["S_team"] == {"alpha": 1, "unattributed": 1}, metrics["S_team"]
+    assert compute_task_success_metrics({}) == {}, "an unrouted run is unchanged"
+    ok("route_progress.json -> Y_task 2/4, S_team by team with unattributed kept apart")
+
     print("\nALL TESTS PASSED")
     return 0
 

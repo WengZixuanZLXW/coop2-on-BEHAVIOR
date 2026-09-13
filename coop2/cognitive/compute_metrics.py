@@ -71,6 +71,16 @@ def load_logs(results_dir: str) -> Dict[str, Any]:
         with open(team_score_path) as f:
             logs['team_score'] = json.load(f)
 
+    # Route supervision, present only for an activity with a route.json.
+    route_path = os.path.join(results_dir, "route_progress.json")
+    if os.path.exists(route_path):
+        with open(route_path) as f:
+            logs['route_progress'] = json.load(f)
+    team_timeline_path = os.path.join(results_dir, "team_timeline.json")
+    if os.path.exists(team_timeline_path):
+        with open(team_timeline_path) as f:
+            logs['team_timeline'] = json.load(f)
+
     # Load LLM usage statistics
     llm_usage_path = os.path.join(results_dir, "llm_usage.json")
     if os.path.exists(llm_usage_path):
@@ -486,8 +496,9 @@ def compute_task_success_metrics(logs: Dict[str, Any]) -> Dict[str, Any]:
     plan_history = plans_data.get('plan_history', [])
     capability_changes = logs.get('capability_changes', [])
 
+    route = compute_route_metrics(logs)
     if not plan_history:
-        return {}
+        return route
 
     # Plan-based success. The denominator is plans that *reached a verdict of
     # their own* -- succeeded or failed -- not every plan ever created.
@@ -523,7 +534,42 @@ def compute_task_success_metrics(logs: Dict[str, Any]) -> Dict[str, Any]:
         'failed_plans': failed_plans,
         'plans_cut_short': plans_cut_short,  # still running when the episode ended
         'total_plans': len(plan_history),
-        'resources_collected': dict(resources_collected)
+        'resources_collected': dict(resources_collected),
+        **route,
+    }
+
+
+def compute_route_metrics(logs: Dict[str, Any]) -> Dict[str, Any]:
+    """COOHAVIOR's two numbers under COOHAVIOR's names, from route_progress.json.
+
+    ``Y_task`` = completed nodes / required nodes, nodes not legs (user,
+    2026-09-12). ``S_team`` = one point per completed node, credited to the
+    placing robot's team when the run recorded teams and the event names a
+    robot; ``unattributed`` otherwise -- a guess would be worse than the gap.
+    Empty for an unrouted run, so every existing metric is unchanged.
+    """
+    progress = logs.get('route_progress')
+    if not progress:
+        return {}
+    summary = progress.get('summary', {})
+    teams = (logs.get('team_timeline') or {}).get('teams') or {}
+    team_of = {agent: team for team, members in teams.items() for agent in members}
+    s_team: Dict[str, int] = defaultdict(int)
+    for event in progress.get('events', []):
+        if event.get('status') != 'completed':
+            continue
+        by = event.get('by')
+        if by is None:
+            s_team['unattributed'] += 1
+        else:
+            s_team[team_of.get(by, by)] += 1
+    return {
+        'Y_task': summary.get('Y_task', 0.0),
+        'completed_nodes': summary.get('completed_nodes', 0),
+        'required_nodes': summary.get('required_nodes', 0),
+        'out_of_order_visits': summary.get('out_of_order_visits', 0),
+        'route_complete': bool(summary.get('task_complete', False)),
+        'S_team': dict(s_team),
     }
 
 

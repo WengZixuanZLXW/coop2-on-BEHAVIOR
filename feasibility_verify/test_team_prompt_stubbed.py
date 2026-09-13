@@ -40,7 +40,9 @@ SHARED_RULES = ("TOO_FAR", "unreachable", "held by", "room listing",
                 # state it in different persons -- so they drift silently unless
                 # every load-bearing token is required of both.
                 "BASE_LOCKED", "load_onto", "unload_from", "carrier",
-                "no arm", "On your back:", "within reach")
+                "no arm", "On your back:", "within reach",
+                # The route rule: only the NEXT support counts.
+                "route", "NEXT", "out of order")
 
 
 def main() -> int:

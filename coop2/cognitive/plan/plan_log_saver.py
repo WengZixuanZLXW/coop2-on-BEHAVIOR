@@ -7,6 +7,24 @@ import os
 from typing import Any
 
 
+def save_route_progress(tracker, output_path: str) -> None:
+    """Write a RouteTracker's record: events in order, then the summary.
+
+    Module-level so the CPU test can run it on a bare tracker -- post-episode
+    code that only runs after a full GPU episode is the defect class that has
+    cost a run per bug three times in this port.
+    """
+    payload = {
+        "events": [event.to_dict() for event in tracker.history()],
+        "summary": tracker.summary(),
+    }
+    directory = os.path.dirname(os.path.abspath(output_path))
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    with open(output_path, "w") as handle:
+        json.dump(payload, handle, indent=2)
+
+
 class PlanningLogSaver:
     """Persist plan-wrapper logs without bloating the execution wrapper."""
 
@@ -35,6 +53,16 @@ class PlanningLogSaver:
             with open(output_path, "w") as f:
                 json.dump(message_log, f, indent=2)
             print(f"Saved {len(message_log)} messages to {output_path}")
+
+    def save_route_log(self, output_path: str) -> None:
+        """Every route event and the final progress, for an activity with a
+        route file. Written only when there is a tracker: an unrouted run has
+        no file, which is how compute_metrics tells the two apart."""
+        base_env = getattr(self.wrapper.symbolic_env, "env", None)
+        tracker = getattr(base_env, "route_tracker", None)
+        if tracker is None:
+            return
+        save_route_progress(tracker, output_path)
 
     def save_task_log(self, output_path: str) -> None:
         """Save task states history to JSON (only changed tasks to reduce file size)."""
@@ -114,6 +142,7 @@ class PlanningLogSaver:
         self.save_agent_log(os.path.join(output_dir, "agent_states.json"))
         self.save_message_log(os.path.join(output_dir, "message_log.json"))
         self.save_task_log(os.path.join(output_dir, "task_states.json"))
+        self.save_route_log(os.path.join(output_dir, "route_progress.json"))
         self.save_capability_log(os.path.join(output_dir, "capability_changes.json"))
         self.save_team_score_log(os.path.join(output_dir, "team_score.json"))
         self.wrapper.coop2_trace.save(os.path.join(output_dir, "coop2_trace.json"))

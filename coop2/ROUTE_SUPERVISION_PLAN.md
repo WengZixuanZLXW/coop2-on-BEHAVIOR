@@ -411,10 +411,21 @@ things to read (see the memory note on ignoring constraint metrics).
    order does not count and is not punished; `Y_task` counts nodes; the prompt
    shows the whole route; when route and BDDL disagree the route is the task
    and the BDDL is corrected (the loader's messages say so).
-3. Wiring (5.3) and the post-episode saver, with the post-episode CPU test
-   extended. Then `inspect_scene --view agent_0` on LL: the route block
-   renders, every support resolves to an entity in the scene, the goal is
-   not satisfied at load.
+3. **Done 2026-09-12.** `coop_env` builds a `RouteTracker` when
+   `load_route_spec` finds a file; `step()` judges the routes after
+   `world.step()` and before `_build_info()`, so the prompt shows the node just
+   credited; `_goal_reached()` is `route_tracker.complete()` when there is one,
+   with `check_goal` run as a cross-check and a `[route] BDDL check_goal
+   disagrees` line if the two part. `render_route_block` (L1b) puts the whole
+   route under YOUR TASK, marked done/NEXT with each support's room;
+   `save_route_progress` writes `route_progress.json`; `compute_route_metrics`
+   adds `Y_task`, node counts, `out_of_order_visits`, `route_complete` and
+   `S_team` (credited by team via `team_timeline.json`, `unattributed` kept
+   apart) -- all CPU-tested on a fabricated run dir before any GPU run.
+   `inspect_scene --view agent_0` on LL renders the ten-node block from the
+   real instance. One thing the suite caught: a CPU test builds the env with
+   `object.__new__`, so a new attribute set in `__init__` does not exist there
+   -- every read of `route_tracker` goes through `getattr(..., None)`.
 4. One GPU episode of LL, individual topology, the V4 layout. Acceptance: a
    `[route] ... completed` line per node in order, `terminated` on `D`,
    `check_goal` agrees, `route_progress.json` written, `Y_task` in

@@ -140,6 +140,10 @@ class CooperativeBehaviorEnv:
 
         self.goal_reached_at: Optional[int] = None
         self.task_tracker = None
+        #: The ordered sub-goals of a COOHAVIOR task, when the activity has a
+        #: route.json beside its BDDL. Decides `terminated` when present.
+        self.route_tracker = None
+        self.route_spec = None
         self._closed = False
         import os as _os
         self.engine_verbose = bool(kwargs.get('engine_verbose') or _os.environ.get('COOP2_ENGINE_VERBOSE'))
@@ -341,6 +345,23 @@ class CooperativeBehaviorEnv:
         tasks = self.task_specs if self.task_specs is not None else self._default_tasks()
         self.task_tracker = CoopTaskTracker(self.world, tasks)
         self.capability_history = self.task_tracker.capability_history
+
+        # Route supervision (ROUTE_SUPERVISION_PLAN.md). Found by the activity
+        # name, the way the BDDL is; an activity without a route file is
+        # unrouted and nothing below changes. A route file that fails
+        # validation raises here, at build, rather than deciding termination
+        # wrongly for an hour.
+        from coop2.behavior_env.route_spec import load_route_spec  # noqa: PLC0415
+        from coop2.behavior_env.route_tracker import RouteTracker  # noqa: PLC0415
+
+        self.route_spec = load_route_spec(self.bddl_activity)
+        if self.route_spec is not None:
+            self.route_tracker = RouteTracker(self.world, self.route_spec)
+            for warning in self.route_spec.warnings:
+                print(f"[route] warning: {warning}")
+            nodes = self.route_spec.required_nodes
+            print(f"[route] {self.bddl_activity}: {len(self.route_spec.routes)} route(s), "
+                  f"{nodes} nodes; the route decides termination, check_goal is a cross-check")
         self._loaded = True
 
     def _frame_viewport(self) -> None:
@@ -809,6 +830,16 @@ class CooperativeBehaviorEnv:
         ) or ""
         return self._goal_terms_cache or None
 
+    def _task_block(self) -> Optional[str]:
+        """What goes under YOUR TASK: the route, marked, when there is one;
+        else the BDDL goal in its own ids."""
+        route_tracker = getattr(self, "route_tracker", None)
+        if route_tracker is not None:
+            from coop2.behavior_env.symbolic_view import render_route_block  # noqa: PLC0415
+
+            return render_route_block(self.route_spec, route_tracker.progress())
+        return self._goal_terms()
+
     def _build_info(self) -> Dict[str, Any]:
         from coop2.behavior_env.symbolic_view import render_symbolic_view, target_hints  # noqa: PLC0415
 
@@ -816,7 +847,7 @@ class CooperativeBehaviorEnv:
         for agent_id in self.agent_names:
             observation = self.world.observation_for(
                 agent_id, max_steps=self.length, env_step=self.engine.env_step,
-                goal_terms=self._goal_terms(),
+                goal_terms=self._task_block(),
             )
             # Resolve the radius per entity, not once from a probe object. The
             # gate is per-object (a table's radius exceeds an apple's), so a
@@ -890,10 +921,11 @@ class CooperativeBehaviorEnv:
         # An outcome is exactly the moment an agent goes back to reasoning, so
         # that is the only moment the world model has a reader.
         self.outcomes_seen += len(outcomes)
+        # A terminated primitive is the macro-step boundary: the constraints
+        # are defined over decisions, not ticks, and a sub-goal can only have
+        # changed when a primitive finished.
+        acting = {agent_id: None for agent_id in outcomes}
         if outcomes and self.task_tracker is not None:
-            # A terminated primitive is the macro-step boundary: the constraints
-            # are defined over decisions, not ticks.
-            acting = {agent_id: None for agent_id in outcomes}
             self.task_tracker.step(self.engine.env_step, acting=acting)
 
         refresh = bool(outcomes) or (
@@ -901,6 +933,16 @@ class CooperativeBehaviorEnv:
         )
         if refresh:
             self.world.step()
+            route_tracker = getattr(self, "route_tracker", None)
+            if outcomes and route_tracker is not None:
+                # After world.step(), so the predicate is read off the rebuilt
+                # model; before _build_info, so the prompt shows the node that
+                # was just credited as done.
+                for event in route_tracker.step(self.engine.env_step, acting=acting):
+                    who = f" by {event.by}" if event.by else ""
+                    tail = "" if event.status == "completed" else f" (expected {event.expected})"
+                    print(f"[route] {event.route_id} {event.node_id} {event.status} at "
+                          f"env_step {event.env_step}{who}{tail}")
             info = self._build_info()
         else:
             # Reuse the cached view -- but never the cached outcome. An outcome
@@ -979,6 +1021,24 @@ class CooperativeBehaviorEnv:
         quietly ending on a proxy for the goal.
         """
         if self.goal_reached_at is not None:
+            return True
+        route_tracker = getattr(self, "route_tracker", None)
+        if route_tracker is not None:
+            # With a route file, `terminated` is every route complete. The BDDL
+            # final state should be true at exactly that moment; if it is not,
+            # one of the two files is wrong, and that is printed rather than
+            # resolved silently. It also stops HL ending at env_step 0: the
+            # trivial BDDL goal no longer decides anything.
+            if not route_tracker.complete():
+                return False
+            self.goal_reached_at = self.engine.env_step
+            summary = route_tracker.summary()
+            print(f"[route] complete at env_step {self.goal_reached_at}: "
+                  f"{summary['completed_nodes']}/{summary['required_nodes']} nodes, "
+                  f"{summary['out_of_order_visits']} out of order")
+            if not self._bddl_goal_reached():
+                print("[route] BDDL check_goal disagrees: the route is complete and the "
+                      "BDDL final state does not hold -- one of the two files is wrong")
             return True
         if self.bddl_activity:
             return self._bddl_goal_reached()

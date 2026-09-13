@@ -66,6 +66,11 @@ Rules that decide whether an action succeeds:
   unload_from -- those are done *to* you by a robot that has a hand. Your own
   cargo appears as "On your back:", and you cannot put it down yourself. Your
   job is to drive to where an arm is waiting.
+- Some tasks are a route: YOUR TASK lists supports the cargo must rest on in
+  order, marked done / NEXT. Only the NEXT support counts when the cargo is
+  placed on it; a support reached out of order does not count and costs
+  nothing -- progress resumes when NEXT holds. Progress is judged on where the
+  cargo rests, not on what you intended.
 - Refer to objects only by the ids in the room listing, which are the objects
   in the room you are standing in. They look like apple.n.01_1. Never invent or
   guess one. An entry marked "blocked" is in that room but currently
@@ -132,6 +137,11 @@ Rules that decide whether an action succeeds:
   *to* it by a robot that has a hand. Its own section lists its load on an
   "On your back:" line, and it cannot put that down itself. Its job is to drive
   to where an arm is waiting, which is the whole reason a task needs two of them.
+- Some tasks are a route: YOUR TASK lists supports the cargo must rest on in
+  order, marked done / NEXT. Only the NEXT support counts when the cargo is
+  placed on it; a support reached out of order does not count and costs
+  nothing -- progress resumes when NEXT holds. Progress is judged on where the
+  cargo rests, not on what a robot intended.
 - Refer to objects only by the ids in that robot's own room listing, which are
   the objects in the room it is standing in. They look like apple.n.01_1. Never
   invent one, and never give one robot an id that appeared only under another

@@ -44,10 +44,11 @@ teams of three, run all three topologies without stalling.
 **In progress: route supervision.** A COOHAVIOR task is an *ordered* sequence
 of `ontop` sub-goals on one box, and BDDL can only state the last one -- which
 is why `v4_s1_v4_hl` ends at env_step 0. `coop2/ROUTE_SUPERVISION_PLAN.md` is
-the design; steps 1 and 2 are done (the `route.json` sidecar, its loader, LL's
-route, and the `RouteTracker` -- see "The route file" below). Steps 3-7 -- the
-wiring that lets the tracker decide `terminated`, the prompt rendering, the
-lift gate, HL -- are not started. Read the plan before touching termination or the `YOUR TASK` block.
+the design; steps 1-3 are done (the `route.json` sidecar, its loader, LL's
+route, the `RouteTracker`, and the wiring that lets it decide `terminated` --
+see "The route file" and "Route supervision, wired" below). Steps 4-7 -- one
+GPU episode of LL against the route, the lift gate, HL, the other nine route
+files -- are not started. Read the plan before touching termination or the `YOUR TASK` block.
 
 **Two lines of work are open**, and neither is a milestone from
 PORTING_PLAN.md section 7:
@@ -1372,6 +1373,69 @@ the BDDL bound it, so the scene has one armchair more than V4's) and C8 took
 the route. The sampler prints every node's binding now, which is the only
 place an unbindable support is visible before an episode is spent on it.
 
+## Route supervision, wired (2026-09-12)
+
+Steps 2 and 3 of ROUTE_SUPERVISION_PLAN.md. For an activity with a route file,
+`terminated` is now **every route complete**, judged on the world's state at
+each macro-step boundary; `check_goal` is kept as a cross-check and a
+`[route] BDDL check_goal disagrees` line is printed if the BDDL final state is
+not true at the moment the route completes -- one of the two files is wrong,
+and that is said rather than settled silently. HL stops ending at env_step 0
+for the same reason: the trivial BDDL goal no longer decides anything.
+
+`RouteTracker` asks `relation_holds` for the expected node and, once each, for
+every later node: the expected one holding is `completed` (and the loop
+re-checks, so two nodes on one support do not stall); a later one holding is
+`out_of_order` -- recorded, credited to nobody, nothing advances, and progress
+resumes the instant the expected node holds (user, 2026-09-12: does not count,
+is not punished). Scored nodes are never re-evaluated, because under state
+detection a box still sitting where it scored is not a second visit. Ten
+predicates a step for any V4 task; no fact-set build. Credit for a completion
+goes to the one robot that held the cargo at the previous step, does not now,
+and whose primitive terminated now; anything less certain is `None`, because
+`unattributed` is a real value and a guess is not.
+
+What the agent is shown is the whole route, marked (user's choice over
+next-node-only), each support's room read from the BDDL `inroom` the file was
+validated against, so nothing is disclosed the activity did not state:
+
+```
+YOUR TASK, in the ids it is written in:
+  Route S1-M5, carry die.n.01_1 through these in order:
+  NEXT  C1  ontop(die.n.01_1, cabinet.n.01_1)   [childs_room]
+        C2  ontop(die.n.01_1, bookcase.n.01_1)   [kitchen]
+        ...
+        D   ontop(die.n.01_1, bed.n.01_1)   [childs_room]
+A support reached out of order does not count, and nothing is lost by it: progress resumes when the NEXT one holds.
+```
+
+That is `inspect_scene --view agent_0` on the re-sampled LL instance, verbatim.
+Both system prompts carry one rule saying what a route is and that progress is
+judged on where the cargo rests; `test_team_prompt`'s shared-rule check holds
+both to it.
+
+Post-episode: `route_progress.json` (every event, then the summary) beside
+`plan_logs.json`; `compute_metrics` reads it and adds COOHAVIOR's numbers under
+COOHAVIOR's names -- `Y_task` = completed nodes / required nodes (nodes, not
+legs: user's choice), `out_of_order_visits`, `route_complete`, and `S_team`
+credited by team through `team_timeline.json` with `unattributed` kept apart.
+An unrouted run has no file and every existing metric is unchanged. All of it
+runs on a fabricated run dir in `test_route_tracker_stubbed.py` (14 checks),
+because post-episode code that only runs after a GPU episode is the defect
+class that has cost a run per bug three times here.
+
+One of those checks was earned the hard way in this very step:
+`test_behavior_action_stubbed` builds the env with `object.__new__`, so an
+attribute added to `__init__` does not exist there, and the first version of
+`_goal_reached` raised on it. Every read of `route_tracker` is
+`getattr(self, "route_tracker", None)` -- which is also what a subclass or a
+stub would need.
+
+**Not yet done:** an LL episode against the route (step 4; budget it at
+`--steps 8000`, ten nodes at roughly navigate + grasp + navigate + place each),
+the lift gate (step 5), HL's five two-node routes (step 6), and the route
+files for the other nine tasks (step 7).
+
 ## Open defects
 
 Fixed ones are not listed here -- the fix and its reasoning live in the commit
@@ -1488,6 +1552,9 @@ OMNIGIBSON_HEADLESS=1 python -u -m coop2.experiment.run_broadcast_chain \
 
 # A layout of imported robots -- V4's Ridgeback+UR5, Jackal and Crazyflie. The
 # layout beats --agents, and carries each robot's model, position and scale.
+# v4_s1_v4_ll has a route.json, so the run prints a [route] line per node
+# credited, ends when the route completes (not when check_goal fires), and
+# writes route_progress.json. Ten nodes: budget --steps 8000, not 2500.
 python -u -m coop2.experiment.run_individual \
   --team-config coop2/team_layouts/v4_s1_v4_ll.json \
   --scene Merom_1_int --room childs_room_0 --bddl-activity v4_s1_v4_ll \

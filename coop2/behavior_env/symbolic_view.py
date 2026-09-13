@@ -19,7 +19,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Union
 
 from coop2.behavior_env.world_state import EntityObservation, SymbolicObservation, room_type_of
 
-__all__ = ["ActionHint", "render_goal_terms", "render_symbolic_view", "target_hints"]
+__all__ = ["ActionHint", "render_goal_terms", "render_route_block", "render_symbolic_view", "target_hints"]
 
 #: BDDL's quantifiers, and the word that leaves each one standing.
 #:
@@ -33,6 +33,36 @@ _QUANTIFIER_WORDS = {
     "forall": "every",
     "exists": "some",
 }
+
+
+def render_route_block(spec, progress) -> str:
+    """The task as an ordered route, marked with where the cargo is on it.
+
+    The whole route, not only the next node (user, 2026-09-12), as COOHAVIOR
+    gives its model all ten nodes: the list of supports is the *task*, not the
+    world. Each support's room comes from the BDDL ``inroom`` the route file
+    was validated against, so stating it discloses nothing the activity did not
+    -- the same argument that lets ``render_goal_terms`` say which room a
+    destination is in. The room listing stays strictly local either way.
+
+    @spec is a ``RouteSpec``; @progress is ``RouteTracker.progress()``.
+    """
+    lines: List[str] = []
+    for route in spec.routes:
+        state = progress.get(route.id)
+        done = set(state.completed) if state else set()
+        nxt = state.next if state else route.nodes[0].id
+        if state is not None and state.done:
+            lines.append(f"Route {route.id}: complete -- {route.cargo} is at its destination.")
+            continue
+        lines.append(f"Route {route.id}, carry {route.cargo} through these in order:")
+        for node in route.nodes:
+            mark = "done" if node.id in done else ("NEXT" if node.id == nxt else "    ")
+            where = f"   [{node.room}]" if node.room else ""
+            lines.append(f"  {mark}  {node.id:<3} {node.predicate}({node.cargo}, {node.support}){where}")
+    lines.append("A support reached out of order does not count, and nothing is lost by it: "
+                 "progress resumes when the NEXT one holds.")
+    return "\n".join(lines)
 
 
 def render_goal_terms(
