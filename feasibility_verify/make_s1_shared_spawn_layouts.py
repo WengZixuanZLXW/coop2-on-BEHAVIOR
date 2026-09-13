@@ -135,8 +135,11 @@ for k in range(1,6):
         kind=kinds[p]; model,scale,lock=MODEL[kind]
         pos=list(placed[p])+([HOVER_Z] if kind=="crazyflie" else [])
         team=p.rsplit("_",1)[-1]
-        # type + team number (user, 2026-09-13): ridgeback_5 / jackal_5 / drone_5
-        e={"name":f"{ {'ridgeback_franka':'ridgeback','jackal':'jackal','crazyflie':'drone'}[kind] }_{team[1:]}",
+        # type + team ordinal (user, 2026-09-13): teams numbered 1..k in order
+        # of appearance, so a layout with fewer than five sets starts at 1.
+        # With all five the ordinal is the m-number (m5,m3,m2,m1,m4 -> 5,3,2,1,4).
+        ordinal=int(team[1:]) if k==5 else (i//3)+1
+        e={"name":f"{ {'ridgeback_franka':'ridgeback','jackal':'jackal','crazyflie':'drone'}[kind] }_{ordinal}",
            "model":model,"position":pos,"team":team,
            "_v4_prim":p,"_v4_staged_position":list(full[p]),"scale":scale}
         if lock: e["base_locked_while_holding"]=True

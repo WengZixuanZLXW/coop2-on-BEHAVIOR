@@ -1490,10 +1490,14 @@ none of it changes a route.
 
 `agent_0 .. agent_14` said nothing about what a robot was, and the model had
 to learn "agent_1 has no arm" from a bracket. The V4 layouts now name each
-robot `<type>_<team number>`: `ridgeback_5`, `jackal_5`, `drone_5` are the M5
-set's arm, carrier and drone (`m<k>` -> k); LL/LH's `alpha` is 1 and `bravo`
-2, so LL is `ridgeback_1`, `jackal_1`, `drone_2` and the one-team variant
-`drone_1`. Names are free strings everywhere -- the layout is the only source,
+robot `<type>_<team ordinal>`. Teams count from 1 in order of appearance
+(user, 2026-09-13): `s1/sets_2` is `ridgeback_1, jackal_1, drone_1,
+ridgeback_2, jackal_2, drone_2` even though its sets are V4's M5 and M3 --
+the set identity stays in `team` and `_v4_prim`. With all five sets present
+(`sets_5`, HH, HL) the ordinal is the m-number, so `ridgeback_5` is the M5
+set's arm. LL/LH's `alpha` is 1 and `bravo` 2, so LL is `ridgeback_1`,
+`jackal_1`, `drone_2` and the one-team variant `drone_1`. Names are free
+strings everywhere -- the layout is the only source,
 `env_setup` makes them the robot names, the world model keys entities on them
 -- so nothing in code changed; `make_s1_shared_spawn_layouts.py` emits the
 same scheme. The `agent_N` fallback still applies to layouts without names
