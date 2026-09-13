@@ -67,6 +67,7 @@ class FakeActionPrimitiveError(ValueError):
     class Reason:
         PRE_CONDITION_ERROR = type("_Member", (), {"name": "PRE_CONDITION_ERROR"})()
         PLANNING_ERROR = type("_Member", (), {"name": "PLANNING_ERROR"})()
+        EXECUTION_ERROR = type("_Member", (), {"name": "EXECUTION_ERROR"})()
 
     def __init__(self, reason, message, metadata=None):
         self.reason = reason
@@ -446,6 +447,41 @@ def main() -> int:
     assert alice._ag_obj_in_hand["left"] is None
     assert ctrl_b.holder_of(cup) is None, "released -> claim cleared"
     ok("holder_of() is a live cross-robot view, and self-claims do not block")
+
+    print("test 5c: a placement that reads true a few ticks late is not a failure")
+    # A contact predicate needs a physics tick or two after the teleport. The
+    # first version under the 10-tick settle cap checked one tick after the
+    # teleport and failed a placement the route tracker credited that same step.
+    class _LateTrue:
+        def __init__(self, after): self.calls, self.after = 0, after
+        def get_value(self, _reference=None):
+            self.calls += 1
+            return self.calls > self.after
+    class _LateStates(dict):
+        def __init__(self, after): super().__init__(); self.state = _LateTrue(after)
+        def __getitem__(self, _predicate): return self.state
+        def __contains__(self, _predicate): return True
+    _, late_alice, _, ctrl_late, _ = fresh()
+    late_cup = FakeObject("cup_late", [0.0, 0.0, 0.5]); late_cup.states = _LateStates(after=3)
+    list(ctrl_late._grasp(late_cup))
+    ticks = list(ctrl_late._place_with_predicate(FakeObject("table_l", [0.6, 0.0, 0.4]), "OnTop"))
+    assert late_alice._ag_obj_in_hand["left"] is None
+    grace = [t for t in ticks if t != "settle"]
+    assert 1 <= len(grace) <= ctrl_late.PLACE_GRACE_TICKS, ticks
+    # And a placement that never reads true still fails, after the grace runs out.
+    _, _, _, ctrl_never, _ = fresh()
+    never_cup = FakeObject("cup_never", [0.0, 0.0, 0.5]); never_cup.states = _LateStates(after=10**6)
+    list(ctrl_never._grasp(never_cup))
+    # Raised after the settle and the grace, not at the first next(), so the
+    # generator is drained rather than probed.
+    try:
+        list(ctrl_never._place_with_predicate(FakeObject("table_n", [0.6, 0.0, 0.4]), "OnTop"))
+        raise AssertionError("a placement that never reads true must fail")
+    except AssertionError:
+        raise
+    except Exception as error:  # noqa: BLE001 - the fake ActionPrimitiveError
+        assert "did not come to rest" in str(getattr(error, "message", error)), error
+    ok(f"late-true placement succeeded after {len(grace)} grace tick(s); never-true still fails")
 
     print("test 6: travel ticks are proportional to distance and precede the teleport")
     _, alice, _, ctrl_a, _ = fresh(travel_ticks_per_meter=10.0)

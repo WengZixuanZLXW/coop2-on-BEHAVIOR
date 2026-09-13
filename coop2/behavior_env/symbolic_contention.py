@@ -400,6 +400,10 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
             {"target object": obj.name, "held by": holder.name},
         )
 
+    #: Extra ticks a placement may take to read true before it is called a
+    #: failure. Spent only while the predicate still reads false.
+    PLACE_GRACE_TICKS = 8
+
     def _hold_action(self):
         """One "keep the current joint configuration" action.
 
@@ -834,6 +838,18 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
         # picked up in the gripper; the settle below would otherwise integrate it.
         obj_in_hand.keep_still()
         yield from self._settle_robot()
+        # The predicate is a contact query and needs a physics tick or two
+        # after the teleport before it reports. With settles capped at 10
+        # ticks -- and a drone's settle ending at once, because releasing its
+        # load also ends the ghost velocity that kept it "moving" -- a drone's
+        # place_on_top was checked one tick after the teleport and reported
+        # EXECUTION_ERROR at the very env_step the route tracker credited the
+        # node (2026-09-13, run ..._034921: C1 credited and "did not come to
+        # rest" at step 241). A few more ticks, only while it still reads false.
+        for _ in range(self.PLACE_GRACE_TICKS):
+            if obj_in_hand.states[predicate].get_value(obj):
+                break
+            yield self._hold_action()
 
         if not obj_in_hand.states[predicate].get_value(obj):
             raise _Error(
