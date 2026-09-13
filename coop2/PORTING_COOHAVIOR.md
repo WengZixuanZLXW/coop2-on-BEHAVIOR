@@ -336,17 +336,20 @@ The light cargo is `die.n.01` (dice-iswudu) and the heavy one `notebook.n.01`
 (notebook-aanuhi); the mass is still set explicitly. (The S1 staging USDs carry
 the same numbers as `v4:physical_mass_kg`; S2/S3's carry none.)
 
-**The weight is a capability constraint, and it is not enforced yet.** The same
-file's `condition_physical_execution_contract` says the drone "may
-suction-lift/transport an 8 g box" and "is not a load-bearing role for the 20 g
-box"; light packages need only a `push_car`, heavy ones need `pull_car +
-push_car + robot_arm` together. That is the whole reason the two weights had
-to become two objects -- so "the Crazyflie may grasp a die but not a notebook"
-can be *said*. Saying it is the next step: the symbolic grasp is mass-blind, and
-`target_hints` will still offer the drone `grasp(notebook.n.01_1)`. A per-robot
-payload limit belongs in the v4 primitives YAML (the drone's is 8 g), gated in
-`symbolic_contention` the way `_require_arm` is and withheld from the listing
-the same way -- both sides, or the agent burns a plan learning it.
+**The weight is a capability constraint, enforced since 2026-09-12 by the
+route file.** The same file's `condition_physical_execution_contract` says the
+drone "may suction-lift/transport an 8 g box" and "is not a load-bearing role
+for the 20 g box"; light packages need only a `push_car`, heavy ones need
+`pull_car + push_car + robot_arm` together. That is the whole reason the two
+weights had to become two objects -- so "the Crazyflie may grasp a die but not
+a notebook" can be *said*. It is said in `route.json`'s `lift` table (cargo
+synset -> roles), and a robot's role comes from the layout: `carrier` if it has
+no arm, `drone` if the entry says `"drone": true`, else `arm`. Not a payload
+number: COOHAVIOR's contract is a table of roles, and a mass would have made us
+invent one. `symbolic_contention._require_may_lift` refuses `grasp` and
+`unload_from` with `CANNOT_LIFT`, and `target_hints` withholds the verb and
+writes `blocked [too heavy for you]` on the object's line -- both sides, or the
+agent burns a plan learning it (ROUTE_SUPERVISION_PLAN.md section 5.4).
 
 A side effect worth having: the notebook is 0.151 x 0.120 x 0.028, against the
 packing box's 0.380 x 0.468. All five HH cargoes now sit at V4's exact staged

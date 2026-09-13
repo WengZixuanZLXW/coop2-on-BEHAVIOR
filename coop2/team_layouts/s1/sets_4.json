@@ -69,7 +69,8 @@
         -1.2314,
         0.0176
       ],
-      "scale": 2.0
+      "scale": 2.0,
+      "drone": true
     },
     {
       "name": "agent_3",
@@ -116,7 +117,8 @@
         -2.2813,
         5.124
       ],
-      "scale": 2.0
+      "scale": 2.0,
+      "drone": true
     },
     {
       "name": "agent_6",
@@ -163,7 +165,8 @@
         -0.3834,
         6.9923
       ],
-      "scale": 2.0
+      "scale": 2.0,
+      "drone": true
     },
     {
       "name": "agent_9",
@@ -210,7 +213,8 @@
         1.6324,
         8.0497
       ],
-      "scale": 2.0
+      "scale": 2.0,
+      "drone": true
     }
   ]
 }

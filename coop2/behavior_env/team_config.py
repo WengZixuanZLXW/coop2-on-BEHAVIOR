@@ -204,6 +204,12 @@ class RobotSpec:
     #: robot with no arm, which has no other way to move anything, so this is
     #: only needed to override that.
     carrier: Optional[bool] = None
+    #: Declares this robot a drone. The one thing it changes is what the robot
+    #: may lift: COOHAVIOR's execution contract lets the drone carry the 8 g
+    #: box and not the 20 g one, and a route file's `lift` table says which
+    #: cargo synsets a `drone` may take. Not inferred from the model name --
+    #: that would make a string a capability -- so the layout says it.
+    drone: Optional[bool] = None
     #: Uniform size multiplier, or None to use whatever the model's config says.
     #:
     #: Part of a layout, not a property of the robot: a scene is authored with
@@ -385,6 +391,9 @@ def _parse_robot(entry: Any, index: int) -> RobotSpec:
     carrier = entry.get("carrier")
     if carrier is not None and not isinstance(carrier, bool):
         raise ValueError(f"{where} ({name}): 'carrier' must be true or false, got {carrier!r}")
+    drone = entry.get("drone")
+    if drone is not None and not isinstance(drone, bool):
+        raise ValueError(f"{where} ({name}): 'drone' must be true or false, got {drone!r}")
 
     scale = entry.get("scale")
     if scale is not None:
@@ -403,6 +412,7 @@ def _parse_robot(entry: Any, index: int) -> RobotSpec:
         scale=scale,
         base_locked_while_holding=base_locked,
         carrier=carrier,
+        drone=drone,
     )
 
 
@@ -448,6 +458,7 @@ def _resolve_teams(
                 position=spec.position, room=spec.room, scale=spec.scale,
                 base_locked_while_holding=spec.base_locked_while_holding,
                 carrier=spec.carrier,
+                drone=spec.drone,
             )
         )
 

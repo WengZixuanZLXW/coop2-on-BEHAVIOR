@@ -28,6 +28,9 @@ import torch as th
 
 __all__ = [
     "CARGO_JOINT_NAME",
+    "LIFT_ROLES",
+    "is_drone",
+    "lift_role",
     "carried_by",
     "carrier_holding",
     "clear_cargo",
@@ -46,6 +49,30 @@ CARGO_JOINT_NAME = "cargo_constraint"
 #: neither is the carrier. Keyed by name so a stale handle cannot resurrect a
 #: joint that a reset removed.
 _CARGO: Dict[str, Tuple[str, Any]] = {}
+
+
+#: What a robot can be, for the purpose of what it may lift. Matches
+#: route_spec.LIFT_ROLES, which a route file's `lift` table names.
+LIFT_ROLES = ("arm", "drone", "carrier")
+
+
+def is_drone(robot) -> bool:
+    """Did the layout declare @robot a drone? Never inferred from the model."""
+    return getattr(robot, "is_drone", None) is True
+
+
+def lift_role(robot) -> str:
+    """``carrier`` (no arm), ``drone`` (the layout says so), else ``arm``.
+
+    The role a route file's `lift` table is keyed against. A carrier is
+    checked first: it has no hand, so the question of what it may lift never
+    arises, whatever else it is.
+    """
+    if is_carrier(robot):
+        return "carrier"
+    if is_drone(robot):
+        return "drone"
+    return "arm"
 
 
 def is_carrier(robot) -> bool:

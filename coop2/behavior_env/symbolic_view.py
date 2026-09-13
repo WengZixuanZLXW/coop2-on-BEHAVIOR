@@ -334,6 +334,29 @@ def is_off_task(entity, observation: SymbolicObservation) -> bool:
     return entity.entity_id not in observation.task_entity_ids
 
 
+def _synset_of_id(entity_id: str) -> str:
+    """``notebook.n.01_1`` -> ``notebook.n.01``; an id without ``_N`` is itself."""
+    base, sep, suffix = entity_id.rpartition("_")
+    return base if sep and suffix.isdigit() else entity_id
+
+
+def _may_lift(observation: SymbolicObservation, me, cargo_id: Optional[str]) -> bool:
+    """May the observer take @cargo_id into its hand, per the route's lift table?
+
+    Mirrors the engine's `_require_may_lift` exactly -- same table, same role --
+    because a verb the prompt offers and the engine refuses costs a plan and an
+    LLM round trip to discover. No table, or a synset it does not name: anyone
+    with a hand may.
+    """
+    if not cargo_id or not observation.lift_rules:
+        return True
+    allowed = observation.lift_rules.get(_synset_of_id(cargo_id))
+    if allowed is None:
+        return True
+    role = (me.lift_role if me is not None and me.lift_role else "arm")
+    return role in allowed
+
+
 def target_hints(
     observation: SymbolicObservation,
     interaction_radius: Optional[Union[float, Callable[[EntityObservation], Optional[float]]]] = None,
@@ -414,7 +437,11 @@ def target_hints(
             if held is not None and entity.carrying is None:
                 hints.append(ActionHint("load_onto", entity.entity_id, entity.name))
             elif entity.carrying is not None and held is None:
-                hints.append(ActionHint("unload_from", entity.entity_id, entity.name))
+                if _may_lift(observation, me, entity.carrying):
+                    hints.append(ActionHint("unload_from", entity.entity_id, entity.name))
+                else:
+                    hints.append(ActionHint("blocked", entity.entity_id, entity.name,
+                                            "its cargo is too heavy for you"))
             elif entity.carrying is not None:
                 hints.append(ActionHint("blocked", entity.entity_id, entity.name,
                                         "your hand is full"))
@@ -437,6 +464,17 @@ def target_hints(
                 ActionHint("navigate_to", entity.entity_id, entity.name,
                            "" if in_range else f"{distance:.1f} m away")
             )
+        # Weight before reach: a drone 1.2 m from the notebook was shown
+        # "unreachable [1.2 m away]" and would have flown over to learn the
+        # truth. Too heavy is too heavy at any distance, so it is said first
+        # and "unreachable" is not -- approaching would not help. Said, not
+        # left to be inferred from a missing verb: the same rule as base-lock.
+        # What "too heavy" means is the system prompt's job.
+        too_heavy = (not armless and not entity.is_fixed and entity.held_by is None
+                     and not _may_lift(observation, me, entity.entity_id))
+        if too_heavy:
+            hints.append(ActionHint("blocked", entity.entity_id, entity.name, "too heavy for you"))
+
         if not in_range:
             # Say it, rather than leaving it to be inferred from the absence of
             # the other verbs. A line that reads "navigate_to [5.7 m away]" and
@@ -444,9 +482,10 @@ def target_hints(
             # missing, and an agent that misreads that spends a whole plan
             # discovering it: one recorded run had an agent plan
             # grasp-then-place on an object it was five metres from.
-            hints.append(
-                ActionHint("unreachable", entity.entity_id, entity.name, far_note)
-            )
+            if not too_heavy:
+                hints.append(
+                    ActionHint("unreachable", entity.entity_id, entity.name, far_note)
+                )
             continue
 
         if armless:
@@ -454,7 +493,8 @@ def target_hints(
             continue
 
         if entity.held_by is None and held is None and not entity.is_fixed:
-            hints.append(ActionHint("grasp", entity.entity_id, entity.name, far_note))
+            if not too_heavy:
+                hints.append(ActionHint("grasp", entity.entity_id, entity.name, far_note))
         elif entity.held_by not in (None, observation.agent_id):
             # Surfaced deliberately: "who holds what" is the cross-agent signal
             # the topology layer is measured on, so the LLM must be able to see
@@ -550,7 +590,12 @@ def render_symbolic_view(
         # two lines that mean opposite things looked alike at a glance.
         status = [word for word in ("unreachable", "blocked") if word in primitives]
         verbs_for[target_id] = ", ".join(status + sorted(primitives - set(status)))
-        note_for[target_id] = next((h.note for h in target_hint_list if h.note), "")
+        # A "blocked" note wins: "blocked, navigate_to [too heavy for you]"
+        # rather than "[1.2 m away]" from the navigate_to hint that came
+        # first. Unreachable lines keep their short distance note as before.
+        note_for[target_id] = next(
+            (h.note for h in target_hint_list if h.note and h.primitive == "blocked"),
+            next((h.note for h in target_hint_list if h.note), ""))
 
     # A carrier and its cargo are one line, because they are one thing to act
     # on: the box's id, where it is and how to get it back are all facts about

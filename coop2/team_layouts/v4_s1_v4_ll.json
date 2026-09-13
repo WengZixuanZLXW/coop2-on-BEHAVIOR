@@ -72,7 +72,8 @@
       ],
       "team": "bravo",
       "_v4_prim": "crazyflie_s1_m5",
-      "scale": 2.0
+      "scale": 2.0,
+      "drone": true
     }
   ]
 }

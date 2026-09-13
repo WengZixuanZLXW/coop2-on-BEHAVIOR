@@ -14,8 +14,9 @@
     "The weight is a capability constraint: that file's execution contract says",
     "the drone 'is not a load-bearing role for the 20 g box' and every heavy",
     "package requires pull_car + push_car + robot_arm together. So in HH each",
-    "team's Crazyflie can scout but must not carry. NOT enforced yet -- the",
-    "symbolic grasp is mass-blind. A per-robot payload limit is the next step.",
+    "team's Crazyflie can scout but must not carry. Enforced (2026-09-12) by the",
+    "route file's `lift` table -- notebook.n.01 -> [arm] -- against the `drone: true`",
+    "on each Crazyflie here; the engine refuses with CANNOT_LIFT, the listing says why.",
     "",
     "Five boxes, five rooms, five destinations -- and so V4's full five-set robot",
     "configuration rather than LL/LH's single set. Poses are audit_index.json's",
@@ -99,7 +100,8 @@
       "_station_room": "childs_room_0",
       "_station_box": "notebook.n.01_1",
       "_station_goal": "bookcase.n.01_1 (kitchen)",
-      "scale": 2.0
+      "scale": 2.0,
+      "drone": true
     },
     {
       "name": "agent_3",
@@ -150,7 +152,8 @@
       "_relocated_from": [
         -2.2813,
         5.124
-      ]
+      ],
+      "drone": true
     },
     {
       "name": "agent_6",
@@ -202,7 +205,8 @@
       "_station_room": "dining_room_0",
       "_station_box": "notebook.n.01_3",
       "_station_goal": "coffee_table.n.01_1 (living_room)",
-      "scale": 2.0
+      "scale": 2.0,
+      "drone": true
     },
     {
       "name": "agent_9",
@@ -245,7 +249,8 @@
       "_station_room": "living_room_0",
       "_station_box": "notebook.n.01_4",
       "_station_goal": "bed.n.01_2 (bedroom)",
-      "scale": 2.0
+      "scale": 2.0,
+      "drone": true
     },
     {
       "name": "agent_12",
@@ -288,7 +293,8 @@
       "_station_room": "bedroom_0",
       "_station_box": "notebook.n.01_5",
       "_station_goal": "bed.n.01_1 (childs_room)",
-      "scale": 2.0
+      "scale": 2.0,
+      "drone": true
     }
   ]
 }

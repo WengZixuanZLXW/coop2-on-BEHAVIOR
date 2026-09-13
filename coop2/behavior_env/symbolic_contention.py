@@ -469,6 +469,53 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
             {},
         )
 
+    def _require_may_lift(self, obj, verb: str) -> None:
+        """Refuse to take @obj into the hand when this robot's role may not.
+
+        The route file's `lift` table (route_spec) is keyed by cargo synset and
+        lists the roles allowed; `coop_env` hands it to every controller as
+        `lift_rules`. COOHAVIOR's contract is the reason it exists: the drone
+        may carry the 8 g box and is "not a load-bearing role for the 20 g
+        box", which is what makes the heavy tasks need an arm. A synset the
+        table does not name may be lifted by anyone with a hand, so a run
+        without a route file is unchanged. Refused with CANNOT_LIFT so the
+        prompt can say why, the way TOO_FAR and BASE_LOCKED do.
+        """
+        rules = getattr(self, "lift_rules", None) or {}
+        if not rules:
+            return
+        synset = self._synset_of(obj)
+        allowed = rules.get(synset)
+        if allowed is None:
+            return
+        try:
+            from coop2.behavior_env.carrier import lift_role  # noqa: PLC0415
+
+            role = lift_role(self.robot)
+        except Exception:  # noqa: BLE001
+            role = "arm"
+        if role in allowed:
+            return
+        raise self._error(
+            "CANNOT_LIFT",
+            f"{obj.name} is too heavy for you: a {role} may not {verb} a {synset}; "
+            f"only {', '.join(allowed)} may. Leave it to a robot that can.",
+            {"target object": obj.name, "synset": synset, "role": role,
+             "allowed": list(allowed)},
+        )
+
+    @staticmethod
+    def _synset_of(obj) -> str:
+        """The BDDL synset of @obj's category (``notebook`` -> ``notebook.n.01``),
+        or the category itself when the taxonomy does not know it."""
+        category = getattr(obj, "category", None) or ""
+        try:
+            from bddl.object_taxonomy import ObjectTaxonomy  # noqa: PLC0415
+
+            return ObjectTaxonomy().get_synset_from_category(category) or category
+        except Exception:  # noqa: BLE001
+            return category
+
     def _require_carrier(self, carrier, verb: str):
         """@carrier must be a robot that carries cargo, and within reach."""
         from coop2.behavior_env.carrier import is_carrier  # noqa: PLC0415
@@ -539,6 +586,8 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
                 f"{carrier.name} is not carrying anything.",
                 {"target object": carrier.name},
             )
+        # Unloading puts the cargo in this robot's hand, so it is a lift too.
+        self._require_may_lift(riding, "unload")
         unload_from(carrier)
         # The same weld a grasp makes, now on this robot's own end effector.
         eef_position = self.robot.get_eef_position(self.arm)
@@ -588,6 +637,7 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
 
     def _grasp(self, obj):
         self._require_arm("grasp")
+        self._require_may_lift(obj, "grasp")
         self._require_not_held_by_self(obj)
         self._require_unclaimed(obj, "grasp")
         self._require_near(obj, "grasp", GATE_GRASP)

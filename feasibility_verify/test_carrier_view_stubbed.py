@@ -144,6 +144,61 @@ def main() -> int:
     assert ("place_on_top", "floor.n.01_1") in e
     print("  ok: grasp -> load_onto -> drive -> unload_from -> place_on_top")
 
+    print("\ntest 8b: the lift table withholds grasp from a role that may not lift")
+    # LH/HH: only an arm may take the 20 g notebook; the 8 g die may go by
+    # drone too. A robot the table forbids is told so, on the object's line,
+    # rather than discovering CANNOT_LIFT after a whole plan.
+    def with_lift(agent, role):
+        die = EntityObservation("die.n.01_1", "dice_1", "dice", [ROOM], position=(0.3, 0, 0.5))
+        note = EntityObservation("notebook.n.01_1", "notebook_1", "notebook", [ROOM], position=(0.4, 0, 0.5))
+        robot = EntityObservation(agent, agent, "agent", [ROOM], position=(0, 0, 0),
+                                  is_robot=True, lift_role=role,
+                                  is_carrier=(role == "carrier"))
+        ents = [robot, die, note]
+        obs = SymbolicObservation(agent_id=agent, step=1, max_steps=100, room=ROOM,
+                                  entities={e.entity_id: e for e in ents}, facts=[],
+                                  task_entity_ids={e.entity_id for e in ents})
+        obs.lift_rules = {"die.n.01": ("arm", "drone"), "notebook.n.01": ("arm",)}
+        return obs
+    drone = verbs(with_lift("agent_2", "drone"))
+    assert ("grasp", "die.n.01_1") in drone, sorted(drone)
+    assert ("grasp", "notebook.n.01_1") not in drone, sorted(drone)
+    assert ("blocked", "notebook.n.01_1") in drone
+    note_line = next(h.note for h in sv.target_hints(with_lift("agent_2", "drone"), interaction_radius=1.5)
+                     if h.target_id == "notebook.n.01_1" and h.primitive == "blocked")
+    assert "too heavy" in note_line, note_line
+    arm = verbs(with_lift("agent_0", "arm"))
+    assert ("grasp", "die.n.01_1") in arm and ("grasp", "notebook.n.01_1") in arm
+    carrier = verbs(with_lift("agent_1", "carrier"))
+    assert not [v for v in carrier if v[0] == "grasp"], "a carrier lifts nothing, table or no table"
+    # Weight before reach: from 3 m the drone is still told "too heavy", and
+    # not "unreachable" -- flying closer would not help. The rendered line
+    # carries that note, not the distance.
+    far = with_lift("agent_2", "drone")
+    far.entities["notebook.n.01_1"].position = (3.0, 0, 0.5)
+    far_v = verbs(far)
+    assert ("blocked", "notebook.n.01_1") in far_v and ("unreachable", "notebook.n.01_1") not in far_v, sorted(far_v)
+    assert ("unreachable", "die.n.01_1") not in far_v  # the die is still at 0.3 m
+    rendered = sv.render_symbolic_view(far, interaction_radius=1.5)
+    line = next(l for l in rendered.splitlines() if "notebook.n.01_1" in l and "->" in l)
+    assert "too heavy for you" in line and "m away" not in line, line
+    # No table: no opinion, everyone with a hand may lift anything.
+    free = with_lift("agent_2", "drone"); free.lift_rules = {}
+    assert ("grasp", "notebook.n.01_1") in verbs(free)
+    print("  ok: drone gets the die and is told the notebook is too heavy; arm gets both")
+
+    print("\ntest 8c: unloading is a lift too, and is withheld the same way")
+    riding = scene("agent_2", box_held_by="agent_1", jackal_carrying=BOX)
+    riding.entities["agent_2"] = EntityObservation(
+        "agent_2", "agent_2", "agent", [ROOM], position=(0, 0, 0), is_robot=True, lift_role="drone")
+    riding.lift_rules = {"packing_box.n.02": ("arm",)}
+    got = verbs(riding)
+    assert ("unload_from", "agent_1") not in got, sorted(got)
+    assert ("blocked", "agent_1") in got, sorted(got)
+    riding.lift_rules = {"packing_box.n.02": ("arm", "drone")}
+    assert ("unload_from", "agent_1") in verbs(riding)
+    print("  ok: a drone may not unload what it may not lift")
+
     print("\ntest 9: the world model reports cargo as held, and says by whom")
     # The observation half above is only as true as what feeds it. This runs the
     # real BehaviorWorldState against a registered load.

@@ -222,6 +222,17 @@ def main() -> int:
     assert grouped.teammates_of("agent_0") == ("agent_0", "agent_1", "agent_2", "agent_3")
     ok("9 agents in teams of 4 -> 4/4/1; the remainder is its own team")
 
+    print("\ntest: 'drone' is a layout fact, parsed and carried through the resolver")
+    layout = parse_team_layout({"robots": [
+        {"name": "agent_0", "model": "r1", "position": [0, 0], "team": "a"},
+        {"name": "agent_2", "model": "r1", "position": [1, 0], "team": "a", "drone": True},
+    ]})
+    by_name = {r.name: r for r in layout.robots}
+    assert by_name["agent_2"].drone is True and by_name["agent_0"].drone is None
+    rejects({"robots": [{"name": "x", "model": "r1", "position": [0, 0], "drone": "yes"}]},
+            "'drone' must be true or false")
+    ok("drone: true survives parse; a non-bool is refused")
+
     print("\nALL TESTS PASSED")
     return 0
 

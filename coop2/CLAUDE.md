@@ -48,8 +48,10 @@ the design; steps 1-3 are done (the `route.json` sidecar, its loader, LL's
 route, the `RouteTracker`, and the wiring that lets it decide `terminated` --
 see "The route file" and "Route supervision, wired" below), and the S1 part of
 steps 6-7: all four S1 tasks have route files and corrected, re-sampled BDDLs
-("Four route files, four re-samples"). Not started: step 4, one GPU episode of
-LL against the route; step 5, the lift gate; and S2/S3's eight route files. Read the plan before touching termination or the `YOUR TASK` block.
+("Four route files, four re-samples"), and step 5, the lift gate ("The lift
+gate"). Not started: step 4, one GPU episode of LL against the route, and
+S2/S3's eight route files. Read the plan before touching termination or the
+`YOUR TASK` block.
 
 **Two lines of work are open**, and neither is a milestone from
 PORTING_PLAN.md section 7:
@@ -1432,10 +1434,11 @@ attribute added to `__init__` does not exist there, and the first version of
 `getattr(self, "route_tracker", None)` -- which is also what a subclass or a
 stub would need.
 
-**Not yet done:** an LL episode against the route (step 4; budget it at
-`--steps 8000`, ten nodes at roughly navigate + grasp + navigate + place each),
-the lift gate (step 5), HL's five two-node routes (step 6), and the route
-files for the other nine tasks (step 7).
+**Not yet done at the time:** an LL episode against the route (step 4; budget
+it at `--steps 8000`, ten nodes at roughly navigate + grasp + navigate + place
+each), the lift gate (step 5, done later the same day -- "The lift gate"), HL's
+five two-node routes (step 6, done), and the route files for the other nine
+tasks (step 7, S1 done).
 
 ## Four route files, four re-samples (2026-09-12)
 
@@ -1482,6 +1485,49 @@ bedroom_0; COOHAVIOR's own files disagree), and LL took `armchair_qplklw_1`
 where the other three took `_2`. `_apply_scene_edits` keeps whatever the BDDL
 bound off V4's deactivate list, so LL's scene has one armchair more than V4's;
 none of it changes a route.
+
+## The lift gate (2026-09-12)
+
+COOHAVIOR's one constraint we had no word for: the Crazyflie may carry the
+8 g box and "is not a load-bearing role for the 20 g box". The two weights
+were already two objects (die, notebook); what was missing was the rule, and
+the route file's `lift` table is where it lives (`"notebook.n.01": ["arm"]`,
+`"die.n.01": ["arm", "drone"]`). Three decisions:
+
+* **Role is a layout fact.** `RobotSpec.drone`, parallel to `carrier`, set
+  as `"drone": true` on every `v4_crazyflie_cf2x` entry in the ten layouts.
+  Not inferred from the model string -- that would make a name a capability.
+  `carrier.lift_role(robot)` is the one place the role is computed: carrier
+  first (no hand, so the question never arises), then drone, else arm.
+* **Both sides, once each.** `coop_env._build` hands `route_spec.lift` to the
+  world (`lift_rules`, copied onto each `SymbolicObservation`) and to every
+  controller. The engine's `_require_may_lift` refuses `grasp` and
+  `unload_from` -- unloading puts cargo in the hand, so it is a lift -- with
+  reason code `CANNOT_LIFT`, which terminates the plan like `TOO_FAR`. The
+  view's `_may_lift` mirrors it exactly and turns the verb into
+  `blocked [too heavy for you]` on the object's line, the way base-lock is
+  shown rather than left to be inferred from a missing verb. Both system
+  prompts say what the mark means.
+* **No table, no opinion.** A synset the table does not name, or a run with
+  no route file, is unchanged: anyone with a hand may lift anything. The
+  apple tasks are untouched.
+
+CPU: `test_carrier_view_stubbed` 8b (drone gets the die and is told the
+notebook is too heavy; arm gets both; a carrier gets no grasp regardless) and
+8c (unload withheld the same way); `test_team_config_stubbed` parses and
+refuses a non-bool `drone`. GPU: `inspect_scene --view agent_2` on LH printed
+`[route] lift rules: notebook.n.01 -> arm` and, in the drone's listing,
+
+```
+  - notebook.n.01_1  -> blocked, navigate_to  [too heavy for you]
+```
+
+while agent_0's read `-> grasp, navigate_to`. The first GPU pass showed the
+gap CPU tests had not: the drone stood 1.2 m away, the reach check ran first,
+and it was told `unreachable [1.2 m away]` -- it would have flown over to
+learn the truth. Weight is now judged before reach (too heavy is too heavy at
+any distance, so `unreachable` is not added), and a `blocked` hint's note wins
+the bracket over `navigate_to`'s distance. Unreachable lines are unchanged.
 
 ## Open defects
 

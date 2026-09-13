@@ -74,6 +74,16 @@ def _carried_by(robot):
         return None
 
 
+def _lift_role(robot) -> str:
+    """Mirrors carrier.lift_role; ``arm`` when the module is unavailable."""
+    try:
+        from coop2.behavior_env.carrier import lift_role  # noqa: PLC0415
+
+        return lift_role(robot)
+    except Exception:  # noqa: BLE001
+        return "arm"
+
+
 def _is_carrier(robot) -> bool:
     """Does @robot carry cargo on its back? Mirrors carrier.is_carrier."""
     try:
@@ -109,6 +119,10 @@ class EntityObservation:
     #: one loaded look identical otherwise, and only one of them can be
     #: unloaded.
     carrying: Optional[str] = None
+    #: ``arm`` / ``drone`` / ``carrier`` -- what this robot is, for what it may
+    #: lift. Only set on robots; the observer reads its own to decide which
+    #: cargo to offer itself.
+    lift_role: Optional[str] = None
     #: This robot cannot drive while its gripper is loaded.
     base_locked_while_holding: bool = False
 
@@ -169,6 +183,9 @@ class SymbolicObservation:
     #: Empty when the run has no BDDL task, and empty means "no opinion": the
     #: view then shows everything, as it did before this existed.
     task_entity_ids: Set[str] = field(default_factory=set)
+    #: cargo synset -> roles that may lift it, from the activity's route file.
+    #: Empty means no opinion: anyone with a hand may lift anything.
+    lift_rules: Dict[str, Tuple[str, ...]] = field(default_factory=dict)
 
     def by_room(self) -> Dict[Optional[str], List[EntityObservation]]:
         grouped: Dict[Optional[str], List[EntityObservation]] = {}
@@ -237,6 +254,8 @@ class BehaviorWorldState:
         #: than from fallback numbering. What the task is *about*, as opposed
         #: to what the scene happens to contain.
         self.task_entity_ids: Set[str] = set()
+        #: Set by coop_env from the route file, when there is one.
+        self.lift_rules: Dict[str, Tuple[str, ...]] = {}
         # Per-agent memory of rooms visited, so an agent keeps knowing about a
         # room it has already been in (PORTING_PLAN 3.1).
         self._seen_rooms: Dict[str, Set[str]] = {name: set() for name in self.robot_names}
@@ -549,6 +568,7 @@ class BehaviorWorldState:
                 position=tuple(float(v) for v in position),
                 is_robot=True,
                 is_carrier=_is_carrier(robot),
+                lift_role=_lift_role(robot),
                 carrying=(
                     self.entity_id_for(riding)
                     if (riding := _carried_by(robot)) is not None else None
@@ -792,4 +812,5 @@ class BehaviorWorldState:
             last_action_id=last_action_id,
             last_error=last_error,
             task_entity_ids=set(self.task_entity_ids),
+            lift_rules=dict(self.lift_rules),
         )

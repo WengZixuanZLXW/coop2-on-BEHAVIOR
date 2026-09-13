@@ -432,8 +432,17 @@ things to read (see the memory note on ignoring constraint metrics).
    `coop2_metrics.json`. Budget it: ten nodes at roughly navigate + grasp +
    navigate + place each is ~5000 ticks before any handoff, so `--steps 8000`
    and `--time-limit-seconds 0`.
-5. The lift gate (5.4) and its test; then LH, where the notebook is what the
-   drone may not carry.
+5. **Done 2026-09-12.** The lift gate (5.4): `RobotSpec.drone` (a layout
+   fact, `"drone": true` on every Crazyflie entry; never inferred from the
+   model name), `carrier.lift_role` computing carrier / drone / arm in one
+   place, `coop_env._build` handing `route_spec.lift` to the world and every
+   controller as `lift_rules`, `_require_may_lift` in `_grasp` and
+   `unload_from` (unloading puts the cargo in the hand, so it is a lift)
+   raising `CANNOT_LIFT`, and `target_hints` withholding the verb with
+   `blocked [too heavy for you]`. `ReasonCode.CANNOT_LIFT` terminates the
+   plan like `TOO_FAR`. Both system prompts say what the mark means. CPU:
+   `test_carrier_view_stubbed` 8b/8c, `test_team_config_stubbed`. LH's
+   episode is still step 4's successor.
 6. **Done 2026-09-12 (out of order with 4 and 5, at the user's request).**
    HL's `route.json`: five two-node routes chaining through shared supports
    (M5's destination is M3's checkpoint). Its BDDL goals are the destinations

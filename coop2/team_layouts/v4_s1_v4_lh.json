@@ -34,9 +34,11 @@
     "COOHAVIOR/behavior_style_task/tasks.modified.json's execution contract the",
     "Crazyflie 'is not a load-bearing role for the 20 g box', and the heavy",
     "packages require pull_car + push_car + robot_arm together. That constraint",
-    "is not enforced yet -- the symbolic grasp is mass-blind and agent_2 will",
-    "still be offered grasp(notebook.n.01_1). Making the weight a distinct object",
-    "is the first half; a per-robot payload limit is the second.",
+    "That constraint is enforced by the route file's `lift` table (2026-09-12):",
+    "route.json says notebook.n.01 may be lifted by [arm] only, and `\"drone\":",
+    "true` here is what makes agent_2 a drone for that table. The engine",
+    "refuses its grasp with CANNOT_LIFT and the listing shows it `blocked [too",
+    "heavy for you]` -- see ROUTE_SUPERVISION_PLAN.md section 5.4.",
     "",
     "SCALES ARE THE ONES v4_s1_v4_ll WAS VERIFIED WITH, NOT V4'S OWN. The",
     "staging USD says jackal 0.5, ridgeback_franka 1.0, Crazyflie 0.6 (now 2.0, see below); the LL",
@@ -86,7 +88,8 @@
       ],
       "team": "bravo",
       "_v4_prim": "crazyflie_s1_m5",
-      "scale": 2.0
+      "scale": 2.0,
+      "drone": true
     }
   ]
 }

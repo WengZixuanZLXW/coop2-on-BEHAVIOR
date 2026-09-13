@@ -362,6 +362,16 @@ class CooperativeBehaviorEnv:
             nodes = self.route_spec.required_nodes
             print(f"[route] {self.bddl_activity}: {len(self.route_spec.routes)} route(s), "
                   f"{nodes} nodes; the route decides termination, check_goal is a cross-check")
+            # The lift table, to both sides at once: the engine refuses a grasp
+            # the role may not make, and the view withholds the verb -- the
+            # two-side rule from the carrying work. Same dict object is fine;
+            # nothing mutates it.
+            self.world.lift_rules = dict(self.route_spec.lift)
+            for controller in self.controllers.values():
+                controller.lift_rules = dict(self.route_spec.lift)
+            if self.route_spec.lift:
+                print(f"[route] lift rules: " + "; ".join(
+                    f"{synset} -> {', '.join(roles)}" for synset, roles in self.route_spec.lift.items()))
         self._loaded = True
 
     def _frame_viewport(self) -> None:
@@ -768,6 +778,8 @@ class CooperativeBehaviorEnv:
             robot.base_locked_while_holding = bool(spec.base_locked_while_holding)
             if spec.carrier is not None:
                 robot.is_carrier = bool(spec.carrier)
+            if spec.drone is not None:
+                robot.is_drone = bool(spec.drone)
         locked = [s.name for s in self.team_layout.robots if s.base_locked_while_holding]
         if locked:
             print(f"[setup] base locked while holding: {', '.join(locked)}"
