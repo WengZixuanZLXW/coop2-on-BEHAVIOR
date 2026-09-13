@@ -6,8 +6,8 @@ floor to the bedroom floor, in Merom_1_int.
 Unlike ``sample_nine_apples_hall.py`` this does **not** accept the sampler's
 layout. The point of porting the task is to reproduce it, so the box is pinned
 to the coordinate its V4 staging USD places it at, and the sampler is used only
-to bind the BDDL scope (which floor is ``floor.n.01_1``, which is
-``floor.n.01_2``) and to build a loadable instance around it.
+to bind the BDDL scope (the spawn floor, the die, and the ten supports
+route.json names) and to build a loadable instance around it.
 
 That is sound because the two coordinate frames are the same one. COOHAVIOR's
 staging USD edits BEHAVIOR's objects by their own names, and of the eight
@@ -46,8 +46,10 @@ N_ROBOTS = 1
 #: activity definition.)
 BOX_XY = (-0.0672, 0.415)
 
-#: `V4_Task_Staging/task_markers/destination_s1_m5`, for reporting only: the
-#: goal is a room-level predicate (`ontop` the bedroom floor), not this point.
+#: `V4_Task_Staging/task_markers/destination_s1_m5`, for reporting only. The
+#: goal is `ontop(die, bed.n.01_1)` -- station M5's bed, back in childs_room_0
+#: -- since the route file replaced the stale bedroom-floor reading; see
+#: route.json beside the activity.
 DESTINATION_XY = (-1.5553878130256362, -1.0229410990222918)
 
 #: LL is V4's *light* task: `tasks[].box_mass_kg` is 0.008 in
@@ -63,6 +65,18 @@ DESTINATION_XY = (-1.5553878130256362, -1.0229410990222918)
 CARGO = "die.n.01"
 SAMPLING_WHITELIST = {
     "die.n.01": {"dice": {"iswudu": 2.0}},
+    # The route's supports (route.json), pinned to the exact models COOHAVIOR's
+    # S1-M5 checkpoints name, so a re-sample binds the same physical fixtures.
+    # `inroom` in the BDDL separates same-model instances in different rooms
+    # (two zrumze beds, three cabinets); two jrhgeu cabinets share bedroom_0 and
+    # either is acceptable -- COOHAVIOR's own files disagree on which.
+    "cabinet.n.01": {"bottom_cabinet": {"dajebq": None, "jhymlr": None, "jrhgeu": None}},
+    "bookcase.n.01": {"bookcase": {"owvfik": None}},      # COOHAVIOR's shelf_owvfik_0
+    "electric_refrigerator.n.01": {"fridge": {"xyejdx": None}},
+    "armchair.n.01": {"armchair": {"qplklw": None}},
+    "breakfast_table.n.01": {"breakfast_table": {"skczfi": None}},
+    "coffee_table.n.01": {"coffee_table": {"fqluyq": None}},
+    "bed.n.01": {"bed": {"zrumze": None}},
 }
 
 #: The scene edits V4 makes, as a file rather than a literal: 84 objects to
@@ -232,8 +246,23 @@ def main():
     scope = env.task.object_scope
     box = scope[f"{CARGO}_1"]
     floor_a = scope["floor.n.01_1"]
-    floor_b = scope["floor.n.01_2"]
     assert scope["agent.n.01_1"] is env.robots[0], "agent.n.01_1 is not env.robots[0]"
+
+    # Every support the route names must have bound to a real object, and the
+    # log must say which: a support the sampler did not bind is a task that is
+    # quietly unachievable, and this print is the only place that is visible
+    # before an episode is spent on it. Read from route.json so the list here
+    # cannot drift from the file the tracker will read.
+    from coop2.behavior_env.route_spec import load_route_spec  # noqa: PLC0415
+
+    route = load_route_spec(ACTIVITY)
+    supports = []
+    if route is not None:
+        for node in route.routes[0].nodes:
+            entity = scope.get(node.support)
+            obj = getattr(entity, "wrapped_obj", entity)
+            assert obj is not None, f"route node {node.id} names {node.support}, which did not bind"
+            supports.append((node.id, node.support, obj))
 
     def room_of(xy):
         try:
@@ -245,13 +274,16 @@ def main():
     print(f"\nbound scope:")
     print(f"  {CARGO}_1{'':<{max(0, 18 - len(CARGO))}} -> {box.name} ({box.category}-{box.model})")
     print(f"  floor.n.01_1       -> {floor_a.name}   (childs_room per the BDDL)")
-    print(f"  floor.n.01_2       -> {floor_b.name}   (bedroom per the BDDL)")
+    for node_id, support, obj in supports:
+        xy = obj.get_position_orientation()[0][:2]
+        print(f"  {node_id:<3} {support:<28} -> {obj.name:<28} "
+              f"({float(xy[0]):+.2f}, {float(xy[1]):+.2f}) {room_of([float(xy[0]), float(xy[1])])}")
     print(f"\nthe sampler put the box at ({float(sampled_xy[0]):+.3f}, {float(sampled_xy[1]):+.3f})"
           f" in {room_of([float(sampled_xy[0]), float(sampled_xy[1])])}")
     print(f"V4 staging puts it at      ({BOX_XY[0]:+.3f}, {BOX_XY[1]:+.3f})"
           f" in {room_of(list(BOX_XY))}")
     print(f"V4 destination marker      ({DESTINATION_XY[0]:+.3f}, {DESTINATION_XY[1]:+.3f})"
-          f" in {room_of(list(DESTINATION_XY))}")
+          f" in {room_of(list(DESTINATION_XY))}   (reporting only; the goal is the bed)")
 
     og.sim.play()
     env.task.reset(env)

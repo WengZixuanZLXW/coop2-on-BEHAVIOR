@@ -41,13 +41,13 @@ and `individual`, twelve robots as three teams of four, solved it at env_step
 **4434** on 2026-09-12. Twelve robots as three teams of four, and nine as three
 teams of three, run all three topologies without stalling.
 
-**Next: route supervision.** A COOHAVIOR task is an *ordered* sequence of
-`ontop` sub-goals on one box, and BDDL can only state the last one -- which is
-why `v4_s1_v4_hl` ends at env_step 0. `coop2/ROUTE_SUPERVISION_PLAN.md` is the
-design: a `route.json` sidecar per activity, a state-evaluated `RouteTracker`
-in L1d that decides `terminated` and renders the route into the prompt, and
-the mass-based lift gate. Read it before touching termination or the
-`YOUR TASK` block.
+**In progress: route supervision.** A COOHAVIOR task is an *ordered* sequence
+of `ontop` sub-goals on one box, and BDDL can only state the last one -- which
+is why `v4_s1_v4_hl` ends at env_step 0. `coop2/ROUTE_SUPERVISION_PLAN.md` is
+the design; its step 1 is done (the `route.json` sidecar, its loader, and LL's
+route -- see "The route file" below). Steps 2-7 -- the `RouteTracker` that
+decides `terminated`, the prompt rendering, the lift gate, HL -- are not
+started. Read the plan before touching termination or the `YOUR TASK` block.
 
 **Two lines of work are open**, and neither is a milestone from
 PORTING_PLAN.md section 7:
@@ -1326,6 +1326,51 @@ history's `#4 [FAILED] ontop(...)` lines. Only the `Relations:` section states
 facts. Read against it, the run went 2 apples at env_step 1961, 5 at 2536, 6 at
 2699, 7 at 3137, 8 at 3467, and stayed at 8 until the last one landed at 4434 --
 967 steps for the ninth.
+
+## The route file: what BDDL cannot say, said beside it (2026-09-12)
+
+Step 1 of ROUTE_SUPERVISION_PLAN.md. `coop2/behavior_env/route_spec.py` reads
+`activity_definitions/<activity>/route.json`, found the way BDDL finds
+`problem0.bddl`, and validates it against the parsed BDDL -- pure Python over
+`bddl.parsing`, so `test_route_spec_stubbed.py` loads the real file. An
+activity without one is unrouted, which is every activity but LL today.
+
+The rules are the ones that fail late without them, each a CPU test: a node's
+goal is a BDDL triple and nothing else; every id it names is in `:objects`;
+the last node equals the BDDL `:goal` for that cargo (COOHAVIOR's own LL files
+disagree on this -- their BDDL says a bedroom floor, the route they run says a
+bed -- and the loader refuses rather than picks); order is list order, so a
+`sequence` or `depends_on` field is refused; consecutive nodes with one goal
+warn, because in Merom_1_int every room has one floor and the second would
+score for free.
+
+**Three of COOHAVIOR's support names were wrong for us**, found only by
+checking each against the taxonomy *and* the scene: `bottom_cabinet.n.01` is
+not a synset (the category is `cabinet.n.01`), `fridge.n.01` is
+`electric_refrigerator.n.01`, and `shelf_owvfik_0` -- a node of all four S1
+tasks -- is our `bookcase_owvfik_0`: the same model at the same pose under an
+older asset name. The plan's own prose said every other synset was valid. It
+was not, and a route file that named `shelf.n.01_1` would have passed the
+loader and failed at the sampler.
+
+**Growing a BDDL past its cached instance makes the task silently
+unwinnable.** LL's BDDL went from 3 objects to 13 and its goal from the
+bedroom floor to `bed.n.01_1`. `behavior_task.py:538` *skips* an instance the
+template never bound, the scope entry stays None, and
+`evaluate_bddl_predicate` returns False for a None entity -- so the old cached
+instance loads without a word and `check_goal` can never fire. The sampler
+whitelist now pins the nine supports by model (`inroom` separates same-model
+instances in different rooms; the two `jrhgeu` cabinets share bedroom_0 and
+either is acceptable), and the instance is re-sampled as part of the step.
+
+Re-sampled 2026-09-12: all ten nodes bound, goal false at t=0, template
+written. Two bindings are not COOHAVIOR's -- C4 took `armchair_qplklw_1` (V4
+moves `_2` and deactivates the rest; `inroom dining_room` matches all three,
+and the one the sampler picked was then kept off the deactivate list because
+the BDDL bound it, so the scene has one armchair more than V4's) and C8 took
+`bottom_cabinet_jrhgeu_1` (V4's files disagree on `_0`/`_1`). Neither changes
+the route. The sampler prints every node's binding now, which is the only
+place an unbindable support is visible before an episode is spent on it.
 
 ## Open defects
 

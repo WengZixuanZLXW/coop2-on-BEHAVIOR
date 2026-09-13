@@ -1,0 +1,71 @@
+{
+  "_comment": [
+    "The ordered sub-goals of COOHAVIOR S1-V4-LL, which the BDDL beside this",
+    "file cannot state. Read by coop2.behavior_env.route_spec; the design is",
+    "coop2/ROUTE_SUPERVISION_PLAN.md section 5.1.",
+    "",
+    "Transcribed from COOHAVIOR/behavior_style_task/tasks.modified.json, entry",
+    "S1-V4-LL, route S1-M5 -- checkpoints C1..C9 in `sequence` order, then the",
+    "destination `fixture_bddl_instance` bed.n.01_1 at station M5. That file,",
+    "not their BDDL, is what COOHAVIOR runs: their S1-V4-LL.bddl still says a",
+    "bedroom floor.",
+    "",
+    "Order is list order. There is no `sequence` and no `depends_on`: the",
+    "only order COOHAVIOR enforces is checkpoint sequence, and its five",
+    "`packages` are this one box's five legs, read by no runtime code.",
+    "",
+    "Support ids are our numbering of our synsets, declared in problem0.bddl:",
+    "  C1  cabinet.n.01_1               COOHAVIOR cabinet.n.01_5         bottom_cabinet_dajebq_0  childs_room",
+    "  C2  bookcase.n.01_1              shelf.n.01_3                     shelf_owvfik_0 = our bookcase_owvfik_0  kitchen",
+    "  C3  electric_refrigerator.n.01_1 fridge.n.01_1 (not a synset here) fridge_xyejdx_0          kitchen",
+    "  C4  armchair.n.01_1              armchair.n.01_1                  armchair_qplklw_2        dining_room",
+    "  C5  breakfast_table.n.01_1       breakfast_table.n.01_2           breakfast_table_skczfi_0 dining_room",
+    "  C6  coffee_table.n.01_1          coffee_table.n.01_1              coffee_table_fqluyq_0    living_room",
+    "  C7  cabinet.n.01_2               bottom_cabinet.n.01_1 (not a synset here) bottom_cabinet_jhymlr_0  living_room",
+    "  C8  cabinet.n.01_3               bottom_cabinet.n.01_2 (not a synset here) bottom_cabinet_jrhgeu_0  bedroom",
+    "  C9  bed.n.01_2                   bed.n.01_2                       bed_zrumze_1             bedroom",
+    "  D   bed.n.01_1                   bed.n.01_1                       bed_zrumze_0             childs_room",
+    "",
+    "C2: COOHAVIOR calls the support shelf_owvfik_0; our dataset ships the",
+    "same model owvfik as bookcase_owvfik_0, category bookcase, at the same",
+    "pose (-0.17, 4.90) in kitchen_0. Same object, older asset name -- so the",
+    "node says bookcase.n.01_1, which is what the sampler can bind.",
+    "",
+    "What the 2026-09-12 re-sample actually bound (the sampler prints this):",
+    "C4 -> armchair_qplklw_1, not COOHAVIOR's _2 (the one V4 moves): inroom",
+    "dining_room matches all three qplklw armchairs and the sampler took _1,",
+    "which _apply_scene_edits then kept off V4's deactivate list because the",
+    "BDDL bound it -- so this scene has one armchair more than V4's. C8 ->",
+    "bottom_cabinet_jrhgeu_1, not _0; both stand in bedroom_0 and COOHAVIOR's",
+    "own files disagree on which. Neither changes the route; both are",
+    "recorded so a run's plan_logs can be read against the right object.",
+    "",
+    "lift: the 8 g die may be carried by an arm or the drone. The 20 g",
+    "notebook of LH/HH may not be lifted by the drone; that table lives in",
+    "those tasks' route files."
+  ],
+  "activity": "v4_s1_v4_ll",
+  "source": "COOHAVIOR tasks.modified.json S1-V4-LL, route S1-M5",
+  "policy": "serial",
+  "routes": [
+    {
+      "id": "S1-M5",
+      "cargo": "die.n.01_1",
+      "nodes": [
+        {"id": "C1", "goal": ["ontop", "die.n.01_1", "cabinet.n.01_1"]},
+        {"id": "C2", "goal": ["ontop", "die.n.01_1", "bookcase.n.01_1"]},
+        {"id": "C3", "goal": ["ontop", "die.n.01_1", "electric_refrigerator.n.01_1"]},
+        {"id": "C4", "goal": ["ontop", "die.n.01_1", "armchair.n.01_1"]},
+        {"id": "C5", "goal": ["ontop", "die.n.01_1", "breakfast_table.n.01_1"]},
+        {"id": "C6", "goal": ["ontop", "die.n.01_1", "coffee_table.n.01_1"]},
+        {"id": "C7", "goal": ["ontop", "die.n.01_1", "cabinet.n.01_2"]},
+        {"id": "C8", "goal": ["ontop", "die.n.01_1", "cabinet.n.01_3"]},
+        {"id": "C9", "goal": ["ontop", "die.n.01_1", "bed.n.01_2"]},
+        {"id": "D",  "goal": ["ontop", "die.n.01_1", "bed.n.01_1"]}
+      ]
+    }
+  ],
+  "lift": {
+    "die.n.01": ["arm", "drone"]
+  }
+}

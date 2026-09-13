@@ -155,7 +155,7 @@ class SymbolicObservation:
     last_action_id: Optional[str] = None
     last_error: Optional[str] = None
     #: The activity's goal, in its own terms, e.g.
-    #: ``ontop(packing_box.n.02_1, floor.n.01_2)  [floor.n.01_2 is in bedroom]``.
+    #: ``ontop(die.n.01_1, bed.n.01_1)  [bed.n.01_1 is in the childs_room]``.
     #:
     #: Task knowledge, not perception. An agent knows what it was asked to do
     #: and can name the objects the request is written in; that is not the same

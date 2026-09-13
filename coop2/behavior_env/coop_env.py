@@ -781,7 +781,7 @@ class CooperativeBehaviorEnv:
         thing the goal names, and where it will have to go to reach it.
 
         Without it a cross-room goal cannot be expressed at all. Measured on
-        v4_s1_v4_ll, whose goal is to carry a box to the bedroom floor: the
+        v4_s1_v4_ll, whose goal then was to carry a box to the bedroom floor: the
         robot was shown only the room it stood in, could not name the
         destination, and `_ensure_task_terminal_action` -- having no reference
         in the specification -- produced `place_on_top(the box itself)`, every

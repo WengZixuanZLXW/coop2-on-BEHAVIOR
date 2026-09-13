@@ -202,14 +202,14 @@ activity without one behaves exactly as today.
       "id": "S1-M5",
       "cargo": "die.n.01_1",
       "nodes": [
-        {"id": "C1", "goal": ["ontop", "die.n.01_1", "cabinet.n.01_5"]},
-        {"id": "C2", "goal": ["ontop", "die.n.01_1", "shelf.n.01_3"]},
+        {"id": "C1", "goal": ["ontop", "die.n.01_1", "cabinet.n.01_1"]},
+        {"id": "C2", "goal": ["ontop", "die.n.01_1", "bookcase.n.01_1"]},
         {"id": "C3", "goal": ["ontop", "die.n.01_1", "electric_refrigerator.n.01_1"]},
         {"id": "C4", "goal": ["ontop", "die.n.01_1", "armchair.n.01_1"]},
-        {"id": "C5", "goal": ["ontop", "die.n.01_1", "breakfast_table.n.01_2"]},
+        {"id": "C5", "goal": ["ontop", "die.n.01_1", "breakfast_table.n.01_1"]},
         {"id": "C6", "goal": ["ontop", "die.n.01_1", "coffee_table.n.01_1"]},
-        {"id": "C7", "goal": ["ontop", "die.n.01_1", "cabinet.n.01_1"]},
-        {"id": "C8", "goal": ["ontop", "die.n.01_1", "cabinet.n.01_2"]},
+        {"id": "C7", "goal": ["ontop", "die.n.01_1", "cabinet.n.01_2"]},
+        {"id": "C8", "goal": ["ontop", "die.n.01_1", "cabinet.n.01_3"]},
         {"id": "C9", "goal": ["ontop", "die.n.01_1", "bed.n.01_2"]},
         {"id": "D",  "goal": ["ontop", "die.n.01_1", "bed.n.01_1"]}
       ]
@@ -252,12 +252,28 @@ Rules, each of which is a CPU test:
   `<synset>_<int>` per PORTING_COOHAVIOR.md step 1, and pin each to its
   runtime object through the sampler whitelist as today.
 
-Synset names must be ours too. Checked against `ObjectTaxonomy` on
-2026-09-12: COOHAVIOR's `fridge.n.01` does not exist here and is our
-`electric_refrigerator.n.01`; `ottoman.n.01` -- the destination of S2's
-G1 -> G2 route -- does not exist here at all and needs a substitute support
-when S2 is ported. Every other synset the twelve tasks use is valid. Check
-each new one before writing the file, not after the sampler fails.
+Synset names must be ours too, and the check has to be against the
+taxonomy *and* the scene, because COOHAVIOR's names were wrong in three
+different ways on S1 alone (found writing the LL file, 2026-09-12):
+
+* `fridge.n.01` is not a synset here; ours is `electric_refrigerator.n.01`.
+* `bottom_cabinet.n.01` (their C7, C8) is not a synset either -- the category
+  `bottom_cabinet` belongs to `cabinet.n.01`, so C1/C7/C8 are three
+  `cabinet.n.01` instances separated by `inroom`.
+* Their `shelf_owvfik_0` (C2, and a node of every other S1 task) does not exist
+  in our Merom_1_int under that name or category. The **same model**, `owvfik`,
+  is there at the **same pose** (-0.17, 4.90) as `bookcase_owvfik_0` -- an older
+  asset naming -- so the node is `bookcase.n.01_1`. A route file that said
+  `shelf.n.01_1` would have passed the loader (the BDDL declared it) and failed
+  at the sampler, or worse, sampled a shelf that is not the object COOHAVIOR
+  meant.
+* `ottoman.n.01` -- the destination of S2's G1 -> G2 route -- does not exist
+  here at all and needs a substitute support when S2 is ported.
+
+Every support must also be something `place_on_top` is offered on: all nine of
+LL's are receptacles (`is_receptacle`), the fridge by `fillable`/`openable`
+rather than as a surface. Check each new one before writing the file, not
+after the sampler fails.
 
 ### 5.2 `RouteTracker` -- L1d, `coop2/behavior_env/route_tracker.py`
 
@@ -376,10 +392,16 @@ things to read (see the memory note on ignoring constraint metrics).
 
 ## 6. Order of work, each step verified before the next
 
-1. `RouteSpec` loader + validation rules (5.1) with its CPU test. Write
-   `route.json` for `v4_s1_v4_ll` from `tasks.modified.json` S1-V4-LL; grow
-   its BDDL `:objects`/`:init` to hold the nine supports; re-verify the
-   definition and re-sample the instance (PORTING_COOHAVIOR.md steps 1 and 3).
+1. **Done 2026-09-12.** `coop2/behavior_env/route_spec.py` (`load_route_spec`,
+   `parse_route_spec`, 13 rules in `test_route_spec_stubbed.py`), `route.json`
+   for `v4_s1_v4_ll`, its BDDL grown to 13 objects with the goal corrected to
+   `bed.n.01_1`, `verify_definition` and the parser both pass, the sampler
+   whitelist pins the nine supports by model. **A BDDL grown past its cached
+   instance is silently unwinnable until re-sampled**: `behavior_task.py`
+   skips instances the template never bound, the scope entry stays None, and
+   `evaluate_bddl_predicate` returns False for None -- so `check_goal` can
+   never fire and the run reads as agent failure. Re-sample is part of this
+   step, not optional.
 2. `RouteTracker` (5.2) with a stubbed-world CPU test: serial completion,
    out-of-order then recovery, two parallel routes, credit attribution,
    `complete()`.
