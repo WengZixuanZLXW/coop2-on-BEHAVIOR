@@ -1,0 +1,70 @@
+(define (problem v4_s2_v4_hl-0)
+    (:domain behavior-1k)
+
+    ; COOHAVIOR S2-V4-HL on Beechwood_0_int: independent parallel packages.
+    ; Five boxes, one per station; each goes one station on;
+    ; the order lives in route.json beside this file and the BDDL states the
+    ; final support(s). Written by feasibility_verify/make_v4_s2_s3_definitions.py.
+    ;
+    ; COOHAVIOR's coordinates for this scene are in another frame and several of
+    ; its objects are not in our dataset, so every support is a same-kind object
+    ; in the same room type of our own scene, and the cargo starts wherever the
+    ; sampler puts it on the station's floor. The mapping, node by node:
+    ;   coffee_table.n.01_1        dining_room      <- breakfast_table_dnsjnv_0 (their category; ours is coffee_table_dnsjnv_0)
+    ;   footstool.n.01_1           living_room      <- ottoman_miftfy_0 (ottoman -> footstool.n.01 in our taxonomy)
+    ;   breakfast_table.n.01_1     living_room      <- breakfast_table_skczfi_1
+    ;   desk.n.01_1                private_office   <- breakfast_table_skczfi_4 -- not in our scene; the office's desk_rzyfxk_0 stands in
+    ;   desk.n.01_2                private_office   <- breakfast_table_skczfi_3 -- not in our scene; desk_rzyfxk_1 stands in
+    ;   bookcase.n.01_1            kitchen          <- shelf_owvfik_0 (our bookcase_owvfik_0)
+    ;   countertop.n.01_1          kitchen          <- countertop_tpuwys_6 -- not in our scene, and COOHAVIOR deactivates every tpuwys we have; countertop_jveutp_N stands in
+    ;   sink.n.01_1                bathroom         <- G5 was living_room_0 (shelf_owvfik_1, breakfast_table_skczfi_0): a second living_room instance cannot bind; furniture_sink_zexzrc_0 in bathroom_0 stands in
+    ;   straight_chair.n.01_1      dining_room      <- straight_chair_dmcixv_2
+    ; One synset per line -- the parser keeps only the last `- <synset>` group.
+
+    (:objects
+        die.n.01_1 die.n.01_2 die.n.01_3 die.n.01_4 die.n.01_5 - die.n.01
+        floor.n.01_1 floor.n.01_2 floor.n.01_3 floor.n.01_4 floor.n.01_5 - floor.n.01
+        coffee_table.n.01_1 - coffee_table.n.01
+        footstool.n.01_1 - footstool.n.01
+        breakfast_table.n.01_1 - breakfast_table.n.01
+        desk.n.01_1 desk.n.01_2 - desk.n.01
+        bookcase.n.01_1 - bookcase.n.01
+        countertop.n.01_1 - countertop.n.01
+        sink.n.01_1 - sink.n.01
+        straight_chair.n.01_1 - straight_chair.n.01
+        agent.n.01_1 - agent.n.01
+    )
+
+    (:init
+        (ontop die.n.01_1 floor.n.01_1)
+        (ontop die.n.01_2 floor.n.01_2)
+        (ontop die.n.01_3 floor.n.01_3)
+        (ontop die.n.01_4 floor.n.01_4)
+        (ontop die.n.01_5 floor.n.01_5)
+        (inroom floor.n.01_1 dining_room)
+        (inroom floor.n.01_2 living_room)
+        (inroom floor.n.01_3 private_office)
+        (inroom floor.n.01_4 kitchen)
+        (inroom floor.n.01_5 bathroom)
+        (inroom coffee_table.n.01_1 dining_room)
+        (inroom footstool.n.01_1 living_room)
+        (inroom breakfast_table.n.01_1 living_room)
+        (inroom desk.n.01_1 private_office)
+        (inroom desk.n.01_2 private_office)
+        (inroom bookcase.n.01_1 kitchen)
+        (inroom countertop.n.01_1 kitchen)
+        (inroom sink.n.01_1 bathroom)
+        (inroom straight_chair.n.01_1 dining_room)
+        (ontop agent.n.01_1 floor.n.01_1)
+    )
+
+    (:goal
+        (and
+            (ontop die.n.01_1 footstool.n.01_1)
+            (ontop die.n.01_2 desk.n.01_1)
+            (ontop die.n.01_3 bookcase.n.01_1)
+            (ontop die.n.01_4 sink.n.01_1)
+            (ontop die.n.01_5 straight_chair.n.01_1)
+        )
+    )
+)

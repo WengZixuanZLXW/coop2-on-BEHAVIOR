@@ -1,0 +1,107 @@
+{
+  "_comment": [
+    "The ordered sub-goals of COOHAVIOR S3-V4-LH on Beechwood_1_int, which the",
+    "BDDL beside this file cannot state. Read by coop2.behavior_env.route_spec.",
+    "Transcribed from COOHAVIOR/behavior_style_task/tasks.modified.json; supports are",
+    "our scene's same-kind objects in COOHAVIOR's room types (see problem0.bddl's",
+    "mapping comment): its Beechwood coordinates are in another frame and some of",
+    "its objects are not in our dataset. Written by",
+    "feasibility_verify/make_v4_s2_s3_definitions.py."
+  ],
+  "activity": "v4_s3_v4_lh",
+  "source": "COOHAVIOR tasks.modified.json S3-V4-LH",
+  "policy": "serial",
+  "routes": [
+    {
+      "id": "S3-H1",
+      "cargo": "notebook.n.01_1",
+      "nodes": [
+        {
+          "id": "C1",
+          "goal": [
+            "ontop",
+            "notebook.n.01_1",
+            "cabinet.n.01_1"
+          ]
+        },
+        {
+          "id": "C2",
+          "goal": [
+            "ontop",
+            "notebook.n.01_1",
+            "sofa.n.01_1"
+          ]
+        },
+        {
+          "id": "C3",
+          "goal": [
+            "ontop",
+            "notebook.n.01_1",
+            "cabinet.n.01_2"
+          ]
+        },
+        {
+          "id": "C4",
+          "goal": [
+            "ontop",
+            "notebook.n.01_1",
+            "bed.n.01_1"
+          ]
+        },
+        {
+          "id": "C5",
+          "goal": [
+            "ontop",
+            "notebook.n.01_1",
+            "breakfast_table.n.01_1"
+          ]
+        },
+        {
+          "id": "C6",
+          "goal": [
+            "ontop",
+            "notebook.n.01_1",
+            "cabinet.n.01_3"
+          ]
+        },
+        {
+          "id": "C7",
+          "goal": [
+            "ontop",
+            "notebook.n.01_1",
+            "sink.n.01_1"
+          ]
+        },
+        {
+          "id": "C8",
+          "goal": [
+            "ontop",
+            "notebook.n.01_1",
+            "breakfast_table.n.01_2"
+          ]
+        },
+        {
+          "id": "C9",
+          "goal": [
+            "ontop",
+            "notebook.n.01_1",
+            "breakfast_table.n.01_3"
+          ]
+        },
+        {
+          "id": "D",
+          "goal": [
+            "ontop",
+            "notebook.n.01_1",
+            "bed.n.01_2"
+          ]
+        }
+      ]
+    }
+  ],
+  "lift": {
+    "notebook.n.01": [
+      "arm"
+    ]
+  }
+}

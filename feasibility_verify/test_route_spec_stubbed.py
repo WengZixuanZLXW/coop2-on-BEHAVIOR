@@ -139,6 +139,34 @@ def main() -> int:
         _Task._strip_wildcards(_Task.__new__(_Task), text)
     ok("no '*' in any S1 definition, and the pass runs clean on all four")
 
+    print("test 1d: the eight S2/S3 definitions load in COOHAVIOR's shape, and their scenes' four tasks agree")
+    # Written by make_v4_s2_s3_definitions.py: same shapes as S1 (serial 10 /
+    # parallel 5x2), no floor is a node, no '*', a room on every node.
+    for tag in ("s2", "s3"):
+        specs = {level: load_route_spec(f"v4_{tag}_v4_{level}") for level in ("ll", "lh", "hl", "hh")}
+        for level, spec in specs.items():
+            serial = level in ("ll", "lh")
+            # S2's serial route has nine nodes: its fifth station is a bathroom
+            # with one support (PORTING_COOHAVIOR.md, "S2 and S3").
+            n_serial = {"s2": 9, "s3": 10}[tag]
+            assert (spec.policy, len(spec.routes), spec.required_nodes) == (("serial", 1, n_serial) if serial else ("parallel", 5, 10)), (tag, level, spec.required_nodes)
+            assert spec.warnings == (), (tag, level, spec.warnings)
+            assert all(n.room for r in spec.routes for n in r.nodes), (tag, level)
+            assert not any(n.support.startswith("floor.") for r in spec.routes for n in r.nodes), (tag, level)
+            assert all(r.start_support and r.start_room for r in spec.routes), (tag, level, "cargo start from :init")
+            text = open(os.path.dirname(route_file_for(f"v4_{tag}_v4_{level}")) + "/problem0.bddl").read()
+            assert "*" not in text, (tag, level)
+            _Task._strip_wildcards(_Task.__new__(_Task), text)
+        assert [n.support for n in specs["ll"].routes[0].nodes] == [n.support for n in specs["lh"].routes[0].nodes]
+        assert [(r.id, [n.support for n in r.nodes]) for r in specs["hl"].routes] == \
+               [(r.id, [n.support for n in r.nodes]) for r in specs["hh"].routes]
+        # The parallel routes are one station on each: each C1 is the serial
+        # route's first node of that station, and every D is a serial node too.
+        serial_supports = [n.support for n in specs["ll"].routes[0].nodes]
+        for r in specs["hl"].routes:
+            assert all(n.support in serial_supports for n in r.nodes), (tag, r.id)
+    ok("S2 and S3: four files each, same shapes, LH=LL and HH=HL with the cargo swapped")
+
     print("test 2: an activity without a route file is simply unrouted")
     assert load_route_spec("coop_two_apples_pomaria") is None
     assert load_route_spec(None) is None

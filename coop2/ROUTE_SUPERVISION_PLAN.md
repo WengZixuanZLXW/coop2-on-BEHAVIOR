@@ -463,7 +463,11 @@ things to read (see the memory note on ignoring constraint metrics).
    now, `allow_trivial_goal` is removed, and at load all five are unsatisfied.
    The run-level acceptance -- no longer ending at env_step 0 -- is step 4's
    episode.
-7. **S1 done 2026-09-12**: LH (LL's ten nodes, notebook, `lift` arm-only) and
+7. **S2/S3 written 2026-09-13** by kind and room rather than coordinate
+   (COOHAVIOR's Beechwood frame is not ours): eight `problem0.bddl` +
+   `route.json`, two scene-edit files, `s2/` and `s3/` shared-spawn layouts,
+   `sample_v4_task.py`; see PORTING_COOHAVIOR.md "S2 and S3".
+   **S1 done 2026-09-12**: LH (LL's ten nodes, notebook, `lift` arm-only) and
    HH (HL's five routes, notebook) alongside HL; all four BDDLs grown to the
    same 13-object shape and re-sampled, every node bound, goal false at load.
    Two things learned writing them, both now CPU-checked in

@@ -1,0 +1,132 @@
+{
+  "_comment": [
+    "The ordered sub-goals of COOHAVIOR S3-V4-HL on Beechwood_1_int, which the",
+    "BDDL beside this file cannot state. Read by coop2.behavior_env.route_spec.",
+    "Transcribed from COOHAVIOR/behavior_style_task/tasks.modified.json; supports are",
+    "our scene's same-kind objects in COOHAVIOR's room types (see problem0.bddl's",
+    "mapping comment): its Beechwood coordinates are in another frame and some of",
+    "its objects are not in our dataset. Written by",
+    "feasibility_verify/make_v4_s2_s3_definitions.py."
+  ],
+  "activity": "v4_s3_v4_hl",
+  "source": "COOHAVIOR tasks.modified.json S3-V4-HL",
+  "policy": "parallel",
+  "routes": [
+    {
+      "id": "S3-H1",
+      "cargo": "die.n.01_1",
+      "nodes": [
+        {
+          "id": "C1",
+          "goal": [
+            "ontop",
+            "die.n.01_1",
+            "cabinet.n.01_1"
+          ]
+        },
+        {
+          "id": "D",
+          "goal": [
+            "ontop",
+            "die.n.01_1",
+            "sofa.n.01_1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S3-H2",
+      "cargo": "die.n.01_2",
+      "nodes": [
+        {
+          "id": "C1",
+          "goal": [
+            "ontop",
+            "die.n.01_2",
+            "sofa.n.01_1"
+          ]
+        },
+        {
+          "id": "D",
+          "goal": [
+            "ontop",
+            "die.n.01_2",
+            "bed.n.01_2"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S3-H3",
+      "cargo": "die.n.01_3",
+      "nodes": [
+        {
+          "id": "C1",
+          "goal": [
+            "ontop",
+            "die.n.01_3",
+            "bed.n.01_1"
+          ]
+        },
+        {
+          "id": "D",
+          "goal": [
+            "ontop",
+            "die.n.01_3",
+            "cabinet.n.01_3"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S3-H4",
+      "cargo": "die.n.01_4",
+      "nodes": [
+        {
+          "id": "C1",
+          "goal": [
+            "ontop",
+            "die.n.01_4",
+            "cabinet.n.01_3"
+          ]
+        },
+        {
+          "id": "D",
+          "goal": [
+            "ontop",
+            "die.n.01_4",
+            "breakfast_table.n.01_2"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "S3-H5",
+      "cargo": "die.n.01_5",
+      "nodes": [
+        {
+          "id": "C1",
+          "goal": [
+            "ontop",
+            "die.n.01_5",
+            "breakfast_table.n.01_3"
+          ]
+        },
+        {
+          "id": "D",
+          "goal": [
+            "ontop",
+            "die.n.01_5",
+            "bed.n.01_2"
+          ]
+        }
+      ]
+    }
+  ],
+  "lift": {
+    "die.n.01": [
+      "arm",
+      "drone"
+    ]
+  }
+}

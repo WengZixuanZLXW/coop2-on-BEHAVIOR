@@ -51,9 +51,11 @@ steps 6-7: all four S1 tasks have route files and corrected, re-sampled BDDLs
 ("Four route files, four re-samples"), and step 5, the lift gate ("The lift
 gate"). Step 4, the LL episode against the route, has run twice: two of ten
 nodes, then five of ten after the fixes ("Step 4's first episode", "The
-acceptance run"); termination on `D` is still untested. Not started: S2/S3's
-eight route files. Read the plan before touching termination or the `YOUR
-TASK` block.
+acceptance run"); termination on `D` is still untested. Step 7's S2/S3
+half: eight definitions, eight route files, two scene-edit files and ten
+layouts written ("Three modes through the new prompt, and the S2/S3 port");
+instances sampled per the log in that section. Read the plan before touching
+termination or the `YOUR TASK` block.
 
 **Two lines of work are open**, and neither is a milestone from
 PORTING_PLAN.md section 7:
@@ -1736,6 +1738,29 @@ digtag slots are `TeamBrain.reserved_system_prompt` and
 the concatenation of sections 2 and 3 so the shared-rule guard still works.
 The legacy single-robot prompts (`ENV_DESCRIPTION`, `build_system_prompt`)
 were not restructured; they are off the runtime path.
+
+## Three modes through the new prompt, and the S2/S3 port (2026-09-13)
+
+**The nine-section prompt, in all three modes, 300 steps each** (nine robots,
+`s1/sets_3`, LL): individual C1 at 241 and 248 (two runs), broadcast_chain C1
+at 242, centralized C1 at 293. Every system prompt rendered `## 1` .. `## 4`
+in order with the mode's own section 4; section 7 carried the mode's heading
+("what the teams ahead of you committed to", "from your leader", "your
+followers' reports"); the follower's report prompt used the same system
+prompt. All three teams sent a drone straight from grasp to place -- the
+"only a base-locked robot needs a carrier" rule took. What remains the
+model's: in individual mode all three drones go for the one die.
+
+**S2 and S3 ported by kind and room, not by coordinate.** COOHAVIOR's
+Beechwood frames are not ours and several of its objects are not in our
+dataset (PORTING_COOHAVIOR.md, "S2 and S3"). One generator
+(`feasibility_verify/make_v4_s2_s3_definitions.py`) writes the eight
+`problem0.bddl` + `route.json` and the two scene-edit files;
+`sample_v4_task.py --task s2_ll` samples an instance with no pins and checks
+bindings against allowed room sets; `make_shared_spawn_layouts.py` writes
+`s2/sets_{1..5}.json` (living_room_1) and `s3/sets_{1..5}.json` (bedroom_0).
+S2's private office has no breakfast table, so its two desks are C4/C5; its
+ottoman is `footstool.n.01`.
 
 ## Open defects
 

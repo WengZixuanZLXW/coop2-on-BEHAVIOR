@@ -1,0 +1,57 @@
+(define (problem v4_s3_v4_lh-0)
+    (:domain behavior-1k)
+
+    ; COOHAVIOR S3-V4-LH on Beechwood_1_int: serial package dependency chain.
+    ; One box, ten ordered supports through five stations;
+    ; the order lives in route.json beside this file and the BDDL states the
+    ; final support(s). Written by feasibility_verify/make_v4_s2_s3_definitions.py.
+    ;
+    ; COOHAVIOR's coordinates for this scene are in another frame and several of
+    ; its objects are not in our dataset, so every support is a same-kind object
+    ; in the same room type of our own scene, and the cargo starts wherever the
+    ; sampler puts it on the station's floor. The mapping, node by node:
+    ;   cabinet.n.01_1             bedroom          <- bottom_cabinet_jhymlr_0 (theirs, moved into the bedroom; ours already there is bottom_cabinet_jhymlr_1)
+    ;   sofa.n.01_1                television_room  <- sofa_qnnwfx_0
+    ;   cabinet.n.01_2             television_room  <- bottom_cabinet_jhymlr_2 (theirs; ours in that room is bottom_cabinet_jhymlr_0)
+    ;   bed.n.01_1                 childs_room      <- bed_zrumze_2 (childs_room_0)
+    ;   breakfast_table.n.01_1     childs_room      <- breakfast_table_skczfi_1 (childs_room_0)
+    ;   cabinet.n.01_3             bathroom         <- H4 was childs_room_1 (bed_zrumze_1, bottom_cabinet_jhymlr_1): a second childs_room instance cannot bind; bottom_cabinet_no_top_pluwfl_N in bathroom_1 stands in
+    ;   sink.n.01_1                bathroom         <- multi_station_furniture_sink_yfaufu_0 in bathroom_1 stands in for bed_zrumze_1
+    ;   breakfast_table.n.01_2     playroom         <- breakfast_table_skczfi_0
+    ;   breakfast_table.n.01_3     playroom         <- breakfast_table_uhrsex_0
+    ;   bed.n.01_2                 bedroom          <- bed_zrumze_0 (the destination; COOHAVIOR's bed.n.01_3)
+    ; One synset per line -- the parser keeps only the last `- <synset>` group.
+
+    (:objects
+        notebook.n.01_1 - notebook.n.01
+        floor.n.01_1 - floor.n.01
+        cabinet.n.01_1 cabinet.n.01_2 cabinet.n.01_3 - cabinet.n.01
+        sofa.n.01_1 - sofa.n.01
+        bed.n.01_1 bed.n.01_2 - bed.n.01
+        breakfast_table.n.01_1 breakfast_table.n.01_2 breakfast_table.n.01_3 - breakfast_table.n.01
+        sink.n.01_1 - sink.n.01
+        agent.n.01_1 - agent.n.01
+    )
+
+    (:init
+        (ontop notebook.n.01_1 floor.n.01_1)
+        (inroom floor.n.01_1 bedroom)
+        (inroom cabinet.n.01_1 bedroom)
+        (inroom sofa.n.01_1 television_room)
+        (inroom cabinet.n.01_2 television_room)
+        (inroom bed.n.01_1 childs_room)
+        (inroom breakfast_table.n.01_1 childs_room)
+        (inroom cabinet.n.01_3 bathroom)
+        (inroom sink.n.01_1 bathroom)
+        (inroom breakfast_table.n.01_2 playroom)
+        (inroom breakfast_table.n.01_3 playroom)
+        (inroom bed.n.01_2 bedroom)
+        (ontop agent.n.01_1 floor.n.01_1)
+    )
+
+    (:goal
+        (and
+            (ontop notebook.n.01_1 bed.n.01_2)
+        )
+    )
+)

@@ -442,6 +442,66 @@ at env_step 504 with its numbers, so LH and HH keep them rather than change
 quietly to V4's. Unresolved.
 
 
+## S2 and S3 (2026-09-13): a different frame, so a different method
+
+The S1 procedure above pins every object to COOHAVIOR's coordinate, and that
+was sound because the Merom frames coincide. **Beechwood's do not.** Tested
+before trusting: COOHAVIOR's S2 stations (its `V4_Task_Staging/task_boxes`
+and audit robot poses) fall outside every floor of our `Beechwood_0_int`, and
+its S3 stations land in the wrong rooms of our `Beechwood_1_int` (its
+"television_room" box on our bedroom floor, its "childs_room_1" box in our
+bathroom). Its base scenes are an older dataset build, and several objects it
+names are not in ours at all -- `breakfast_table_skczfi_3/4/5`,
+`countertop_tpuwys_5/6/7`, every `shelf_owvfik_*` (ours are `bookcase_owvfik_*`,
+fewer of them), `breakfast_table_dnsjnv_0` (ours is `coffee_table_dnsjnv_0`,
+same model, other category). Its `benchmark_audit` gives no room polygons and
+`pxr` is not importable outside Isaac, so there is no cheap way to recover the
+transform, and no point: the moved supports would still be theirs, not ours.
+
+So S2/S3 are ported **by kind and room, not by coordinate**:
+
+* Every route node is a support of the same kind in the same room *type* as
+  COOHAVIOR's, taken from our scene where it stands. Where our scene lacks the
+  kind in that room, the room's real furniture stands in: S2's private office
+  has no breakfast table, so its two `desk_rzyfxk` are C4/C5. Its ottoman is
+  `footstool.n.01` in our taxonomy. The mapping is written node by node in
+  each `problem0.bddl`.
+* The cargo starts wherever the sampler puts it on the station's floor; the
+  route block tells the robots where (`it starts ontop(...)`).
+* The scene edits are COOHAVIOR's deactivations, kept where the name exists in
+  our scene (77 of 86 for S2, 61 of 77 for S3), with no moves. The sampler
+  protects whatever the BDDL binds to.
+* Layouts are shared spawns in the most open room, measured the S1 way:
+  `s2/sets_{1..5}.json` in `living_room_1` (18.0 m2 free), `s3/sets_{1..5}.json`
+  in `bedroom_0` (8.2 m2). `make_shared_spawn_layouts.py --scene ... --tag ...`
+  writes them; the audit's staged poses are recorded only as `_v4_station`.
+
+One generator writes all eight `problem0.bddl` + `route.json` and the two
+`*_scene.json` files: `feasibility_verify/make_v4_s2_s3_definitions.py`. The
+sampler is `feasibility_verify/sample_v4_task.py --task s2_ll` (no pins; it
+checks room bindings against an allowed *set* of room instances, because
+`inroom` binds by type and Beechwood_0_int has two living rooms and
+Beechwood_1_int two children's rooms). `test_route_spec_stubbed` 1d holds the
+eight files to S1's shapes.
+
+**One room instance per room type.** The first sampling died in
+`initial_pre-sampling`: "Room type [living_room] ... the intersection of which
+is an empty set". BEHAVIOR binds every `inroom <type>` object to a single
+instance of that type, so a route cannot use both of Beechwood_0_int's living
+rooms or both of Beechwood_1_int's children's rooms. COOHAVIOR's S2-G5
+(living_room_0) became bathroom_0 with its one surviving support, the sink --
+so S2's serial route has nine nodes -- and S3-H4 (childs_room_1) became
+bathroom_1 with a low cabinet and its sink. Kitchen countertops: COOHAVIOR
+deactivates every `tpuwys` we have, so the surviving `jveutp` ones are C7.
+The one ambiguity left, S3's two playroom tables binding either way round,
+is printed by the sampler and does not change the route.
+
+**The `*` trap, again.** The first generated BDDLs carried `countertop_tpuwys_*`
+in a comment; `BehaviorTask._strip_wildcards` indexes `split(" - ")[1]` on any
+line with a `*` and the sampler died in `Environment.__init__` after loading
+the scene. `test_route_spec_stubbed` 1d now checks the eight files for it, as
+1c does the four S1 ones.
+
 ## Known gaps
 
 * **The Jackal cannot grasp** -- no arm, by construction. It navigates, waits,

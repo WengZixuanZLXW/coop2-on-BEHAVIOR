@@ -1,0 +1,201 @@
+{
+  "_comment": [
+    "COOHAVIOR S2 robots, 5 sets (15 robots), for Beechwood_0_int -- all spawned together.",
+    "Teams are team_1.. in order of appearance and robots are <type>_<team ordinal>",
+    "(user, 2026-09-13); the COOHAVIOR station a team stands for is _v4_station.",
+    "",
+    "Everyone starts in living_room_1, packed around the centroid of its largest free",
+    "region (decision: user, 2026-09-12). The room is the most open one measured as",
+    "traversable floor (no-object map) minus the footprints of every object the scene",
+    "edits keep, eroded by the largest robot footprint; admissible area per room, m2: living_room_1 18.0, kitchen_0 11.3, living_room_0 10.5, private_office_0 3.9, dining_room_0 3.8, utility_room_0 2.2, corridor_0 2.0, bathroom_0 0.6, storage_room_0 0.3.",
+    "Ground vehicles are placed nearest-to-centroid first in station order with pairwise",
+    "clearance = sum of half-footprints + 0.15 m, so sets_<k> is the first 3k robots of",
+    "sets_5. Each Crazyflie spawns at z = 1.2 m directly above its own team's Jackal.",
+    "",
+    "V4's staged poses are not used: COOHAVIOR's coordinates for this scene are in a",
+    "different frame from our dataset's. Scales as the S1 layouts (ridgeback 0.5,",
+    "jackal 0.7, crazyflie 2.0). Written by feasibility_verify/make_shared_spawn_layouts.py."
+  ],
+  "robots": [
+    {
+      "name": "ridgeback_1",
+      "model": "v4_ridgeback_ur5",
+      "position": [
+        -2.46,
+        -0.72
+      ],
+      "team": "team_1",
+      "_v4_station": "G1",
+      "scale": 0.5,
+      "base_locked_while_holding": true
+    },
+    {
+      "name": "jackal_1",
+      "model": "v4_jackal",
+      "position": [
+        -3.21,
+        -0.72
+      ],
+      "team": "team_1",
+      "_v4_station": "G1",
+      "scale": 0.7
+    },
+    {
+      "name": "drone_1",
+      "model": "v4_crazyflie_cf2x",
+      "position": [
+        -3.21,
+        -0.72,
+        1.2
+      ],
+      "team": "team_1",
+      "_v4_station": "G1",
+      "scale": 2.0,
+      "drone": true
+    },
+    {
+      "name": "ridgeback_2",
+      "model": "v4_ridgeback_ur5",
+      "position": [
+        -2.46,
+        -1.37
+      ],
+      "team": "team_2",
+      "_v4_station": "G2",
+      "scale": 0.5,
+      "base_locked_while_holding": true
+    },
+    {
+      "name": "jackal_2",
+      "model": "v4_jackal",
+      "position": [
+        -1.71,
+        -0.72
+      ],
+      "team": "team_2",
+      "_v4_station": "G2",
+      "scale": 0.7
+    },
+    {
+      "name": "drone_2",
+      "model": "v4_crazyflie_cf2x",
+      "position": [
+        -1.71,
+        -0.72,
+        1.2
+      ],
+      "team": "team_2",
+      "_v4_station": "G2",
+      "scale": 2.0,
+      "drone": true
+    },
+    {
+      "name": "ridgeback_3",
+      "model": "v4_ridgeback_ur5",
+      "position": [
+        -2.46,
+        -0.06
+      ],
+      "team": "team_3",
+      "_v4_station": "G3",
+      "scale": 0.5,
+      "base_locked_while_holding": true
+    },
+    {
+      "name": "jackal_3",
+      "model": "v4_jackal",
+      "position": [
+        -3.21,
+        0.13
+      ],
+      "team": "team_3",
+      "_v4_station": "G3",
+      "scale": 0.7
+    },
+    {
+      "name": "drone_3",
+      "model": "v4_crazyflie_cf2x",
+      "position": [
+        -3.21,
+        0.13,
+        1.2
+      ],
+      "team": "team_3",
+      "_v4_station": "G3",
+      "scale": 2.0,
+      "drone": true
+    },
+    {
+      "name": "ridgeback_4",
+      "model": "v4_ridgeback_ur5",
+      "position": [
+        -3.12,
+        -1.47
+      ],
+      "team": "team_4",
+      "_v4_station": "G4",
+      "scale": 0.5,
+      "base_locked_while_holding": true
+    },
+    {
+      "name": "jackal_4",
+      "model": "v4_jackal",
+      "position": [
+        -1.71,
+        0.13
+      ],
+      "team": "team_4",
+      "_v4_station": "G4",
+      "scale": 0.7
+    },
+    {
+      "name": "drone_4",
+      "model": "v4_crazyflie_cf2x",
+      "position": [
+        -1.71,
+        0.13,
+        1.2
+      ],
+      "team": "team_4",
+      "_v4_station": "G4",
+      "scale": 2.0,
+      "drone": true
+    },
+    {
+      "name": "ridgeback_5",
+      "model": "v4_ridgeback_ur5",
+      "position": [
+        -1.8,
+        -1.47
+      ],
+      "team": "team_5",
+      "_v4_station": "G5",
+      "scale": 0.5,
+      "base_locked_while_holding": true
+    },
+    {
+      "name": "jackal_5",
+      "model": "v4_jackal",
+      "position": [
+        -4.06,
+        -0.72
+      ],
+      "team": "team_5",
+      "_v4_station": "G5",
+      "scale": 0.7
+    },
+    {
+      "name": "drone_5",
+      "model": "v4_crazyflie_cf2x",
+      "position": [
+        -4.06,
+        -0.72,
+        1.2
+      ],
+      "team": "team_5",
+      "_v4_station": "G5",
+      "scale": 2.0,
+      "drone": true
+    }
+  ]
+}
