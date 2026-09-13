@@ -78,6 +78,14 @@ class Route:
     id: str
     cargo: str
     nodes: Tuple[RouteNode, ...]
+    #: Where the cargo begins, from the BDDL ``:init`` -- the support it is
+    #: ``ontop`` at t=0 and that support's ``inroom``. Nine robots spawned in
+    #: the living room spent 1000 steps circling a coffee table because nothing
+    #: told them the die was in the child's room (2026-09-13). The init is part
+    #: of the activity definition, so saying it discloses nothing new -- the
+    #: same argument as each node's room.
+    start_support: Optional[str] = None
+    start_room: Optional[str] = None
 
     @property
     def destination(self) -> RouteNode:
@@ -174,6 +182,17 @@ def _declared_instances(objects: Any) -> Dict[str, str]:
     return out
 
 
+def _start_from_init(init: Optional[Sequence], cargo: str,
+                     rooms: Dict[str, str]) -> Tuple[Optional[str], Optional[str]]:
+    """``(support, room)`` the cargo starts on, or ``(None, None)``."""
+    for clause in init or []:
+        if (isinstance(clause, list) and len(clause) == 3
+                and clause[0] in ("ontop", "inside") and str(clause[1]) == cargo):
+            support = str(clause[2])
+            return support, rooms.get(support)
+    return None, None
+
+
 def _rooms_from_init(init: Optional[Sequence]) -> Dict[str, str]:
     rooms: Dict[str, str] = {}
     for clause in init or []:
@@ -237,7 +256,7 @@ def _parse_node(raw: Any, where: str, declared: Dict[str, str], rooms: Dict[str,
 
 def _parse_route(raw: Any, index: int, declared: Dict[str, str], rooms: Dict[str, str],
                  goal_triples: List[Tuple[str, str, str]],
-                 warnings: List[str]) -> Route:
+                 warnings: List[str], init: Optional[Sequence] = None) -> Route:
     where = f"routes[{index}]"
     if not isinstance(raw, dict):
         raise _fail(where, f"must be an object, got {type(raw).__name__}")
@@ -287,7 +306,9 @@ def _parse_route(raw: Any, index: int, declared: Dict[str, str], rooms: Dict[str
                            f"BDDL :goal for {cargo} is {[list(t) for t in stated]}; the two "
                            f"files disagree on where the route ends -- the route is the task, "
                            f"so correct the BDDL :goal to match it")
-    return Route(id=route_id, cargo=cargo, nodes=tuple(nodes))
+    start_support, start_room = _start_from_init(init, cargo, rooms)
+    return Route(id=route_id, cargo=cargo, nodes=tuple(nodes),
+                 start_support=start_support, start_room=start_room)
 
 
 def _parse_lift(raw: Any, declared: Dict[str, str]) -> Dict[str, Tuple[str, ...]]:
@@ -338,7 +359,7 @@ def parse_route_spec(payload: Any, objects: Any, goal: Optional[Sequence],
     if not isinstance(raw_routes, list) or not raw_routes:
         raise _fail("routes", "must be a non-empty list")
     warnings: List[str] = []
-    routes = [_parse_route(r, i, declared, rooms, goal_triples, warnings)
+    routes = [_parse_route(r, i, declared, rooms, goal_triples, warnings, init)
               for i, r in enumerate(raw_routes)]
 
     ids = [r.id for r in routes]

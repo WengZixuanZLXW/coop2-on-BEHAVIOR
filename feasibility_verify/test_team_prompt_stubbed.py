@@ -44,7 +44,9 @@ SHARED_RULES = ("TOO_FAR", "unreachable", "held by", "room listing",
                 # The route rule: only the NEXT support counts.
                 "route", "NEXT", "out of order",
                 # The lift rule, stated concretely: the drone cannot lift the notebook.
-                "drone cannot lift the notebook", "CANNOT_LIFT")
+                "drone cannot lift the notebook", "CANNOT_LIFT",
+                # Cross-room navigation: a task id is a target from any room.
+                "valid navigate_to target", "through the house")
 
 
 def main() -> int:

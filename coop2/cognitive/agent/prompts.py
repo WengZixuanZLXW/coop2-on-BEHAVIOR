@@ -71,6 +71,11 @@ Rules that decide whether an action succeeds:
   placed on it; a support reached out of order does not count and costs
   nothing -- progress resumes when NEXT holds. Progress is judged on where the
   cargo rests, not on what you intended.
+- Every id in YOUR TASK is a valid navigate_to target from ANY room, even when
+  it is not in your room listing: navigate_to(<that id>) drives you to it,
+  through the house, and your next listing shows that room. That is how you
+  change rooms. The cargo is where YOUR TASK says it starts (or on the last
+  support marked done) -- go there; do not look for it where you stand.
 - The drone cannot lift the notebook. If your header says "(drone)", you can
   grasp and carry the die (die.n.01_1) but NOT the notebook (notebook.n.01_1):
   grasp or unload_from on it fails with CANNOT_LIFT, and getting closer does
@@ -147,6 +152,12 @@ Rules that decide whether an action succeeds:
   placed on it; a support reached out of order does not count and costs
   nothing -- progress resumes when NEXT holds. Progress is judged on where the
   cargo rests, not on what a robot intended.
+- Every id in YOUR TASK is a valid navigate_to target for any robot from ANY
+  room, even when it is not in that robot's listing: navigate_to(<that id>)
+  drives it there, through the house, and its next listing shows that room.
+  That is how a robot changes rooms. The cargo is where YOUR TASK says it
+  starts (or on the last support marked done) -- send a robot there; it will
+  not be found where the robots stand.
 - The drone cannot lift the notebook. A robot tagged [drone] can grasp and
   carry the die (die.n.01_1) but NOT the notebook (notebook.n.01_1): grasp or
   unload_from on it fails with CANNOT_LIFT, and getting closer does not change

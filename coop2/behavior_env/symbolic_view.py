@@ -56,6 +56,11 @@ def render_route_block(spec, progress) -> str:
             lines.append(f"Route {route.id}: complete -- {route.cargo} is at its destination.")
             continue
         lines.append(f"Route {route.id}, carry {route.cargo} through these in order:")
+        if not done and getattr(route, "start_support", None):
+            # Until the first node is credited the cargo is where the activity
+            # put it; after that the done marks say where it has been.
+            where = f"   [{route.start_room}]" if getattr(route, "start_room", None) else ""
+            lines.append(f"  it starts ontop({route.cargo}, {route.start_support}){where}")
         for node in route.nodes:
             mark = "done" if node.id in done else ("NEXT" if node.id == nxt else "    ")
             where = f"   [{node.room}]" if node.room else ""

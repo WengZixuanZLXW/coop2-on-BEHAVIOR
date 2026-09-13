@@ -219,6 +219,9 @@ def main() -> int:
     rejects(dict(PAYLOAD, lift={"die.n.01": ["forklift"]}), OBJECTS, GOAL, INIT, "unknown roles")
     rejects(dict(PAYLOAD, lift={"die.n.01": []}), OBJECTS, GOAL, INIT, "non-empty list")
     spec = parse_route_spec(PAYLOAD, OBJECTS, GOAL, INIT, activity="fake")
+    # Where the cargo starts, read off :init -- the robots may spawn rooms away.
+    assert spec.routes[0].start_support == "floor.n.01_1", spec.routes[0]
+    assert spec.routes[0].start_room == "childs_room", spec.routes[0]
     assert spec.may_lift("die.n.01", "drone") and spec.may_lift("die.n.01", "arm")
     assert not spec.may_lift("die.n.01", "carrier")
     # A synset the table leaves out: anyone with a hand.

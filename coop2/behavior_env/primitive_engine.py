@@ -402,9 +402,21 @@ class MultiAgentPrimitiveEngine:
         if len(ids) != len(self.robots):
             raise ValueError(f"Got {len(ids)} agent ids for {len(self.robots)} robots.")
         self.agent_ids: List[str] = ids
-        self.robots_by_id: Dict[str, Robot] = dict(zip(ids, self.robots))
         # Kept for callers that think in robot names (e.g. the demo script).
         self.robots_by_name: Dict[str, Robot] = {robot.name: robot for robot in self.robots}
+        # By name when the ids ARE the robot names, positional only otherwise.
+        # ``scene.robots`` is sorted by name, the layout is not: with robots
+        # named ridgeback_1, jackal_1, drone_1 the zip handed ridgeback_1's
+        # 9-dim action to the robot called drone_1 (action_dim 4) and the first
+        # tick died. The same zip had been silently pairing agent_2 with the
+        # robot agent_10 in every twelve-robot run, where the dims agreed. The
+        # id IS the robot name everywhere coop_env builds this, so the map is
+        # the identity by construction, not by luck of sort order.
+        if all(agent_id in self.robots_by_name for agent_id in ids):
+            self.robots_by_id: Dict[str, Robot] = {agent_id: self.robots_by_name[agent_id] for agent_id in ids}
+            self.robots = [self.robots_by_id[agent_id] for agent_id in ids]
+        else:
+            self.robots_by_id = dict(zip(ids, self.robots))
 
         self.attempts = attempts
         self.motion_mode = motion_mode

@@ -414,6 +414,27 @@ def main() -> int:
     assert engine.held_object("carrier") is None
     ok("an armless robot answers None without reaching for a hand it lacks")
 
+    print("\ntest: agent ids are matched to robots by name, not by position")
+    # scene.robots is sorted by name; a layout is not. Before the fix the zip
+    # gave ridgeback_1 the robot called drone_1, and the first env.step died
+    # on the action dimension.
+    layout_order = ["ridgeback_1", "jackal_1", "drone_1"]
+    sorted_robots = [FakeRobot(n) for n in sorted(layout_order)]  # drone_1, jackal_1, ridgeback_1
+    env = FakeEnv(sorted_robots, {})
+    engine = engine_module.MultiAgentPrimitiveEngine(
+        env, agent_ids=layout_order, progress_every=0, verbose=False,
+        controllers={a: FakeController([]) for a in layout_order})
+    for agent_id in layout_order:
+        assert engine.robots_by_id[agent_id].name == agent_id, (agent_id, engine.robots_by_id[agent_id].name)
+    assert [r.name for r in engine.robots] == layout_order
+    # Ids that are not robot names keep the positional contract.
+    env2 = FakeEnv([FakeRobot("robot_a"), FakeRobot("robot_b")], {})
+    engine2 = engine_module.MultiAgentPrimitiveEngine(
+        env2, agent_ids=["agent_0", "agent_1"], progress_every=0, verbose=False,
+        controllers={"agent_0": FakeController([]), "agent_1": FakeController([])})
+    assert engine2.robots_by_id["agent_1"].name == "robot_b"
+    print("  ok: by name when names match, positional otherwise")
+
     print("\nALL TESTS PASSED")
     return 0
 

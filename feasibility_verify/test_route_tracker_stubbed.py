@@ -278,12 +278,15 @@ def main() -> int:
     world = StubWorld()
     tracker = RouteTracker(world, serial_spec())
     text = render_route_block(tracker.spec, tracker.progress())
-    rows = [l for l in text.splitlines() if l.startswith("  ")]
+    rows = [l for l in text.splitlines() if l.startswith("  ") and not l.startswith("  it starts")]
     assert len(rows) == 4, text                      # every node, from step 0
     assert rows[0].startswith("  NEXT  C1") and "[childs_room]" in rows[0], rows[0]
     assert "done" not in text
+    if tracker.spec.routes[0].start_support:
+        assert "it starts ontop(die.n.01_1" in text, text
     world.place("die.n.01_1", "cabinet.n.01_1"); tracker.step(1)
     text = render_route_block(tracker.spec, tracker.progress())
+    assert "it starts" not in text, text             # moved: the done marks say where it is
     rows = [l for l in text.splitlines() if l.startswith("  ")]
     assert rows[0].startswith("  done  C1") and rows[1].startswith("  NEXT  C2"), text
     assert rows[2].startswith("        C3") and "[bedroom]" in rows[2], rows[2]
