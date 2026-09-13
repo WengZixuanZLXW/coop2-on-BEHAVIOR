@@ -140,6 +140,10 @@ class FakeController:
         self.script = script
         self.held = None
 
+    def navigate_to_room(self, room):
+        self.rooms_visited = getattr(self, "rooms_visited", []) + [room]
+        yield f"room:{room}"
+
     def apply_ref(self, primitive, *args, attempts=1):
         plan = self.script[primitive.name]
         if isinstance(plan, tuple):
@@ -434,6 +438,26 @@ def main() -> int:
         controllers={"agent_0": FakeController([]), "agent_1": FakeController([])})
     assert engine2.robots_by_id["agent_1"].name == "robot_b"
     print("  ok: by name when names match, positional otherwise")
+
+    print("\ntest: a room name is a NAVIGATE_TO target, dispatched to navigate_to_room")
+    class RoomSegMap:
+        room_ins_name_to_ins_id = {"kitchen_0": 1, "hall_0": 2}
+    room_env = FakeEnv([FakeRobot("agent_0")], {"apple_0": FakeNamed("apple_0")})
+    room_env.scene.seg_map = RoomSegMap()
+    room_ctrl = FakeController({"NAVIGATE_TO": 3})
+    room_engine = engine_module.MultiAgentPrimitiveEngine(
+        room_env, agent_ids=["agent_0"], progress_every=0, verbose=False, controllers={"agent_0": room_ctrl})
+    assert room_engine.is_room("kitchen_0") and not room_engine.is_room("apple_0")
+    assert room_engine.assign("agent_0", P.NAVIGATE_TO, "kitchen_0") is None
+    room_engine.tick()
+    assert room_ctrl.rooms_visited == ["kitchen_0"], room_ctrl.rooms_visited
+    assert room_env.last_action["agent_0"] == "room:kitchen_0", room_env.last_action
+    # An object target still goes through the registry; an unknown name is still INVALID_TARGET.
+    room_engine.tick()  # StopIteration -> the room run finishes
+    assert not room_engine.has_active("agent_0")
+    bad = room_engine.assign("agent_0", P.NAVIGATE_TO, "attic_0")
+    assert bad is not None and bad.reason_code == "INVALID_TARGET", bad
+    print("  ok: kitchen_0 -> navigate_to_room; attic_0 -> INVALID_TARGET")
 
     print("\nALL TESTS PASSED")
     return 0

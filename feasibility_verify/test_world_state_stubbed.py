@@ -361,6 +361,12 @@ def main() -> int:
     print("test 11: the rendered view groups by room, with the verbs on the object")
     text = sv.render_symbolic_view(obs, interaction_radius=1.5)
     assert "you are agent_0" in text and "kitchen_0" in text
+    # The house's rooms are named once, up top, when the seg map knows them.
+    assert "Rooms in this house" not in text, "no room table on this stub, so no line"
+    obs.rooms = ["bedroom_0", "kitchen_0", "living_room_0"]
+    text = sv.render_symbolic_view(obs, interaction_radius=1.5)
+    assert "Rooms in this house (navigate_to any of them): bedroom_0, kitchen_0, living_room_0" in text, text
+    obs.rooms = []
     # One line per object, carrying what can be done to it. Two sections meant
     # every object was printed twice and the reader joined them by id.
     line = next(l for l in text.splitlines() if l.strip().startswith("- apple.n.01_1"))

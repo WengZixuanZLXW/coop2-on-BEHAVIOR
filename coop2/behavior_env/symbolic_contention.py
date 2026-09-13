@@ -225,6 +225,20 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
         """
         if self._interaction_radius is not None:
             return self._interaction_radius
+        support = self.support_of(obj)
+        if support is not None:
+            # Standing at the support, reaching across it: navigate_to(obj)
+            # samples around the support, so the robot ends within the
+            # support's own radius of the support's centre, and the object is
+            # at most the support's half-diagonal beyond that. The gate is the
+            # sum, measured to the object, so it accepts every spot the
+            # sampler can produce -- the same contract as the plain case.
+            try:
+                extent = support.aabb_extent
+                half_diagonal = math.hypot(float(extent[0]), float(extent[1])) / 2.0
+            except Exception:  # noqa: BLE001
+                half_diagonal = 0.0
+            return self.sampling_range_for(support)[1] + half_diagonal + DEFAULT_RADIUS_MARGIN
         return self.sampling_range_for(obj)[1] + DEFAULT_RADIUS_MARGIN
 
     # -- world queries ----------------------------------------------------

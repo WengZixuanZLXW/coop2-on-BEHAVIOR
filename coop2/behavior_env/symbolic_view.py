@@ -553,6 +553,13 @@ def render_symbolic_view(
     if room_type and room_type != observation.room:
         header += f" (a {room_type.replace('_', ' ')})"
     lines.append(header)
+    rooms = list(getattr(observation, "rooms", None) or [])
+    if rooms:
+        # The one piece of the house that is not local: its map. An agent that
+        # sees only its own room had no way to name a room it had never been
+        # in, so it could not go looking (user, 2026-09-13). Room names, not
+        # their contents -- the listing below stays strictly local.
+        lines.append("Rooms in this house (navigate_to any of them): " + ", ".join(rooms))
 
     held = _holding(observation)
     if me is not None and me.carrying:

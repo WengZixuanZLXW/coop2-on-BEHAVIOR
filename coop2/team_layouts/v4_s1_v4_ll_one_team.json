@@ -1,7 +1,7 @@
 {
   "_comment": [
     "As v4_s1_v4_ll.json, with all three robots in ONE team.",
-    "Robot names are type + team number (user, 2026-09-13): ridgeback_5 / jackal_5 / drone_5 are the M5 set's arm, carrier and drone; LL/LH's alpha is 1 and bravo is 2.",
+    "Teams are team_1.. in order of appearance and robots are <type>_<team ordinal> (user, 2026-09-13; unified across every S1 layout). The V4 set a team came from (M5, M3, ...) survives only in each robot's _v4_prim.",
     "",
     "The split in the original is deliberate -- two teams give chain and",
     "centralized inter-team traffic to carry. This variant removes that so the",
@@ -20,7 +20,7 @@
         -1.1703,
         0.4624
       ],
-      "team": "alpha",
+      "team": "team_1",
       "_v4_prim": "ridgeback_franka_s1_m5",
       "scale": 0.5,
       "base_locked_while_holding": true
@@ -32,7 +32,7 @@
         -0.8904,
         -0.035
       ],
-      "team": "alpha",
+      "team": "team_1",
       "_v4_prim": "jackal_s1_m5",
       "scale": 0.7
     },
@@ -43,7 +43,7 @@
         -1.2314,
         0.0176
       ],
-      "team": "alpha",
+      "team": "team_1",
       "_v4_prim": "crazyflie_s1_m5",
       "scale": 0.6,
       "drone": true

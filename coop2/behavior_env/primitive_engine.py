@@ -556,6 +556,12 @@ class MultiAgentPrimitiveEngine:
         """
         return {robot.name: self.idle_action(robot) for robot in self.robots}
 
+    def is_room(self, name: str) -> bool:
+        """Is @name a room instance of the loaded scene (``kitchen_0``)?"""
+        scene = getattr(self.env, "scene", None)
+        seg_map = getattr(scene, "seg_map", None) or getattr(scene, "_seg_map", None)
+        return name in (getattr(seg_map, "room_ins_name_to_ins_id", None) or {})
+
     def resolve_target(self, target: Any, allow_robot: bool = False) -> Tuple[Optional[Any], Optional[str]]:
         """Resolve a target given as a name or an object handle.
 
@@ -632,9 +638,17 @@ class MultiAgentPrimitiveEngine:
                 "call has_active() first, or abort() it."
             )
 
-        obj, error = self.resolve_target(
-            target, allow_robot=getattr(primitive, "name", None) in LOCAL_PRIMITIVES
-        )
+        # A room instance is a NAVIGATE_TO target in its own right: it is not
+        # an object, so it never resolves through the registry. The controller
+        # samples a free spot inside it (navigate_to_room).
+        room = (target if getattr(primitive, "name", None) == "NAVIGATE_TO"
+                and isinstance(target, str) and self.is_room(target) else None)
+        if room is not None:
+            obj, error = None, None
+        else:
+            obj, error = self.resolve_target(
+                target, allow_robot=getattr(primitive, "name", None) in LOCAL_PRIMITIVES
+            )
         target_name = obj.name if obj is not None else (target if isinstance(target, str) else None)
         primitive_name = primitive.name
 
@@ -660,6 +674,8 @@ class MultiAgentPrimitiveEngine:
             generator = getattr(
                 self.controllers[agent_id], LOCAL_PRIMITIVES[primitive_name]
             )(obj)
+        elif room is not None:
+            generator = self.controllers[agent_id].navigate_to_room(room)
         elif primitive_name == WAIT.name:
             # Not in upstream's primitive set, so apply_ref cannot dispatch it;
             # our controller implements it directly. Everything downstream --

@@ -138,9 +138,19 @@ def _load_module():
 class FakeSegMap:
     """'kitchen_0' is the disc of radius 3 around the origin; else 'hall_0'."""
 
+    room_ins_name_to_ins_id = {"kitchen_0": 1, "hall_0": 2}
+
     def get_room_instance_by_point(self, xy):
         radius = math.hypot(float(xy[0]), float(xy[1]))
         return "kitchen_0" if radius <= 3.0 else "hall_0"
+
+    def get_random_point_by_room_instance(self, room):
+        import random
+        if room not in self.room_ins_name_to_ins_id:
+            return None, None
+        r = random.uniform(0.5, 2.5) if room == "kitchen_0" else random.uniform(4.0, 6.0)
+        a = random.uniform(-math.pi, math.pi)
+        return 0, FakeVector([r * math.cos(a), r * math.sin(a), 0.0])
 
 
 class FakeTravMap:
@@ -434,6 +444,68 @@ def main() -> int:
     pos, orn = Navigable(None, wheeled, require_traversable=False)._get_robot_pose_from_2d_pose(FakeVector([1.0, 1.0, 0.0]))
     assert float(pos[2]) == 0.0 and orn == "upstream-orn", (list(pos), orn)
     ok("non-holonomic: falls through to upstream unchanged")
+
+    print("test: an object on furniture is approached by way of the furniture")
+    shelf_scene = FakeScene(FakeSegMap())
+    shelf_scene.objects = []
+    shelf_robot = FakeRobot(shelf_scene, name="agent_0")
+    shelf_ctrl = Navigable(None, shelf_robot, require_traversable=False)
+    bookcase = FakeObject("bookcase_0", [2.0, 0.0, 0.5], aabb_extent=(1.0, 0.4, 1.0))
+    die = FakeObject("die_0", [2.1, 0.05, 1.02], aabb_extent=(0.04, 0.04, 0.04))   # on its top (1.0)
+    floor = FakeObject("floor_0", [0.0, 0.0, 0.0], aabb_extent=(8.0, 8.0, 0.02)); floor.category = "floors"
+    apple_on_floor = FakeObject("apple_0", [-1.0, 0.0, 0.05], aabb_extent=(0.08, 0.08, 0.08))
+    shelf_scene.objects += [bookcase, die, floor, apple_on_floor, shelf_robot]
+    assert shelf_ctrl.support_of(die) is bookcase
+    assert shelf_ctrl.support_of(apple_on_floor) is None, "a floor is walked on, not reached across"
+    assert shelf_ctrl.support_of(bookcase) is None
+    # The sampled spot is in the bookcase's annulus, not the die's.
+    b_lo, b_hi = shelf_ctrl.sampling_range_for(bookcase)
+    for _ in range(50):
+        pose = shelf_ctrl._sample_pose_near_object(bookcase)
+        d = math.hypot(float(pose[0]) - 2.0, float(pose[1]))
+        assert b_lo - 1e-6 <= d <= b_hi + 1e-6
+    # The fake _navigate_to_pose does not move the robot, so watch what the
+    # sampler is asked for: navigate_to(die) must sample around the bookcase.
+    asked = []
+    real_sampler = shelf_ctrl._sample_pose_near_object
+    shelf_ctrl._sample_pose_near_object = lambda obj, **kw: (asked.append(obj.name), real_sampler(obj, **kw))[1]
+    list(shelf_ctrl._navigate_to_obj(die))
+    assert asked == ["bookcase_0"], asked
+    list(shelf_ctrl._navigate_to_obj(apple_on_floor))
+    assert asked[-1] == "apple_0", asked
+    ok("die on a bookcase: support_of finds the bookcase, navigate_to(die) samples around the bookcase")
+
+    print("test: a hovering drone does not take a ground robot's standing spot, and vice versa")
+    layer_scene = FakeScene(FakeSegMap())
+    ground = FakeRobot(layer_scene, name="ridgeback_1", position=(0.0, 0.0, 0.013))
+    hover = FakeRobot(layer_scene, name="drone_1", position=(1.0, 0.5, 1.2))
+    parked_ground = FakeRobot(layer_scene, name="jackal_1", position=(-1.0, 0.5, 0.044))
+    walker = Navigable(None, ground, require_traversable=False)
+    assert walker._clear_of_other_robots((1.0, 0.5)), "the drone overhead is another layer"
+    assert not walker._clear_of_other_robots((-1.0, 0.5)), "the Jackal on the floor still blocks"
+    flyer2 = Navigable(None, hover, require_traversable=False)
+    assert flyer2._clear_of_other_robots((0.0, 0.0)), "and the ground robot does not block the drone"
+    ok("z-separated bodies are different layers; same-layer blocking unchanged")
+
+    print("test: navigate_to a room by name lands inside that room")
+    room_scene = FakeScene(FakeSegMap())
+    rover = FakeRobot(room_scene, name="agent_0")
+    roomer = Navigable(None, rover, require_traversable=False)
+    landed = []
+    roomer._navigate_to_pose = lambda pose: (landed.append((float(pose[0]), float(pose[1]))), iter(()))[1]
+    for _ in range(20):
+        list(roomer.navigate_to_room("hall_0"))
+    assert landed and all(room_scene.seg_map.get_room_instance_by_point(xy) == "hall_0" for xy in landed), landed
+    # A parked robot's spot is not offered; an unknown room is refused by name.
+    parked = FakeRobot(room_scene, name="agent_1", position=(5.0, 0.0, 0.0))
+    for _ in range(20):
+        list(roomer.navigate_to_room("hall_0"))
+    assert all(math.hypot(x - 5.0, y) >= roomer.robot_separation for x, y in landed[20:]), landed[20:]
+    try:
+        list(roomer.navigate_to_room("attic_0")); raise AssertionError("unknown room accepted")
+    except Exception as error:  # noqa: BLE001
+        assert "No room named 'attic_0'" in str(error) and "kitchen_0" in str(error), error
+    ok("navigate_to_room samples inside the room, skips occupied spots, refuses unknown rooms")
 
     print("\nALL TESTS PASSED")
     return 0

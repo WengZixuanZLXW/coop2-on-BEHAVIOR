@@ -1,7 +1,7 @@
 {
   "_comment": [
     "Robot layout for v4_s1_v4_hl (COOHAVIOR's S1-V4-HL), ported to Merom_1_int.",
-    "Robot names are type + team number (user, 2026-09-13): ridgeback_5 / jackal_5 / drone_5 are the M5 set's arm, carrier and drone; LL/LH's alpha is 1 and bravo is 2.",
+    "Teams are team_1.. in order of appearance and robots are <type>_<team ordinal> (user, 2026-09-13; unified across every S1 layout). The V4 set a team came from (M5, M3, ...) survives only in each robot's _v4_prim.",
     "",
     "Five boxes, five rooms, V4's full five-set configuration -- poses are",
     "audit_index.json's own, robot_set_count 5, and are identical to HH's to the",
@@ -41,13 +41,13 @@
   ],
   "robots": [
     {
-      "name": "ridgeback_5",
+      "name": "ridgeback_1",
       "model": "v4_ridgeback_ur5",
       "position": [
         -1.1703,
         0.4624
       ],
-      "team": "m5",
+      "team": "team_1",
       "_v4_prim": "ridgeback_franka_s1_m5",
       "_station_room": "childs_room_0",
       "_station_box": "die.n.01_1",
@@ -55,26 +55,26 @@
       "base_locked_while_holding": true
     },
     {
-      "name": "jackal_5",
+      "name": "jackal_1",
       "model": "v4_jackal",
       "position": [
         -0.8904,
         -0.035
       ],
-      "team": "m5",
+      "team": "team_1",
       "_v4_prim": "jackal_s1_m5",
       "_station_room": "childs_room_0",
       "_station_box": "die.n.01_1",
       "scale": 0.7
     },
     {
-      "name": "drone_5",
+      "name": "drone_1",
       "model": "v4_crazyflie_cf2x",
       "position": [
         -1.2314,
         0.0176
       ],
-      "team": "m5",
+      "team": "team_1",
       "_v4_prim": "crazyflie_s1_m5",
       "_station_room": "childs_room_0",
       "_station_box": "die.n.01_1",
@@ -82,13 +82,13 @@
       "drone": true
     },
     {
-      "name": "ridgeback_3",
+      "name": "ridgeback_2",
       "model": "v4_ridgeback_ur5",
       "position": [
         -2.2202,
         5.5688
       ],
-      "team": "m3",
+      "team": "team_2",
       "_v4_prim": "ridgeback_franka_s1_m3",
       "_station_room": "kitchen_0",
       "_station_box": "die.n.01_2",
@@ -96,13 +96,13 @@
       "base_locked_while_holding": true
     },
     {
-      "name": "jackal_3",
+      "name": "jackal_2",
       "model": "v4_jackal",
       "position": [
         -1.58,
         5.07
       ],
-      "team": "m3",
+      "team": "team_2",
       "_v4_prim": "jackal_s1_m3",
       "_station_room": "kitchen_0",
       "_station_box": "die.n.01_2",
@@ -113,13 +113,13 @@
       ]
     },
     {
-      "name": "drone_3",
+      "name": "drone_2",
       "model": "v4_crazyflie_cf2x",
       "position": [
         -1.8,
         5.58
       ],
-      "team": "m3",
+      "team": "team_2",
       "_v4_prim": "crazyflie_s1_m3",
       "_station_room": "kitchen_0",
       "_station_box": "die.n.01_2",
@@ -131,13 +131,13 @@
       "drone": true
     },
     {
-      "name": "ridgeback_2",
+      "name": "ridgeback_3",
       "model": "v4_ridgeback_ur5",
       "position": [
         0.0,
         7.59
       ],
-      "team": "m2",
+      "team": "team_3",
       "_v4_prim": "ridgeback_franka_s1_m2",
       "_station_room": "dining_room_0",
       "_station_box": "die.n.01_3",
@@ -149,13 +149,13 @@
       ]
     },
     {
-      "name": "jackal_2",
+      "name": "jackal_3",
       "model": "v4_jackal",
       "position": [
         0.13,
         6.9
       ],
-      "team": "m2",
+      "team": "team_3",
       "_v4_prim": "jackal_s1_m2",
       "_station_room": "dining_room_0",
       "_station_box": "die.n.01_3",
@@ -167,13 +167,13 @@
       "_stands_in": "living_room_0"
     },
     {
-      "name": "drone_2",
+      "name": "drone_3",
       "model": "v4_crazyflie_cf2x",
       "position": [
         -0.3834,
         6.9923
       ],
-      "team": "m2",
+      "team": "team_3",
       "_v4_prim": "crazyflie_s1_m2",
       "_station_room": "dining_room_0",
       "_station_box": "die.n.01_3",
@@ -181,13 +181,13 @@
       "drone": true
     },
     {
-      "name": "ridgeback_1",
+      "name": "ridgeback_4",
       "model": "v4_ridgeback_ur5",
       "position": [
         1.6935,
         8.4945
       ],
-      "team": "m1",
+      "team": "team_4",
       "_v4_prim": "ridgeback_franka_s1_m1",
       "_station_room": "living_room_0",
       "_station_box": "die.n.01_4",
@@ -195,26 +195,26 @@
       "base_locked_while_holding": true
     },
     {
-      "name": "jackal_1",
+      "name": "jackal_4",
       "model": "v4_jackal",
       "position": [
         1.9734,
         7.9971
       ],
-      "team": "m1",
+      "team": "team_4",
       "_v4_prim": "jackal_s1_m1",
       "_station_room": "living_room_0",
       "_station_box": "die.n.01_4",
       "scale": 0.7
     },
     {
-      "name": "drone_1",
+      "name": "drone_4",
       "model": "v4_crazyflie_cf2x",
       "position": [
         1.6324,
         8.0497
       ],
-      "team": "m1",
+      "team": "team_4",
       "_v4_prim": "crazyflie_s1_m1",
       "_station_room": "living_room_0",
       "_station_box": "die.n.01_4",
@@ -222,13 +222,13 @@
       "drone": true
     },
     {
-      "name": "ridgeback_4",
+      "name": "ridgeback_5",
       "model": "v4_ridgeback_ur5",
       "position": [
         2.2227,
         0.7049
       ],
-      "team": "m4",
+      "team": "team_5",
       "_v4_prim": "ridgeback_franka_s1_m4",
       "_station_room": "bedroom_0",
       "_station_box": "die.n.01_5",
@@ -236,26 +236,26 @@
       "base_locked_while_holding": true
     },
     {
-      "name": "jackal_4",
+      "name": "jackal_5",
       "model": "v4_jackal",
       "position": [
         2.5026,
         0.2075
       ],
-      "team": "m4",
+      "team": "team_5",
       "_v4_prim": "jackal_s1_m4",
       "_station_room": "bedroom_0",
       "_station_box": "die.n.01_5",
       "scale": 0.7
     },
     {
-      "name": "drone_4",
+      "name": "drone_5",
       "model": "v4_crazyflie_cf2x",
       "position": [
         2.1616,
         0.2601
       ],
-      "team": "m4",
+      "team": "team_5",
       "_v4_prim": "crazyflie_s1_m4",
       "_station_room": "bedroom_0",
       "_station_box": "die.n.01_5",

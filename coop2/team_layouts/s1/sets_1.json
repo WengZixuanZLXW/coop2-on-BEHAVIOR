@@ -1,7 +1,7 @@
 {
   "_comment": [
     "COOHAVIOR S1 robots, 1 set (3 robots), for Merom_1_int -- all spawned together.",
-    "Robot names are type + team ordinal (user, 2026-09-13): teams are numbered 1.. in order of appearance, so with fewer than five sets the first set here (m5) is ridgeback_1 / jackal_1 / drone_1; the V4 set identity stays in `team` and `_v4_prim`.",
+    "Teams are team_1.. in order of appearance and robots are <type>_<team ordinal> (user, 2026-09-13; unified across every S1 layout). The V4 set a team came from (M5, M3, ...) survives only in each robot's _v4_prim.",
     "",
     "Everyone starts in living_room_0, packed around the centroid of its largest free",
     "region (decision: user, 2026-09-12). The room is the most open one measured as",
@@ -32,7 +32,7 @@
         2.44,
         7.98
       ],
-      "team": "m5",
+      "team": "team_1",
       "_v4_prim": "ridgeback_franka_s1_m5",
       "_v4_staged_position": [
         -1.1703,
@@ -48,7 +48,7 @@
         2.44,
         7.23
       ],
-      "team": "m5",
+      "team": "team_1",
       "_v4_prim": "jackal_s1_m5",
       "_v4_staged_position": [
         -0.8904,
@@ -64,7 +64,7 @@
         7.23,
         1.2
       ],
-      "team": "m5",
+      "team": "team_1",
       "_v4_prim": "crazyflie_s1_m5",
       "_v4_staged_position": [
         -1.2314,

@@ -194,13 +194,18 @@ def chase_pose(robot, height: float = 2.3, lead: float = 0.0, room_cells=None):
     # A centimetre off vertical, matching the control shot: exactly vertical is
     # degenerate for look-at (forward parallel to world up) and leaves roll
     # undefined.
-    eye = th.tensor([x + 0.01, y, z + height], dtype=th.float32)
+    # Under the ceiling, whatever the robot's altitude: a drone hovering at
+    # 1.2 m put the eye at 3.5 m, inside the roof void, and its whole video
+    # was one grey frame (2026-09-13). The aim point stays below the eye.
+    eye_z = min(z + height, MAX_CAMERA_HEIGHT - 0.1)
+    aim_z = min(z + 0.6, eye_z - 0.5)
+    eye = th.tensor([x + 0.01, y, eye_z], dtype=th.float32)
     if lead:
         yaw = float(T.quat2euler(orientation)[2])
-        target = th.tensor([x + lead * math.cos(yaw), y + lead * math.sin(yaw), z + 0.6],
+        target = th.tensor([x + lead * math.cos(yaw), y + lead * math.sin(yaw), aim_z],
                            dtype=th.float32)
     else:
-        target = th.tensor([x, y, z + 0.6], dtype=th.float32)
+        target = th.tensor([x, y, aim_z], dtype=th.float32)
     return eye, look_at_quaternion(eye, target)
 
 

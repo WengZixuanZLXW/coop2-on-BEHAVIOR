@@ -1,7 +1,7 @@
 {
   "_comment": [
     "Robot layout for v4_s1_v4_lh (COOHAVIOR's S1-V4-LH), ported to Merom_1_int.",
-    "Robot names are type + team number (user, 2026-09-13): ridgeback_5 / jackal_5 / drone_5 are the M5 set's arm, carrier and drone; LL/LH's alpha is 1 and bravo is 2.",
+    "Teams are team_1.. in order of appearance and robots are <type>_<team ordinal> (user, 2026-09-13; unified across every S1 layout). The V4 set a team came from (M5, M3, ...) survives only in each robot's _v4_prim.",
     "",
     "LH stages exactly the same three robots at the same station as LL -- the",
     "audit index's M5 set, poses identical to the last decimal. Two things differ.",
@@ -64,7 +64,7 @@
         -1.1703,
         0.4624
       ],
-      "team": "alpha",
+      "team": "team_1",
       "_v4_prim": "ridgeback_franka_s1_m5",
       "scale": 0.5,
       "base_locked_while_holding": true
@@ -76,7 +76,7 @@
         -0.8904,
         -0.035
       ],
-      "team": "alpha",
+      "team": "team_1",
       "_v4_prim": "jackal_s1_m5",
       "scale": 0.7
     },
@@ -87,7 +87,7 @@
         -1.2314,
         0.0176
       ],
-      "team": "bravo",
+      "team": "team_2",
       "_v4_prim": "crazyflie_s1_m5",
       "scale": 2.0,
       "drone": true

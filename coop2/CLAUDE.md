@@ -49,9 +49,10 @@ route, the `RouteTracker`, and the wiring that lets it decide `terminated` --
 see "The route file" and "Route supervision, wired" below), and the S1 part of
 steps 6-7: all four S1 tasks have route files and corrected, re-sampled BDDLs
 ("Four route files, four re-samples"), and step 5, the lift gate ("The lift
-gate"). Not started: step 4, one GPU episode of LL against the route, and
-S2/S3's eight route files. Read the plan before touching termination or the
-`YOUR TASK` block.
+gate"). Step 4, the LL episode against the route, has run once: two of ten
+nodes, five defects fixed from it ("Step 4's first episode"); the acceptance
+run is the next launch. Not started: S2/S3's eight route files. Read the
+plan before touching termination or the `YOUR TASK` block.
 
 **Two lines of work are open**, and neither is a milestone from
 PORTING_PLAN.md section 7:
@@ -1486,22 +1487,22 @@ where the other three took `_2`. `_apply_scene_edits` keeps whatever the BDDL
 bound off V4's deactivate list, so LL's scene has one armchair more than V4's;
 none of it changes a route.
 
-## Robots are named by type and team number (2026-09-13)
+## Robots are named by type and team ordinal (2026-09-13)
 
 `agent_0 .. agent_14` said nothing about what a robot was, and the model had
-to learn "agent_1 has no arm" from a bracket. The V4 layouts now name each
-robot `<type>_<team ordinal>`. Teams count from 1 in order of appearance
-(user, 2026-09-13): `s1/sets_2` is `ridgeback_1, jackal_1, drone_1,
-ridgeback_2, jackal_2, drone_2` even though its sets are V4's M5 and M3 --
-the set identity stays in `team` and `_v4_prim`. With all five sets present
-(`sets_5`, HH, HL) the ordinal is the m-number, so `ridgeback_5` is the M5
-set's arm. LL/LH's `alpha` is 1 and `bravo` 2, so LL is `ridgeback_1`,
-`jackal_1`, `drone_2` and the one-team variant `drone_1`. Names are free
-strings everywhere -- the layout is the only source,
-`env_setup` makes them the robot names, the world model keys entities on them
--- so nothing in code changed; `make_s1_shared_spawn_layouts.py` emits the
-same scheme. The `agent_N` fallback still applies to layouts without names
-and to `--agents N`. Commands below use the new names (`--view drone_2`).
+to learn "agent_1 has no arm" from a bracket. Every S1 layout now uses one
+scheme (user, 2026-09-13, unified after a first pass that kept V4's m-numbers
+for the five-set files): teams are `team_1 .. team_k` in order of appearance,
+and each robot is `<type>_<team ordinal>` -- `ridgeback_1, jackal_1, drone_1,
+ridgeback_2, ...`. Which V4 set a team came from (M5, M3, ...) survives only in
+each robot's `_v4_prim`. LL/LH are `team_1` (ridgeback_1, jackal_1) and
+`team_2` (drone_2); the one-team variant has `drone_1`. Names are free strings
+everywhere -- the layout is the only source, `env_setup` makes them the robot
+names, the world model keys entities on them -- so nothing in code changed,
+except the engine, which had been pairing ids with robots by position (see
+"Step 4's first episode"). `make_s1_shared_spawn_layouts.py` emits the same
+scheme. The `agent_N` fallback still applies to layouts without names and to
+`--agents N`. Commands below use the new names (`--view drone_2`).
 
 ## The lift gate (2026-09-12)
 
@@ -1541,6 +1542,65 @@ refuses a non-bool `drone`. GPU: `inspect_scene --view drone_2` on LH prints
 `[route] lift rules: notebook.n.01 -> arm`, the header reads
 `you are drone_2 (drone) in childs_room_0`, and the notebook's line carries
 no `grasp` while ridgeback_1's reads `-> grasp, navigate_to`.
+
+## Step 4's first episode: two nodes, five defects, room navigation (2026-09-13)
+
+The first routed LL episode: nine robots as three teams (`s1/sets_3.json`,
+`ridgeback_k / jackal_k / drone_k`; the team labels were still V4's m5/m3/m2 in
+that run, since renamed `team_k`), individual topology, 8000 steps, video
+on. **C1 credited at env_step 2310, C2 at 3607, then nothing** -- `Y_task`
+0.2, `route_progress.json` written, `check_goal` never fired, 19 team calls
+and ~140k tokens by step 4000. The run is
+`coop2/runs/individual_agents3_repair_off_seed0_20260913_011125_636624`.
+Two launches died before it, and the one that ran exposed three more things.
+In the order they were hit:
+
+1. **Tick 0 crash: `Action must be dimension 4, got dim 9`.** The engine
+   zipped layout-ordered agent ids with `scene.robots`, which is *sorted by
+   name*. `agent_0..8` happened to agree; `ridgeback_1, jackal_1, drone_1`
+   did not, and ridgeback_1's 9-dim action went to the robot called
+   drone_1. Mapped by name now (`MultiAgentPrimitiveEngine.__init__`), CPU
+   test added. The same zip paired `agent_2` with robot `agent_10` in every
+   twelve-robot run; their per-agent success counts look normal and I cannot
+   explain why. Recorded, not resolved.
+2. **A thousand steps circling a coffee table.** Everyone spawned in the
+   living room; the die was in the child's room; the route block named ten
+   supports and not where the cargo was. `Route.start_support/start_room`
+   now come from the BDDL `:init`, the block opens with
+   `it starts ontop(die.n.01_1, floor.n.01_1) [childs_room]` until C1 is
+   credited, and both prompts say a task id is a `navigate_to` target from
+   any room. The relaunch's first plans went straight to the die.
+3. **Cargo on furniture is unreachable.** After C2 the die sat on the
+   kitchen bookcase. `navigate_to(die)` wanted a spot 0.3-0.9 m from the die
+   -- inside the bookcase or in the wall -- and failed NO_SPACE; `navigate_to
+   (bookcase)` landed 1.1-2.1 m from the die and `grasp` was TOO_FAR at the
+   die's own 0.9 m. Nine robots alternated the two for 2000 steps. Now
+   `support_of(obj)` (geometric: the highest non-floor object whose footprint
+   holds the object's xy at its bottom) makes `navigate_to(obj)` sample
+   around the support and `interaction_radius_for(obj)` reach across it
+   (support's gate + its half-diagonal, measured to the object). Same
+   contract as before: anything the sampler produces is in range.
+4. **Drones took floor space.** `_clear_of_other_robots` was 2-D; a drone
+   parked at 1.2 m over the bookcase cost the arm every standing spot in a
+   2.7 m2 kitchen. Bodies more than `LAYER_SEPARATION_Z` (0.6 m) apart in z
+   are different layers now.
+5. **Drone videos were one grey frame.** `chase_pose` put the eye 2.3 m
+   above the robot; for a drone at 1.2 m that is inside the roof void. The
+   eye is capped under `MAX_CAMERA_HEIGHT` and the aim point under the eye.
+
+**Room navigation** (user, 2026-09-13): the listing is local, so an agent
+could not name a room it had never been in and so could not go looking. The
+header now carries `Rooms in this house (navigate_to any of them): ...` from
+the seg map, `navigate_to(<room instance>)` is dispatched by the engine
+(`is_room`) to `navigate_to_room`, which samples a free traversable spot
+inside the room with the same robot-clearance and reservation filters, and
+both prompts say so. CPU: engine, navigation, world-state and prompt tests.
+
+What the run also showed and nothing was changed for: three teams on one
+die hand it back and forth across team lines (drone_3 unloaded jackal_2's
+cargo), each hop a plan; a carrier planned `place_on_top` and was refused;
+"holding for the team" idles dominate the timeline. Those are the
+cooperation problem the benchmark is about, not defects.
 
 ## Open defects
 

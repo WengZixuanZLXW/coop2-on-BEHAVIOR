@@ -76,6 +76,9 @@ Rules that decide whether an action succeeds:
   through the house, and your next listing shows that room. That is how you
   change rooms. The cargo is where YOUR TASK says it starts (or on the last
   support marked done) -- go there; do not look for it where you stand.
+- The line "Rooms in this house" names every room. navigate_to(<room name>)
+  drives you to a free spot inside that room, so you can reach a room whose
+  objects you cannot name yet, or go and look for something.
 - The drone cannot lift the notebook. If your header says "(drone)", you can
   grasp and carry the die (die.n.01_1) but NOT the notebook (notebook.n.01_1):
   grasp or unload_from on it fails with CANNOT_LIFT, and getting closer does
@@ -158,6 +161,9 @@ Rules that decide whether an action succeeds:
   That is how a robot changes rooms. The cargo is where YOUR TASK says it
   starts (or on the last support marked done) -- send a robot there; it will
   not be found where the robots stand.
+- The line "Rooms in this house" names every room. navigate_to(<room name>)
+  drives a robot to a free spot inside that room, so it can reach a room whose
+  objects it cannot name yet, or go and look for something.
 - The drone cannot lift the notebook. A robot tagged [drone] can grasp and
   carry the die (die.n.01_1) but NOT the notebook (notebook.n.01_1): grasp or
   unload_from on it fails with CANNOT_LIFT, and getting closer does not change

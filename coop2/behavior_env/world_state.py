@@ -183,6 +183,8 @@ class SymbolicObservation:
     #: Empty when the run has no BDDL task, and empty means "no opinion": the
     #: view then shows everything, as it did before this existed.
     task_entity_ids: Set[str] = field(default_factory=set)
+    #: Every room instance in the house, sorted. navigate_to takes any of them.
+    rooms: List[str] = field(default_factory=list)
     #: cargo synset -> roles that may lift it, from the activity's route file.
     #: Empty means no opinion: anyone with a hand may lift anything.
     lift_rules: Dict[str, Tuple[str, ...]] = field(default_factory=dict)
@@ -402,6 +404,11 @@ class BehaviorWorldState:
     @property
     def seg_map(self):
         return getattr(self.scene, "seg_map", None) or getattr(self.scene, "_seg_map", None)
+
+    def room_names(self) -> List[str]:
+        """Every room instance the seg map knows, sorted; [] without a map."""
+        names = getattr(self.seg_map, "room_ins_name_to_ins_id", None) or {}
+        return sorted(str(n) for n in names)
 
     def room_at(self, xy) -> Optional[str]:
         seg_map = self.seg_map
@@ -805,6 +812,7 @@ class BehaviorWorldState:
             step=self.step_index if env_step is None else env_step,
             max_steps=max_steps,
             room=current_room,
+            rooms=self.room_names(),
             entities=entities,
             facts=self.facts(entities),
             goal_status=goal_status,

@@ -428,7 +428,16 @@ things to read (see the memory note on ignoring constraint metrics).
    real instance. One thing the suite caught: a CPU test builds the env with
    `object.__new__`, so a new attribute set in `__init__` does not exist there
    -- every read of `route_tracker` goes through `getattr(..., None)`.
-4. One GPU episode of LL, individual topology, the V4 layout. Acceptance: a
+4. **First episode run 2026-09-13, 2 of 10 nodes** (nine robots, three
+   teams, `s1/sets_3.json`, individual, 8000 steps): C1 at 2310, C2 at 3607,
+   `route_progress.json` and `Y_task` 0.2 in `coop2_metrics.json`, nine
+   per-robot videos. Termination on `D` is still untested. The run found five
+   defects, all fixed the same day (CLAUDE.md, "Step 4's first episode"):
+   engine zipping agent ids with a name-sorted robot list; no cargo start in
+   the route block; no rule that a task id is navigable from another room;
+   cargo on furniture unreachable (die's 0.9 m gate vs bookcase footprint);
+   drones counted as floor obstacles. Next launch is the acceptance run.
+   Original acceptance, unchanged: a
    `[route] ... completed` line per node in order, `terminated` on `D`,
    `check_goal` agrees, `route_progress.json` written, `Y_task` in
    `coop2_metrics.json`. Budget it: ten nodes at roughly navigate + grasp +

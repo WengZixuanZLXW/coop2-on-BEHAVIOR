@@ -397,6 +397,27 @@ def main() -> int:
     assert alice._ag_obj_in_hand["left"] is far_cup
     ok(f"navigate ({len(ticks)} ticks) then grasp -> in hand")
 
+    print("test 3b: an object on furniture is grasped from where the furniture can be reached")
+    # The routed LL episode of 2026-09-13: navigate_to(bookcase) landed 1.1-2.1 m
+    # from the die on it, and grasp(die) was TOO_FAR at the die's own 0.9 m.
+    shelf_scene = FakeScene(FakeSegMap()); shelf_scene.objects = []
+    picker = FakeRobot(shelf_scene, "agent_0", (0.0, 0.0, 0.0))
+    ctrl_p = Contentious(None, picker)
+    bookcase = FakeObject("bookcase_0", [3.0, 0.0, 0.5], aabb_extent=(1.0, 0.4, 1.0))
+    die = FakeObject("die_0", [3.4, 0.1, 1.02], aabb_extent=(0.04, 0.04, 0.04))
+    shelf_scene.objects += [bookcase, die]
+    assert ctrl_p.support_of(die) is bookcase
+    plain = ctrl_p.sampling_range_for(die)[1] + module.DEFAULT_RADIUS_MARGIN
+    gate = ctrl_p.interaction_radius_for(die)
+    assert gate > plain, (gate, plain)
+    assert gate >= ctrl_p.interaction_radius_for(bookcase), "reaching across the support is never stricter than reaching the support"
+    list(ctrl_p._navigate_to_obj(die))
+    assert ctrl_p.distance_to(bookcase) <= ctrl_p.interaction_radius_for(bookcase)
+    assert ctrl_p.distance_to(die) <= gate, (ctrl_p.distance_to(die), gate)
+    assert list(ctrl_p._grasp(die)) == ["settle"] * 3
+    assert picker._ag_obj_in_hand["left"] is die
+    ok(f"navigate_to(die) stands at the bookcase; grasp gate {gate:.2f} m vs {plain:.2f} m alone")
+
     print("test 4: grasping a teammate's object fails with OBJECT_CLAIMED")
     _, alice, bob, ctrl_a, ctrl_b = fresh()
     cup = FakeObject("cup_0", [0.5, 0.0, 0.5])

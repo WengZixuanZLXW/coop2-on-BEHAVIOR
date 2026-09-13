@@ -240,6 +240,10 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
                 self._nav_robot_radius = 0.6
         return self._nav_robot_radius
 
+    #: Bodies further apart than this in z occupy different layers (a drone
+    #: over a ground robot) and do not block each other's standing spots.
+    LAYER_SEPARATION_Z = 0.6
+
     @property
     def robot_separation(self) -> float:
         if self._nav_robot_separation is None:
@@ -326,11 +330,20 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
         if robots is None:
             robots = getattr(self.env, "robots", None) or []
         occupied = []
+        my_z = float(self.robot.get_position_orientation()[0][2])
         for other in robots:
             if other is self.robot:
                 continue
-            other_xy = other.get_position_orientation()[0][:2]
-            occupied.append((float(other_xy[0]), float(other_xy[1])))
+            other_position = other.get_position_orientation()[0]
+            # A hovering drone and a ground robot are not in each other's
+            # way: the drone flies at 1.2 m, the Jackal is 0.7 m tall and the
+            # Ridgeback 0.57. With nine robots in a 2.7 m2 kitchen (2026-09-13)
+            # a drone parked over the bookcase was costing the arm every spot
+            # it could have stood at. Bodies more than a robot height apart in
+            # z are different layers; the same-layer rule is unchanged.
+            if abs(float(other_position[2]) - my_z) > self.LAYER_SEPARATION_Z:
+                continue
+            occupied.append((float(other_position[0]), float(other_position[1])))
         if self._nav_destinations is not None:
             # The bodies are where everyone *was*; the reservations are where
             # everyone is *going*. Under concurrency only the second set is
@@ -456,16 +469,146 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
         # teleported into a wall and toppled instead of reporting failure.
         return None
 
+    # -- what an object rests on -------------------------------------------
+
+    @staticmethod
+    def _aabb_of(obj):
+        """``(lo, hi)`` world AABB of @obj, from ``aabb`` when the object has
+        one, else from its position and ``aabb_extent`` (the CPU fakes)."""
+        aabb = getattr(obj, "aabb", None)
+        if aabb is not None and not callable(aabb):
+            lo, hi = aabb
+            return [float(v) for v in lo], [float(v) for v in hi]
+        position = obj.get_position_orientation()[0]
+        extent = getattr(obj, "aabb_extent", None) or (0.0, 0.0, 0.0)
+        lo = [float(position[i]) - float(extent[i]) / 2.0 for i in range(3)]
+        hi = [float(position[i]) + float(extent[i]) / 2.0 for i in range(3)]
+        return lo, hi
+
+    def support_of(self, obj):
+        """The piece of furniture @obj is resting on, or None.
+
+        A die on a bookcase is 0.9 m from nowhere a robot can stand: the
+        sampler wants a spot 0.3-0.9 m from the die, and every such spot is
+        inside the bookcase's footprint or in the wall behind it. In the first
+        routed LL episode (2026-09-13) nine robots spent 2000 steps on that,
+        alternating NO_SPACE_AROUND_TARGET on the die with TOO_FAR after
+        navigating to the bookcase, because the gate was the die's own. What
+        a person does is stand at the bookcase and reach across it, so both
+        the sampler (:meth:`_navigate_to_obj`) and the reach gate
+        (``interaction_radius_for``) use the support when there is one.
+
+        Geometric, not a physics query: the highest non-walkable, non-robot
+        object whose footprint contains @obj's xy and whose top is at @obj's
+        bottom (within 0.15 m). Floors are excluded -- a die on the floor is
+        approached as before -- and so is anything with no room to stand on
+        that is smaller than the object itself.
+        """
+        scene = getattr(self.robot, "scene", None)
+        objects = getattr(scene, "objects", None)
+        if not objects:
+            return None
+        try:
+            lo, _ = self._aabb_of(obj)
+            x, y = self._object_xy_of(obj)
+        except Exception:  # noqa: BLE001
+            return None
+        bottom = lo[2]
+        best, best_top = None, None
+        for other in objects:
+            if other is obj or getattr(other, "category", None) == "agent":
+                continue
+            if self.is_walkable_surface(other) or hasattr(other, "action_dim"):
+                continue
+            try:
+                o_lo, o_hi = self._aabb_of(other)
+            except Exception:  # noqa: BLE001
+                continue
+            margin = 0.05
+            if not (o_lo[0] - margin <= x <= o_hi[0] + margin and o_lo[1] - margin <= y <= o_hi[1] + margin):
+                continue
+            top = o_hi[2]
+            if top > bottom + 0.15 or top < bottom - 0.15:
+                continue
+            if best_top is None or top > best_top:
+                best, best_top = other, top
+        return best
+
+    @staticmethod
+    def _object_xy_of(obj):
+        position = obj.get_position_orientation()[0]
+        return float(position[0]), float(position[1])
+
+    def navigate_to_room(self, room: str):
+        """Drive to a free spot inside @room (a room instance, ``kitchen_0``).
+
+        The room listing is strictly local, so before this the only way into
+        another room was to name an object there -- which an agent cannot do
+        for a room whose objects it has never seen. The prompt now lists every
+        room in the house and says navigate_to takes a room (user,
+        2026-09-13). Same filters as an object target: traversable, clear of
+        other robots' bodies and reservations. A generator like every other
+        primitive; all checks run on the first ``next()``.
+        """
+        seg_map = self._seg_map()
+        names = getattr(seg_map, "room_ins_name_to_ins_id", None) or {}
+        if room not in names:
+            raise ActionPrimitiveError(
+                ActionPrimitiveError.Reason.PLANNING_ERROR,
+                f"No room named {room!r} in this house. Rooms: {', '.join(sorted(names)) or 'unknown'}.",
+                {"room": room, "reason_code": "INVALID_TARGET"},
+            )
+        import random  # noqa: PLC0415
+
+        attempts = self._nav_sampling_attempts or 200
+        rejected = {"room": 0, "trav": 0, "robots": 0}
+        for _ in range(attempts):
+            _, point = seg_map.get_random_point_by_room_instance(room)
+            if point is None:
+                break
+            xy = (float(point[0]), float(point[1]))
+            if self._room_of(xy) not in (room, None):
+                rejected["room"] += 1
+                continue
+            if not self._is_traversable(xy):
+                rejected["trav"] += 1
+                continue
+            if not self._clear_of_other_robots(xy):
+                rejected["robots"] += 1
+                continue
+            if self._nav_destinations is not None:
+                self._nav_destinations.reserve(self.robot.name, xy)
+            pose = th.tensor([xy[0], xy[1], random.uniform(-math.pi, math.pi)], dtype=th.float32)
+            yield from self._navigate_to_pose(pose)
+            return
+        self._nav_last_rejections = dict(rejected)
+        raise ActionPrimitiveError(
+            ActionPrimitiveError.Reason.PLANNING_ERROR,
+            f"Cannot find a free spot to stand in {room}: every sampled point was blocked by "
+            "furniture, walls or other robots. Wait for them to move, or go elsewhere.",
+            {"room": room, "rejected_by": dict(rejected), "reason_code": "NO_SPACE_IN_ROOM"},
+        )
+
     def _navigate_to_obj(self, obj, eef_pose=None, skip_obstacle_update=False):
         """Same as upstream, minus the keyword the symbolic override rejects.
 
         The inherited version forwards ``skip_obstacle_update`` into
         ``_navigate_to_pose``, but the symbolic override's signature is
         ``_navigate_to_pose(self, pose_2d)``, so that call is a ``TypeError``.
+
+        An object resting on furniture is approached by way of the furniture
+        (see :meth:`support_of`): the spot is sampled around the support, and
+        ``interaction_radius_for`` accepts anything that produces.
         """
-        pose = self._sample_pose_near_object(obj, eef_pose=eef_pose)
+        support = self.support_of(obj) if eef_pose is None else None
+        anchor = support if support is not None else obj
+        pose = self._sample_pose_near_object(anchor, eef_pose=eef_pose)
         if pose is None:
-            lo, hi = self.sampling_range_for(obj)
+            lo, hi = self.sampling_range_for(anchor)
+            if support is not None:
+                obj_label = f"{obj.name} (it rests on {support.name}, which is what you stand at)"
+            else:
+                obj_label = obj.name
             # This text goes into the prompt verbatim, so it has to say what an
             # agent can act on. "Could not find a valid base pose" describes the
             # sampler's internals; what the agent needs to know is that the
@@ -474,7 +617,7 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
             # is the move, not retrying.
             raise ActionPrimitiveError(
                 ActionPrimitiveError.Reason.PLANNING_ERROR,
-                f"Cannot reach {obj.name}: there is no free floor space around it to stand on "
+                f"Cannot reach {obj_label}: there is no free floor space around it to stand on "
                 f"(need a spot {lo:.1f}-{hi:.1f} m away, clear of walls, furniture and other agents). "
                 "Another agent may already be standing there. Try a different target, or wait for "
                 "them to move.",

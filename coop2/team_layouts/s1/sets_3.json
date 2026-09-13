@@ -1,12 +1,12 @@
 {
   "_comment": [
     "COOHAVIOR S1 robots, 3 sets (9 robots), for Merom_1_int -- all spawned together.",
-    "Robot names are type + team ordinal (user, 2026-09-13): teams are numbered 1.. in order of appearance, so with fewer than five sets the first set here (m5) is ridgeback_1 / jackal_1 / drone_1; the V4 set identity stays in `team` and `_v4_prim`.",
+    "Teams are team_1.. in order of appearance and robots are <type>_<team ordinal> (user, 2026-09-13; unified across every S1 layout). The V4 set a team came from (M5, M3, ...) survives only in each robot's _v4_prim.",
     "",
     "Everyone starts in living_room_0, packed around the centroid of its largest free",
     "region (decision: user, 2026-09-12). The room is the most open one measured as",
     "traversable floor (no-object map) minus the footprints of every object V4 keeps,",
-    "eroded by the largest robot footprint; admissible area per room, m2: living_room_0 12.0, childs_room_0 4.9, bedroom_0 3.6, kitchen_0 2.7, corridor_0 0.6, dining_room_0 0.0.",
+    "eroded by the largest robot footprint; admissible area per room, team_3: living_room_0 12.0, childs_room_0 4.9, bedroom_0 3.6, kitchen_0 2.7, corridor_0 0.6, dining_room_0 0.0.",
     "Ground vehicles are placed nearest-to-centroid first in V4's route order M5, M3,",
     "M2, M1, M4 with pairwise clearance = sum of half-footprints + 0.15 m, so sets_<k>",
     "is exactly the first 3k robots of sets_5 and every smaller team stays compact.",
@@ -32,7 +32,7 @@
         2.44,
         7.98
       ],
-      "team": "m5",
+      "team": "team_1",
       "_v4_prim": "ridgeback_franka_s1_m5",
       "_v4_staged_position": [
         -1.1703,
@@ -48,7 +48,7 @@
         2.44,
         7.23
       ],
-      "team": "m5",
+      "team": "team_1",
       "_v4_prim": "jackal_s1_m5",
       "_v4_staged_position": [
         -0.8904,
@@ -64,7 +64,7 @@
         7.23,
         1.2
       ],
-      "team": "m5",
+      "team": "team_1",
       "_v4_prim": "crazyflie_s1_m5",
       "_v4_staged_position": [
         -1.2314,
@@ -80,7 +80,7 @@
         2.44,
         8.63
       ],
-      "team": "m3",
+      "team": "team_2",
       "_v4_prim": "ridgeback_franka_s1_m3",
       "_v4_staged_position": [
         -2.2202,
@@ -96,7 +96,7 @@
         1.69,
         8.09
       ],
-      "team": "m3",
+      "team": "team_2",
       "_v4_prim": "jackal_s1_m3",
       "_v4_staged_position": [
         -1.9403,
@@ -112,7 +112,7 @@
         8.09,
         1.2
       ],
-      "team": "m3",
+      "team": "team_2",
       "_v4_prim": "crazyflie_s1_m3",
       "_v4_staged_position": [
         -2.2813,
@@ -128,7 +128,7 @@
         1.69,
         7.34
       ],
-      "team": "m2",
+      "team": "team_3",
       "_v4_prim": "ridgeback_franka_s1_m2",
       "_v4_staged_position": [
         -0.3223,
@@ -144,7 +144,7 @@
         3.19,
         8.79
       ],
-      "team": "m2",
+      "team": "team_3",
       "_v4_prim": "jackal_s1_m2",
       "_v4_staged_position": [
         -0.0424,
@@ -160,7 +160,7 @@
         8.79,
         1.2
       ],
-      "team": "m2",
+      "team": "team_3",
       "_v4_prim": "crazyflie_s1_m2",
       "_v4_staged_position": [
         -0.3834,
