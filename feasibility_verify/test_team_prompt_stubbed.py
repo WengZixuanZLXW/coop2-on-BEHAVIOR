@@ -48,7 +48,9 @@ SHARED_RULES = ("TOO_FAR", "unreachable", "held by", "room listing",
                 # Cross-room navigation: a task id is a target from any room.
                 "valid navigate_to target", "through the house",
                 # Rooms are navigable by name.
-                "Rooms in this house", "navigate_to(<room name>)")
+                "Rooms in this house", "navigate_to(<room name>)",
+                # Only a base-locked robot needs a carrier; a drone carries its own load.
+                "needs a carrier", "carries what it holds by")
 
 
 def main() -> int:

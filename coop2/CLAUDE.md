@@ -1701,6 +1701,21 @@ the die" (it can; the team's brain misread the lift rule for the die), and
 so on for six rounds. The robot did what it was told. The misreading is a
 prompt problem to watch, not an engine one.
 
+## A drone that used a carrier it did not need (2026-09-13)
+
+In the second routed run drone_2 grasped the die, loaded it onto jackal_2,
+flew to the cabinet, unloaded it and placed it -- two actions and a round of
+waiting for nothing; it placed C2, C3 and C4 directly later. Its team's
+reasoning at step 0 says why: "jackal_2 serves as the mobile carrier because
+the drone cannot independently handle the route." False, and the prompt
+invited it: the carrier rule explained base-lock and then called the
+carrier handoff "the division of labour the task is built around", while
+nothing said which robots do NOT need one. Both system prompts now say it
+outright: only a robot marked `[base locks while holding]` needs a carrier;
+a drone or an unmarked arm carries what it holds by itself, and routing its
+cargo through a carrier is a detour. Whether the model then still does it
+is what the next run shows; the rule is the part that was ours to fix.
+
 ## Open defects
 
 Fixed ones are not listed here -- the fix and its reasoning live in the commit

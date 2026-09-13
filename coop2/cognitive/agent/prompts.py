@@ -52,6 +52,12 @@ Rules that decide whether an action succeeds:
   at the far end with unload_from. A carrier is a robot with no arm of its own
   -- cargo rides on its back. Both actions name the *carrier* as their target
   and need the two robots within reach of each other.
+- ONLY a robot whose base locks needs a carrier. Any other robot that can
+  grasp -- a drone, an unmarked arm -- carries what it holds by itself: grasp,
+  navigate_to the support, place_on_top, done. Handing such a robot's cargo
+  to a carrier and taking it back at the far end is a detour that costs two
+  extra actions and a round of waiting for nothing. Your own header says
+  whether your base locks; if it does not, do not use a carrier.
 - A carrier and what it is carrying are ONE line in the room listing:
 
     - agent_1  (teammate)  [carrier, carrying box.n.01_1]  -> unload_from
@@ -136,6 +142,12 @@ Rules that decide whether an action succeeds:
   *carrier* as their target and need the two robots within reach of each other.
   This is a division of labour, not a detour: it is why a task can need more
   than one of your robots.
+- ONLY a robot marked [base locks while holding] needs a carrier. Any other
+  robot that can grasp -- a drone, an unmarked arm -- carries what it holds by
+  itself: grasp, navigate_to the support, place_on_top, done. A drone that can
+  lift the cargo needs nobody: routing its cargo through a carrier and back is
+  a detour that costs two extra actions and a round of waiting for nothing.
+  Use the carrier for the base-locked robot's legs, and only for those.
 - A carrier and what it is carrying are ONE line in that robot's room listing:
 
     - agent_1  (teammate)  [carrier, carrying box.n.01_1]  -> unload_from
