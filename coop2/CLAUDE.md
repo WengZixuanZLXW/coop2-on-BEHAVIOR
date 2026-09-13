@@ -30,6 +30,7 @@ This file is only the operational summary.
 | — repair shim, viz stub | `coop2/_repair_shim/`, `coop2/cognitive/viz/` | **done** (no-op by design) |
 | BDDL tasks + cached instances | `bddl3/.../{coop_two_apples_pomaria,coop_nine_apples_hall,v4_s1_v4_ll}/`, `feasibility_verify/sample_*.py` | **three activities, all GPU-verified and all solved**; two apples solves, v4_s1_v4_ll at env_step 504, nine apples at 4434 (2026-09-12) |
 | Robots from outside BEHAVIOR | `coop2/robot_configs/`, `coop2/omnigibson_definitions/fix_*.py` | **Ridgeback+UR5, Jackal and Crazyflie imported from upstream URDFs** (2026-09-11); URDF colours restored by `fix_robot_visual_materials.py`; the Crazyflie holds altitude (driven z joint owned by `arm_0`, `base_footprint_link_name: world`, navigate keeps world z) (2026-09-12) |
+| COOHAVIOR S2/S3 families | `bddl3/.../v4_s{2,3}_v4_{ll,lh,hl,hh}/` (each with `route.json`), `feasibility_verify/make_v4_s2_s3_definitions.py`, `sample_v4_task.py`, `make_shared_spawn_layouts.py`, `coop2/team_layouts/s{2,3}/sets_{1..5}.json`, `v4_s{2,3}_v4_ll_scene.json` | **defined, sampled, layouts written, scenes load** (2026-09-13); ported by kind and room, not coordinate (COOHAVIOR's Beechwood frame is not ours); no episode run yet |
 | COOHAVIOR S1 family | `bddl3/.../v4_s1_v4_{ll,lh,hl,hh}/` (each with `route.json`), `feasibility_verify/sample_v4_s1_task.py`, `coop2/team_layouts/s1/sets_{1..5}.json` (shared spawn in living_room_0, drones hovering at 1.2 m over their Jackal; generator `make_s1_shared_spawn_layouts.py`) | **all four routed, BDDLs corrected to the routes, re-sampled with every node bound and goal false at load** (2026-09-12); cargo is `die.n.01` (8 g, arm or drone) or `notebook.n.01` (20 g, arm only) per `tasks.modified.json`; HL's goals are its routes' destinations, so it no longer ends at env_step 0 |
 | M9 wiring (BehaviorTask + `check_goal` termination) | `coop2/behavior_env/coop_env.py` | **done**, commits `e4d28a98`…`5fda3d28` |
 
@@ -1760,7 +1761,36 @@ dataset (PORTING_COOHAVIOR.md, "S2 and S3"). One generator
 bindings against allowed room sets; `make_shared_spawn_layouts.py` writes
 `s2/sets_{1..5}.json` (living_room_1) and `s3/sets_{1..5}.json` (bedroom_0).
 S2's private office has no breakfast table, so its two desks are C4/C5; its
-ottoman is `footstool.n.01`.
+ottoman is `footstool.n.01`. BEHAVIOR binds `inroom` objects to one room
+instance per type, so S2's fifth station is bathroom_0 (its sink; the serial
+route has nine nodes) and S3's fourth is bathroom_1 (a low cabinet and its
+sink) -- the sampler's own error found that.
+
+**All eight instances sampled and saved** (2026-09-13, one pass, every
+support bound in its expected room, cargo `ontop` its floor after a 200-step
+settle, goal false at load): `Beechwood_0_int_task_v4_s2_v4_{ll,lh,hl,hh}`
+and `Beechwood_1_int_task_v4_s3_v4_{ll,lh,hl,hh}`. Two bindings worth
+knowing: S2's `bookcase.n.01_1` bound to `bookcase_owvfik_2`, the kitchen's
+wall shelf at 2.06 m (the sampler cannot prefer the floor-standing owvfik_0;
+the symbolic gate is planar so it still works); S3's two playroom tables
+bound the other way round from COOHAVIOR's order (uhrsex is C8, skczfi_0 is
+C9). `inspect_scene --view drone_1` on `s2/sets_3` and `s3/sets_3` put all
+nine robots exactly where asked (moved 0.000), printed `[route] ... 9 nodes`
+/ `10 nodes` with the lift table, and rendered the rooms line, the listing
+and the route block with `it starts ontop(die.n.01_1, floor.n.01_1)`.
+
+Running one:
+
+```bash
+OMNIGIBSON_HEADLESS=1 python -u -m coop2.experiment.run_individual \
+  --team-config coop2/team_layouts/s2/sets_3.json \
+  --scene Beechwood_0_int --room living_room_1 --bddl-activity v4_s2_v4_ll \
+  --steps 8000 --seed 0 --time-limit-seconds 0 --model gpt-5.6-luna --llm-quiet
+```
+
+(S3: `--team-config coop2/team_layouts/s3/sets_3.json --scene Beechwood_1_int
+--room bedroom_0 --bddl-activity v4_s3_v4_ll`.) No episode has been run on
+S2/S3 yet.
 
 ## Open defects
 
