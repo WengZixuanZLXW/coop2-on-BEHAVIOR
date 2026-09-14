@@ -412,6 +412,33 @@ def main() -> int:
     gate = ctrl_p.interaction_radius_for(die)
     assert gate > plain, (gate, plain)
     assert gate >= ctrl_p.interaction_radius_for(bookcase), "reaching across the support is never stricter than reaching the support"
+
+    print("test: at a wide support's edge counts as reaching what is on it; a floor never does")
+    bed = FakeObject("bed_1", [5.0, 0.0, 0.55], aabb_extent=(2.1, 1.7, 1.1))         # x 3.95..6.05
+    far_die = FakeObject("die_far", [5.65, -0.4, 0.57], aabb_extent=(0.04, 0.04, 0.04))
+    ctrl_p.robot.scene.objects += [bed, far_die]
+    assert ctrl_p.support_of(far_die) is bed
+    # Open side, at the OUTER limit of the band the edge sampler draws from:
+    # centre = radius + clearance margin + reach from the footprint. The gate
+    # must accept everything the sampler can produce, so this is the contract.
+    band = ctrl_p.robot_radius + ctrl_p._nav_clearance_margin + ctrl_p._nav_reach
+    ctrl_p.robot.position = FakeVector([3.95 - band, -0.4, 0.0])
+    assert ctrl_p.distance_to(far_die) > ctrl_p.interaction_radius_for(far_die), "by centre distance alone this is TOO_FAR"
+    ctrl_p._require_near(far_die, "grasp", "grasp")             # must not raise
+    ctrl_p.robot.position = FakeVector([3.95 - band - 0.2, -0.4, 0.0])   # a step further back: no longer at the edge
+    try:
+        ctrl_p._require_near(far_die, "grasp", "grasp"); raise AssertionError("0.2 m beyond the band must be TOO_FAR")
+    except FakeActionPrimitiveError:
+        pass
+    floor_die = FakeObject("die_floor", [5.65, -0.4, 0.02], aabb_extent=(0.04, 0.04, 0.04))
+    ctrl_p.robot.scene.objects += [floor_die]
+    assert ctrl_p.support_of(floor_die) is None
+    try:
+        ctrl_p._require_near(floor_die, "grasp", "grasp")
+        raise AssertionError("a die on the floor 2 m away must be TOO_FAR")
+    except FakeActionPrimitiveError as error:
+        assert "TOO_FAR" in str(error) or getattr(error, "metadata", {}).get("reason_code") == "TOO_FAR", error
+    ok("edge of a bed reaches a die on it; the floor gives no such credit")
     list(ctrl_p._navigate_to_obj(die))
     assert ctrl_p.distance_to(bookcase) <= ctrl_p.interaction_radius_for(bookcase)
     assert ctrl_p.distance_to(die) <= gate, (ctrl_p.distance_to(die), gate)

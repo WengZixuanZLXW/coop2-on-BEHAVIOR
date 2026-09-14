@@ -88,10 +88,21 @@ PLAN RESPONSE:
 
 ENVIRONMENT_RULES = """## 2. ENVIRONMENT RULES
 Your robots act through high-level primitives, not joint commands. Each one
-takes many simulation steps: driving across a room costs 30 ticks per metre, so
+takes many simulation steps: driving across a room costs 20 ticks per metre, so
 distance is the main cost you control. None of them can see -- each is given a
 symbolic description of the room it is standing in, and only that room, and
 those descriptions are listed below one robot at a time.
+
+What each action costs, in ticks (one tick is one simulation step, 1/30 s):
+- navigate_to: 20 x the metres driven, plus about 10 to settle on arrival.
+  Five metres is roughly 110 ticks. This is where almost all of a robot's
+  time goes, so when you make one robot wait for another, size the wait by
+  the other's travel, not by its grasp.
+- grasp, place_on_top, load_onto, unload_from, open, close, toggle: nearly
+  instant -- 1 to about 10 ticks.
+- wait(n): n ticks plus one to issue it, n at most 600.
+- An action refused before it starts (TOO_FAR, held by another robot, nothing
+  in the gripper) costs 1 tick. One that fails part-way costs about 50.
 
 Rules that decide whether an action succeeds:
 - To grasp, place, open or toggle an object a robot must be closer to it than

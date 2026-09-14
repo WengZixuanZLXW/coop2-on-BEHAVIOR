@@ -370,17 +370,45 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
         return seg_map.get_room_instance_by_point(xy)
 
     def _target_rooms(self, obj, target_xy) -> Sequence[Optional[str]]:
-        """Rooms the target counts as being in.
+        """Rooms the target counts as being in -- the world model's rule.
 
-        ``in_rooms`` is static scene metadata assigned at load time and is
-        never updated when an object moves, and objects added through the env
-        config have none at all -- so fall back to a live point query, exactly
-        as the upstream sampler does.
+        Fixed furniture keeps its static ``in_rooms`` annotation; anything that
+        can move is point-queried where it stands now, falling back to the
+        annotation only when the point lands on no room (a boundary cell).
+        This mirrors ``world_state.rooms_of`` on purpose: the prompt and the
+        sampler must agree on where a thing is.
+
+        They did not, and it cost every S1 LL run of 2026-09-13 its last route
+        node. This used to prefer ``in_rooms`` whenever present, and ``in_rooms``
+        is written once at load -- the die was sampled in childs_room_0 and
+        carried nine stations to a bed in bedroom_0. Every navigate to it after
+        that rejected all 200 candidate poses with ``{'room': 200, 'trav': 0,
+        'robots': 0}``: the poses were fine, they were just in the room the die
+        was actually in rather than the one its label said. The world model
+        meanwhile told the agent, correctly, that the die was in the bedroom.
+        Furniture never showed it because furniture never moves; the first
+        object anyone had to walk up to *after* it changed rooms was that die.
         """
-        in_rooms = getattr(obj, "in_rooms", None)
-        if in_rooms:
-            return list(in_rooms)
-        return [self._room_of(target_xy)]
+        in_rooms = list(getattr(obj, "in_rooms", None) or [])
+        if in_rooms and self._is_fixed(obj):
+            return in_rooms
+        live = self._room_of(target_xy)
+        return [live] if live else (in_rooms or [None])
+
+    def _is_fixed(self, obj) -> bool:
+        """Whether @obj is one of the scene's immovable objects.
+
+        ``scene.fixed_objects`` is a name -> object dict (so membership must be
+        tested against its values, not the dict), and the CPU fakes may carry a
+        plain ``fixed_base`` flag instead.
+        """
+        scene = getattr(self.robot, "scene", None)
+        fixed = getattr(scene, "fixed_objects", None)
+        if fixed:
+            values = fixed.values() if hasattr(fixed, "values") else fixed
+            if obj in set(values):
+                return True
+        return bool(getattr(obj, "fixed_base", False))
 
     def _facing_yaw_offset(self) -> float:
         """Yaw correction that leaves the target in front of the arm.
@@ -401,6 +429,7 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
         plan_with_open_gripper=False,
         sampling_attempts=None,
         skip_obstacle_update=False,
+        prefer_xy=None,
     ):
         """cuRobo-free replacement for the inherited sampler.
 
@@ -430,17 +459,26 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
         # reproduced by hand. Reporting the breakdown at the moment of failure
         # is cheaper than guessing which state the episode was in.
         rejected = {"room": 0, "trav": 0, "robots": 0}
+        # Wide furniture is approached at its edge, not on a ring round its
+        # centre (see _edge_candidate). With a preferred point -- the object
+        # resting on it -- the first several valid spots are collected and the
+        # one nearest that point wins, so the robot stands where the die is.
+        edge_band = eef_pose is None and not self.is_walkable_surface(obj) and not self.reach_across(obj)
+        pool = []
         for _ in range(attempts):
-            distance = th.rand(1).item() * (distance_hi - distance_lo) + distance_lo
-            yaw = th.rand(1).item() * 2.0 * math.pi - math.pi
-            candidate = th.tensor(
-                [
-                    float(target_xy[0]) + distance * math.cos(yaw),
-                    float(target_xy[1]) + distance * math.sin(yaw),
-                    yaw + yaw_offset,
-                ],
-                dtype=th.float32,
-            )
+            if edge_band:
+                candidate = self._edge_candidate(obj, prefer_xy)
+            else:
+                distance = th.rand(1).item() * (distance_hi - distance_lo) + distance_lo
+                yaw = th.rand(1).item() * 2.0 * math.pi - math.pi
+                candidate = th.tensor(
+                    [
+                        float(target_xy[0]) + distance * math.cos(yaw),
+                        float(target_xy[1]) + distance * math.sin(yaw),
+                        yaw + yaw_offset,
+                    ],
+                    dtype=th.float32,
+                )
             # Room first: it is the cheapest of the three and, on a scene
             # where the target has no room, it is a no-op rather than a
             # rejection (target_rooms is then [None] and _room_of returns
@@ -455,6 +493,17 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
             if not self._clear_of_other_robots(candidate[:2]):
                 rejected["robots"] += 1
                 continue
+            if edge_band and prefer_xy is not None:
+                pool.append((math.hypot(float(candidate[0]) - float(prefer_xy[0]),
+                                        float(candidate[1]) - float(prefer_xy[1])), candidate))
+                if len(pool) < 8:
+                    continue
+                candidate = min(pool, key=lambda item: item[0])[1]
+            if self._nav_destinations is not None:
+                self._nav_destinations.reserve(self.robot.name, candidate[:2])
+            return candidate
+        if pool:
+            candidate = min(pool, key=lambda item: item[0])[1]
             if self._nav_destinations is not None:
                 self._nav_destinations.reserve(self.robot.name, candidate[:2])
             return candidate
@@ -563,11 +612,95 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
             if (o_hi[0] - o_lo[0]) < obj_dx or (o_hi[1] - o_lo[1]) < obj_dy:
                 continue
             top = o_hi[2]
-            if top > bottom + 0.15 or top < bottom - 0.15:
+            # Resting on it: the object's bottom lies within the support's
+            # vertical span, and above its base. "Top within 0.15 m of the
+            # bottom" was the old test, and a bed fails it -- a bed's AABB top is
+            # its headboard, 0.5 m above the mattress the die sits on -- so the
+            # die on the C9 bed had no support and fell back to being its own
+            # approach target. The base margin keeps a die on the floor from
+            # being credited to the table standing over it.
+            if not (o_lo[2] + 0.10 <= bottom <= top + 0.15):
                 continue
-            if best_top is None or top > best_top:
-                best, best_top = other, top
+            # Prefer the surface the object actually sits on: a flat top at the
+            # object's bottom beats a taller enclosing span; among the rest, the
+            # nearest top above.
+            gap = top - bottom
+            rank = (0, 0.0) if abs(gap) <= 0.15 else (1, gap if gap > 0 else 10.0 + abs(gap))
+            if best_top is None or rank < best_top:
+                best, best_top = other, rank
         return best
+
+    def reach_across(self, support) -> bool:
+        """Can a robot stand at @support's edge and reach anything on it?
+
+        True for a cabinet, a bookcase, a fridge top, a table: their narrower
+        half-extent is within arm reach, so the middle is reachable from the
+        edge. False for a bed -- 2.1 x 1.7 m, half-extent 0.85 against a 0.6 m
+        reach -- and treating it like a cabinet is worse than not recognising
+        it: navigating "to the bed" samples a 1.9-2.5 m ring around its centre,
+        which in Merom_1_int's bedroom lands in walls and next door (4 of 4
+        attempts failed that way on 2026-09-13, room 124 / trav 67 / robots 9).
+        An object on a wide support is approached where it is, and is out of
+        reach from the floor if it sits mid-mattress -- which is true.
+        """
+        try:
+            extent = support.aabb_extent
+            half_min = min(float(extent[0]), float(extent[1])) / 2.0
+        except Exception:  # noqa: BLE001
+            return True
+        return half_min <= self._nav_reach
+
+    def approach_anchor(self, obj):
+        """What navigate_to(@obj) samples around and the reach gate measures to.
+
+        The support when the object rests on furniture a robot can reach
+        across; otherwise the object itself. One rule for the sampler and for
+        ``interaction_radius_for``, so anything NAVIGATE_TO produces is in range.
+        """
+        support = self.support_of(obj)
+        return support if support is not None else obj
+
+    def edge_distance_to(self, obj, xy) -> float:
+        """Distance from @xy to @obj's footprint (its xy AABB); 0 inside it."""
+        lo, hi = self._aabb_of(obj)
+        dx = max(lo[0] - float(xy[0]), 0.0, float(xy[0]) - hi[0])
+        dy = max(lo[1] - float(xy[1]), 0.0, float(xy[1]) - hi[1])
+        return math.hypot(dx, dy)
+
+    def _edge_candidate(self, obj, prefer_xy=None):
+        """One (x, y, yaw) just outside @obj's footprint, facing it.
+
+        A ring around the centre is the wrong shape for a wide object: for a
+        2.1 m bed the ring is 1.9-2.5 m out and lands in the walls of any
+        bedroom that fits the bed. What a person does is walk up to the side of
+        the bed. So: a point on the footprint's perimeter, pushed out by the
+        robot's own radius plus up to one arm's reach. With @prefer_xy (the
+        thing resting on it) the perimeter point is mirrored onto the object's
+        half of the footprint three times in four, so the robot ends up on the
+        side the object is on when that side is standable, and elsewhere
+        otherwise. Floors never come here: they are walked on, not stood at.
+        """
+        lo, hi = self._aabb_of(obj)
+        w, d = max(hi[0] - lo[0], 1e-3), max(hi[1] - lo[1], 1e-3)
+        u = th.rand(1).item() * 2.0 * (w + d)
+        if u < w:
+            bx, by, nx, ny = lo[0] + u, lo[1], 0.0, -1.0
+        elif u < w + d:
+            bx, by, nx, ny = hi[0], lo[1] + (u - w), 1.0, 0.0
+        elif u < 2 * w + d:
+            bx, by, nx, ny = hi[0] - (u - w - d), hi[1], 0.0, 1.0
+        else:
+            bx, by, nx, ny = lo[0], hi[1] - (u - 2 * w - d), -1.0, 0.0
+        if prefer_xy is not None and th.rand(1).item() < 0.75:
+            cx, cy = (lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0
+            if nx != 0.0 and (bx - cx) * (float(prefer_xy[0]) - cx) < 0:
+                bx, nx = 2 * cx - bx, -nx
+            if ny != 0.0 and (by - cy) * (float(prefer_xy[1]) - cy) < 0:
+                by, ny = 2 * cy - by, -ny
+        out = self.robot_radius + self._nav_clearance_margin + th.rand(1).item() * self._nav_reach
+        x, y = bx + nx * out, by + ny * out
+        yaw = math.atan2(by - y, bx - x) + self._facing_yaw_offset()
+        return th.tensor([x, y, yaw], dtype=th.float32)
 
     @staticmethod
     def _object_xy_of(obj):
@@ -677,9 +810,10 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
         (see :meth:`support_of`): the spot is sampled around the support, and
         ``interaction_radius_for`` accepts anything that produces.
         """
-        support = self.support_of(obj) if eef_pose is None else None
-        anchor = support if support is not None else obj
-        pose = self._sample_pose_near_object(anchor, eef_pose=eef_pose)
+        anchor = self.approach_anchor(obj) if eef_pose is None else obj
+        support = anchor if anchor is not obj else None
+        prefer = obj.get_position_orientation()[0][:2] if support is not None else None
+        pose = self._sample_pose_near_object(anchor, eef_pose=eef_pose, prefer_xy=prefer)
         if pose is None:
             lo, hi = self.sampling_range_for(anchor)
             if support is not None:

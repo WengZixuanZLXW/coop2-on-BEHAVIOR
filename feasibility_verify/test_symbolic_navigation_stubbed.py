@@ -193,6 +193,8 @@ class FakeScene:
         self.seg_map = seg_map
         self.trav_map = trav_map
         self.robots = []
+        # name -> object, as OmniGibson's is (membership by value, not by name).
+        self.fixed_objects = {}
 
 
 class FakeRobot:
@@ -268,15 +270,33 @@ def main() -> int:
     assert abs(delta) < 1e-4, (float(pose[2]), expected)
     ok("yaw == sampling_yaw + pi - mean(arm_workspace_range)")
 
-    print("test 3: explicit in_rooms wins over the live point query")
-    far = FakeObject("far_apple", [10.0, 0.0, 0.4], in_rooms=["hall_0"])
+    print("test 3: a FIXED object's in_rooms wins over the live point query")
+    far = FakeObject("far_shelf", [10.0, 0.0, 0.4], in_rooms=["hall_0"])
+    scene.fixed_objects[far.name] = far
     pose = controller._sample_pose_near_object(far)
     assert pose is not None
     assert scene.seg_map.get_room_instance_by_point(pose[:2]) == "hall_0"
-    ok("in_rooms=['hall_0'] respected")
+    ok("fixed: in_rooms=['hall_0'] respected")
+
+    print("test 3b: a MOVABLE object is sampled where it stands, not where its label says")
+    # The S1 LL failure of 2026-09-13: a die labelled childs_room_0 at load,
+    # carried to a bed in bedroom_0; every candidate around it was rejected
+    # {'room': 200, 'trav': 0, 'robots': 0} because the sampler filtered for
+    # the label. Here: labelled hall_0, standing in the kitchen.
+    carried = FakeObject("carried_die", [1.0, 0.5, 0.4], in_rooms=["hall_0"])
+    assert carried.name not in scene.fixed_objects
+    pose = controller._sample_pose_near_object(carried)
+    assert pose is not None, "a movable object in a reachable room must be reachable"
+    assert scene.seg_map.get_room_instance_by_point(pose[:2]) == "kitchen_0", pose
+    ok("movable: stale in_rooms=['hall_0'] ignored, sampled in kitchen_0 where it is")
 
     print("test 4: unreachable room -> None -> PLANNING_ERROR, not a crash")
+    # Fixed on purpose: a fixed object's label is trusted, so a shelf labelled
+    # kitchen_0 that stands at x=10 (hall_0) has no candidate in its room. (A
+    # movable object in that state is the stale-label case test 3b covers, and
+    # is now reachable.)
     impossible = FakeObject("ghost", [10.0, 0.0, 0.4], in_rooms=["kitchen_0"])
+    scene.fixed_objects[impossible.name] = impossible
     assert controller._sample_pose_near_object(impossible) is None
     generator = controller._navigate_to_obj(impossible)
     try:
@@ -458,6 +478,33 @@ def main() -> int:
     assert shelf_ctrl.support_of(die) is bookcase
     assert shelf_ctrl.support_of(apple_on_floor) is None, "a floor is walked on, not reached across"
     assert shelf_ctrl.support_of(bookcase) is None
+    assert shelf_ctrl.approach_anchor(die) is bookcase, "narrow furniture: stand at it and reach across"
+    # A bed: the AABB top is the headboard, 0.5 m above the mattress the die
+    # sits on. It IS the support (the die rests within its span, above its
+    # base) but it is too wide to reach across, so the die is approached where
+    # it is -- a ring around a 2.1 m bed's centre lands in the walls.
+    bed = FakeObject("bed_0", [5.0, 0.0, 0.55], aabb_extent=(2.1, 1.7, 1.1))       # z-span 0.0 .. 1.1
+    die_on_bed = FakeObject("die_5", [4.4, 0.5, 0.57], aabb_extent=(0.04, 0.04, 0.04))  # bottom 0.55
+    shelf_scene.objects += [bed, die_on_bed]
+    assert shelf_ctrl.support_of(die_on_bed) is bed, "a die on the mattress rests on the bed, headboard or not"
+    assert not shelf_ctrl.reach_across(bed) and shelf_ctrl.reach_across(bookcase)
+    assert shelf_ctrl.approach_anchor(die_on_bed) is bed, "a wide support is still where you go -- to its edge"
+    for _ in range(40):
+        c = shelf_ctrl._edge_candidate(bed, prefer_xy=[4.4, 0.5])
+        gap = shelf_ctrl.edge_distance_to(bed, c[:2])
+        assert 0.0 < gap <= shelf_ctrl.robot_radius + shelf_ctrl._nav_clearance_margin + shelf_ctrl._nav_reach + 1e-6, gap
+    chosen = shelf_ctrl._sample_pose_near_object(bed, prefer_xy=[4.4, 0.5])
+    assert chosen is not None
+    assert shelf_ctrl.edge_distance_to(bed, chosen[:2]) <= shelf_ctrl.robot_radius + shelf_ctrl._nav_clearance_margin + shelf_ctrl._nav_reach + 1e-6
+    assert float(chosen[0]) < 5.0 or float(chosen[1]) > 0.3, f"should stand on the die's side, got {list(chosen)}"
+    assert shelf_ctrl.edge_distance_to(bed, [5.0, 0.0]) == 0.0
+    assert abs(shelf_ctrl.edge_distance_to(bed, [7.05, 0.0]) - 1.0) < 1e-6
+    assert shelf_ctrl.support_of(apple_on_floor) is None and shelf_ctrl.approach_anchor(apple_on_floor) is apple_on_floor
+    # A die on the floor under a table is not resting ON the table.
+    table = FakeObject("table_0", [7.0, 0.0, 0.4], aabb_extent=(1.2, 0.6, 0.8))        # z-span 0.0 .. 0.8
+    die_under_table = FakeObject("die_7", [7.0, 0.0, 0.02], aabb_extent=(0.04, 0.04, 0.04))
+    shelf_scene.objects += [table, die_under_table]
+    assert shelf_ctrl.support_of(die_under_table) is None, "at the table's base, not on it"
     # A robot rests on nothing; a die under a hovering drone is not its support.
     hover = FakeRobot(shelf_scene, name="drone_9", position=(2.1, 0.05, 1.25))
     hover.reset_joint_pos_aabb_extent = FakeVector([0.24, 0.24, 0.1])

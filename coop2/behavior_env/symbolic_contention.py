@@ -88,7 +88,7 @@ DEFAULT_GATED_PRIMITIVES = frozenset(
 DEFAULT_RADIUS_MARGIN = 0.05
 
 #: Ticks of travel per metre. One env step is 1/``action_frequency`` seconds
-#: (30 Hz by default), so 30 ticks/m is 1 s/m, i.e. a 1.0 m/s base. Tune it as
+#: (30 Hz by default), so 20 ticks/m is 0.67 s/m, i.e. a 1.5 m/s base. Tune it as
 #: an experiment variable: this number sets how expensive distance is relative
 #: to a decision.
 #:
@@ -111,7 +111,12 @@ DEFAULT_RADIUS_MARGIN = 0.05
 #:
 #: Any metric recorded at 60 ticks/m is **not comparable** with one recorded
 #: here -- travel is most of the tick budget, so every step count moves.
-DEFAULT_TRAVEL_TICKS_PER_METER = 30.0
+#:
+#: **20 since 2026-09-13** (user). Was 30 from 2026-09-11 and 60 before that; no
+#: step count recorded under one rate is comparable with one recorded under
+#: another. The prompts state the same figure and test_symbolic_contention
+#: fails if they part.
+DEFAULT_TRAVEL_TICKS_PER_METER = 20.0
 
 #: Ticks a ``wait`` holds for when the agent does not say. Long enough that a
 #: teammate's NAVIGATE_TO (300-500 ticks here) makes real progress during it.
@@ -226,7 +231,7 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
         if self._interaction_radius is not None:
             return self._interaction_radius
         support = self.support_of(obj)
-        if support is not None:
+        if support is not None and self.reach_across(support):
             # Standing at the support, reaching across it: navigate_to(obj)
             # samples around the support, so the robot ends within the
             # support's own radius of the support's centre, and the object is
@@ -345,6 +350,25 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
         radius = self.interaction_radius_for(obj)
         if distance <= radius:
             return
+        # Standing at the edge of what the object rests on counts as reaching
+        # it: the symbolic grasp teleports, and navigate_to(obj) puts the robot
+        # exactly there for wide furniture. Without this a die on the far side
+        # of a bed was 2.2-2.8 m from every standable spot and TOO_FAR forever.
+        # Never for a floor: a floor is walked on, so "at its edge" would mean
+        # anywhere in the room, and everything on the floor would be in reach.
+        support = self.support_of(obj)
+        at = support if support is not None else obj
+        if not self.is_walkable_surface(at):
+            # The same band the edge sampler draws from, measured the same way
+            # (robot centre to footprint): its own radius to stand clear, plus
+            # one reach, plus the float guard. Measured with reach alone the
+            # gate refused a robot the sampler had just put 0.67 m out.
+            at_edge = self.robot_radius + self._nav_clearance_margin + self._nav_reach + DEFAULT_RADIUS_MARGIN
+            try:
+                if self.edge_distance_to(at, self._base_xy()) <= at_edge:
+                    return
+            except Exception:  # noqa: BLE001 - objects without a footprint
+                pass
         raise self._error(
             "TOO_FAR",
             f"You are {distance:.2f} m from {obj.name}, too far to {verb} it "

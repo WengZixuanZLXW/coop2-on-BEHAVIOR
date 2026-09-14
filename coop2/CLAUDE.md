@@ -277,7 +277,7 @@ anything for an apple would make the table unreachable from any pose.
 Measured on the same seed, tightening 0.8 -> 0.6 **helped**: goal at env_step 1230
 against 1485, and `TOO_FAR` 15 -> 11, with `NO_SPACE_AROUND_TARGET` still 0. A
 narrower annulus puts the sampled standing pose closer to the target, so the
-travel charge shrinks. **The charge is 30 ticks/m since 2026-09-11** (it was 60
+travel charge shrinks. **The charge is 20 ticks/m since 2026-09-13, 30 from 2026-09-11** (it was 60
 when this was measured); travel is most of the tick budget, so no step count
 recorded at 60 is comparable with one recorded now. Any metric recorded before
 this has different
