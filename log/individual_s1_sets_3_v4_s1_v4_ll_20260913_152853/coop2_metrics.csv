@@ -1,0 +1,27 @@
+metric,description,value
+D_delta,Average decision overhead per step,0.03241758241758242
+decision_time_avg,Average decision time across agents (seconds),45.27820014953613
+decision_time_std,Decision time std dev across agents (seconds),4.879604606430544
+wait_time_avg,Average wait time across agents (seconds),0.9996752474043105
+wait_time_std,Wait time std dev across agents (seconds),0.45478105440327327
+L_tot,Total messages exchanged,0
+L_std,Communication load std dev,0
+L_avg,Average messages per agent,0.0
+P_total,Total plans,103
+P_int,Plan interruption count,32
+P_failed,Failed plan count,9
+P_episode_ended,Plans truncated by episode end,8
+P_non_success,Failed + interrupted + abandoned plans,41
+P_res_rate,Plan resumption rate,0.375
+P_re_rate,Replanning rate,0.625
+P_coherence,Average plan coherence per step,0.3419108669108669
+Z_gain_rate,Capability gains per step,0.0
+S_team,Total team resource score,0.0
+S_agent_count,Number of agents in the episode,9
+S_team_per_agent,Team resource score per agent,0.0
+S_decision_seconds_per_score,Decision seconds per team score point,
+S_messages_per_score,Messages per team score point,
+S_tokens_per_score,LLM tokens per team score point,
+C_spatial_ratio,Spatial constraint improvement ratio,0.5
+C_temporal_ratio,Temporal constraint improvement ratio,0.5
+C_dependency_ratio,Dependency constraint improvement ratio,0.5

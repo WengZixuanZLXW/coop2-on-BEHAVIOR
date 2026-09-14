@@ -1,0 +1,162 @@
+{
+  "events": [
+    {
+      "env_step": 1680,
+      "route": "S1-M1",
+      "node": "C1",
+      "status": "completed",
+      "goal": [
+        "ontop",
+        "notebook.n.01_4",
+        "cabinet.n.01_2"
+      ],
+      "expected": "C1",
+      "by": "ridgeback_2"
+    },
+    {
+      "env_step": 2210,
+      "route": "S1-M5",
+      "node": "C1",
+      "status": "completed",
+      "goal": [
+        "ontop",
+        "notebook.n.01_1",
+        "cabinet.n.01_1"
+      ],
+      "expected": "C1",
+      "by": "ridgeback_1"
+    },
+    {
+      "env_step": 2686,
+      "route": "S1-M1",
+      "node": "D",
+      "status": "completed",
+      "goal": [
+        "ontop",
+        "notebook.n.01_4",
+        "bed.n.01_2"
+      ],
+      "expected": "D",
+      "by": "ridgeback_2"
+    },
+    {
+      "env_step": 3428,
+      "route": "S1-M3",
+      "node": "C1",
+      "status": "completed",
+      "goal": [
+        "ontop",
+        "notebook.n.01_2",
+        "bookcase.n.01_1"
+      ],
+      "expected": "C1",
+      "by": "ridgeback_2"
+    },
+    {
+      "env_step": 4634,
+      "route": "S1-M3",
+      "node": "D",
+      "status": "completed",
+      "goal": [
+        "ontop",
+        "notebook.n.01_2",
+        "armchair.n.01_1"
+      ],
+      "expected": "D",
+      "by": "ridgeback_2"
+    },
+    {
+      "env_step": 5138,
+      "route": "S1-M5",
+      "node": "D",
+      "status": "completed",
+      "goal": [
+        "ontop",
+        "notebook.n.01_1",
+        "bookcase.n.01_1"
+      ],
+      "expected": "D",
+      "by": "ridgeback_1"
+    },
+    {
+      "env_step": 7842,
+      "route": "S1-M4",
+      "node": "C1",
+      "status": "completed",
+      "goal": [
+        "ontop",
+        "notebook.n.01_5",
+        "cabinet.n.01_3"
+      ],
+      "expected": "C1",
+      "by": "ridgeback_1"
+    }
+  ],
+  "summary": {
+    "required_nodes": 10,
+    "completed_nodes": 7,
+    "Y_task": 0.7,
+    "out_of_order_visits": 0,
+    "task_complete": false,
+    "routes": {
+      "S1-M5": {
+        "route": "S1-M5",
+        "cargo": "notebook.n.01_1",
+        "completed": [
+          "C1",
+          "D"
+        ],
+        "next": null,
+        "remaining": [],
+        "out_of_order": 0,
+        "done": true
+      },
+      "S1-M3": {
+        "route": "S1-M3",
+        "cargo": "notebook.n.01_2",
+        "completed": [
+          "C1",
+          "D"
+        ],
+        "next": null,
+        "remaining": [],
+        "out_of_order": 0,
+        "done": true
+      },
+      "S1-M2": {
+        "route": "S1-M2",
+        "cargo": "notebook.n.01_3",
+        "completed": [],
+        "next": "C1",
+        "remaining": [
+          "D"
+        ],
+        "out_of_order": 0,
+        "done": false
+      },
+      "S1-M1": {
+        "route": "S1-M1",
+        "cargo": "notebook.n.01_4",
+        "completed": [
+          "C1",
+          "D"
+        ],
+        "next": null,
+        "remaining": [],
+        "out_of_order": 0,
+        "done": true
+      },
+      "S1-M4": {
+        "route": "S1-M4",
+        "cargo": "notebook.n.01_5",
+        "completed": [
+          "C1"
+        ],
+        "next": "D",
+        "remaining": [],
+        "out_of_order": 0,
+        "done": false
+      }
+    }
+  }
+}

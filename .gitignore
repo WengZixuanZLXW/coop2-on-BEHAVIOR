@@ -11,3 +11,4 @@ __pycache__/
 .codex
 .env
 experiment_log/
+coop2_process_log.json
