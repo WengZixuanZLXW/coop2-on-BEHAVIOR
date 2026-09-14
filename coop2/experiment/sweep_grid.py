@@ -25,11 +25,21 @@ name carries both: ``<mode>_<layout>_<task>_<model>_seed<N>_<stamp>``.
 
 ``--parallel K`` runs K cells at once. Each cell is its own process regardless
 (``og.sim`` is a process singleton, one environment per process); K just means
-K Isaac instances on the one GPU. Measured 2026-09-12: twelve R1s in the hall
-took ~2.6 GB of the 16 GB card, so 3-4 in parallel fit in VRAM -- but each
-Isaac is also several GB of RAM and a full CPU core or two, and every one of
-them talks to the same LLM deployment, so rate limits arrive K times faster.
-Start with 2 and watch ``nvidia-smi`` and ``llm_usage.json``'s error counts.
+K Isaac instances on the one GPU. The GPU is not what limits K: measured
+2026-09-14, nine robots per cell, six cells took 6.6 GB of the 16 GB card at
+0% utilisation. **RAM and CPU are.** Each Isaac is about 5.3 GB resident, so
+six leave little of 59 GB free, and each opens a PyTorch intra-op pool of one
+thread per core which spins at its barrier -- so ``--threads-per-cell``
+(default 1) caps it. Aggregate steps/s across all cells, stepping idle:
+
+    1 cell,  16 threads   60.6
+    3 cells, 16 threads   16.5   <- three cells slower in total than one
+    3 cells,  1 thread   133.8
+    6 cells,  1 thread   242.0
+
+Every cell also talks to the same LLM deployment, so rate limits arrive K
+times faster; watch ``total_api_rate_limit_retries`` in ``llm_usage.json``.
+4 is a good default here, 6 works with little RAM headroom.
 
 Globs work for layouts: ``--layouts 'coop2/team_layouts/s1/sets_*.json'``.
 Nothing here touches the runners; it only builds their command lines.
@@ -205,6 +215,10 @@ def main() -> int:
     parser.add_argument("--video", action="store_true", help="record per-robot videos (off by default)")
     parser.add_argument("--run-timeout-minutes", type=float, default=120,
                         help="kill a cell that has not finished by then and move on")
+    parser.add_argument("--threads-per-cell", type=int, default=1, metavar="N",
+                        help="OMP_NUM_THREADS for each cell when --parallel > 1 (default 1). "
+                             "0 leaves it unset, which lets every cell open a pool per core "
+                             "and makes three cells slower in total than one alone.")
     parser.add_argument("--resume", action="store_true",
                         help="skip cells that already have an 'ok' row in sweep_summary.json")
     parser.add_argument("--runner-arg", action="append", metavar="ARG",
@@ -260,6 +274,20 @@ def main() -> int:
 
     output_root.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ, OMNIGIBSON_HEADLESS="1")
+    # One BLAS thread per cell when cells share the machine. PyTorch opens an
+    # intra-op pool of one-per-core (16 here) and it spins at its barrier, so
+    # K cells oversubscribe every core K times over. Measured 2026-09-14 on
+    # nine robots stepping idle, aggregate steps/s across all cells:
+    #
+    #   1 cell,  16 threads   60.6      (16.4 ms/step)
+    #   3 cells, 16 threads   16.5      (163-204 ms/step)  -- worse than one
+    #   3 cells,  1 thread   133.8      (22.5 ms/step)
+    #   6 cells,  1 thread   242.0      (23-26 ms/step)
+    #
+    # A single cell is ~7% slower on one thread, which is why this is not set
+    # for --parallel 1; past that the pool costs an order of magnitude.
+    if args.parallel > 1 and args.threads_per_cell:
+        env["OMP_NUM_THREADS"] = str(args.threads_per_cell)
     lock = threading.Lock()
     total = len(cells)
 
