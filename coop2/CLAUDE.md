@@ -2198,11 +2198,18 @@ disagreed with both standing hypotheses, including a well-reasoned one.
 `clearance + reach`, and both the reach and the robot radius are per robot, so
 one cache would hand a Crazyflie the Ridgeback's gate.
 
-**Torch threads are not worth capping for a single run.** 75% of a run's CPU is
-PyTorch's 16-thread intra-op pool spinning at a barrier (equal CPU times to
-0.15%, `stime` ~0, `wchan` 0), but `set_num_threads(1)` makes raw stepping
-*slower*: 17.8 ms against 16.6 ms per `env.step`, measured by alternating three
-times. The only reason to cap is parallel cells, unmeasured.
+**Torch threads: leave them for one cell, cap them for many.** 75% of a run's
+CPU is PyTorch's 16-thread intra-op pool spinning at a barrier (equal CPU times
+to 0.15%, `stime` ~0, `wchan` 0). Alone, `set_num_threads(1)` makes raw
+stepping 7% *slower* (17.8 against 16.6 ms per `env.step`). But every cell
+opens its own pool, so K cells oversubscribe every core K times over -- and
+three uncapped cells are slower *in total* than one cell alone. Aggregate
+steps/s, nine robots each, stepping idle: 1 cell/16 threads 60.6; 3 cells/16
+threads **16.5**; 3 cells/1 thread 133.8; 6 cells/1 thread 242.0.
+`sweep_grid` sets `OMP_NUM_THREADS` for its children whenever `--parallel > 1`
+(`--threads-per-cell`, default 1). What limits K is RAM (~5.3 GB per Isaac)
+and the shared LLM deployment's rate limit, not the GPU: six cells took 6.6 GB
+of the 16 GB card at 0% utilisation.
 
 After all this the wall clock of a nine-robot episode is 84% the world frozen
 waiting for the model and 16% ticking, so `sweep_grid --parallel` is now the
