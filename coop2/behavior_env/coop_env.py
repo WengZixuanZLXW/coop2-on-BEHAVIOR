@@ -149,6 +149,13 @@ class CooperativeBehaviorEnv:
         self._closed = False
         import os as _os
         self.engine_verbose = bool(kwargs.get('engine_verbose') or _os.environ.get('COOP2_ENGINE_VERBOSE'))
+        #: Rebuild the floor map from the shell plus the objects actually in
+        #: the scene, instead of trusting the dataset's baked one. On by
+        #: default: the baked map is of the shipped layout, and every task
+        #: instance differs from it -- a V4 port removes 84 objects and moves
+        #: others. COOP2_NO_TRAV_REBUILD=1 restores the old behaviour.
+        self.rebuild_trav_map = not (kwargs.get('no_trav_rebuild')
+                                     or _os.environ.get('COOP2_NO_TRAV_REBUILD'))
         self.outcomes_seen = 0
 
         self.agent_names: List[str] = (
@@ -211,6 +218,7 @@ class CooperativeBehaviorEnv:
             CoopTaskTracker,
         )
         from coop2.behavior_env.world_state import BehaviorWorldState  # noqa: PLC0415
+        from coop2.behavior_env.trav_map_rebuild import rebuild_trav_map  # noqa: PLC0415
         from coop2.cognitive.action.behavior_action import BehaviorActionExecutor  # noqa: PLC0415
 
         # Before any controller exists: MacroDict locks a macro once it has
@@ -294,6 +302,15 @@ class CooperativeBehaviorEnv:
             ]
         self.env = og.Environment(configs=config)
         self._enforce_controller_config(config)
+
+        # Before anything samples a pose. The dataset's baked floor map is of
+        # the shipped layout, not of this instance: a V4 port removes 84
+        # objects and moves others, so the map blocks floor that was cleared
+        # (measured: node C4's armchair had 0.0% standable ring, 200 of 200
+        # candidates refused) and the no-object map opens floor that is taken.
+        # Rebuild it from the shell plus what is really here.
+        if self.rebuild_trav_map:
+            rebuild_trav_map(self.env.scene, verbose=True)
 
         self._apply_robot_capabilities()
 

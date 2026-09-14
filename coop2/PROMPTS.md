@@ -1,5 +1,15 @@
 # Where every prompt comes from
 
+**Cut to about half on 2026-09-13 (user):** one statement per rule, no rule
+stated twice across sections, no exhortation, no summary, no blank lines
+inside a section; semantic completeness first, so the cut stopped at ~53 %
+(system prompt, chars/4: tag 2950 -> 1563, individual ~2220 -> 1171). The
+user side lost its per-robot repetition: the "Rooms in this house" line and
+the "Step N/M | " prefix are stated once in section 6, and the route block's
+trailing rule became a one-line legend (the rule is section 2's). What a
+rewrite must keep is what the tests pin: `test_team_prompt_stubbed.SHARED_RULES`
+and the mode tests' tokens.
+
 The prompt an LLM team receives is assembled in one fixed order (user,
 2026-09-13). Each row below is one section, the file and symbol that produce
 it, and what feeds it. The two **digtag** slots -- section 5 and the task
@@ -15,7 +25,25 @@ fills them.
 | 2 | 环境规则 -- ENVIRONMENT RULES (ticks, local view, TOO_FAR, unreachable, wait, exclusivity, routes, task ids navigable, rooms, id discipline, failure -> replan) | `prompt_sections.py` `ENVIRONMENT_RULES` | constant |
 | 3 | 不同机器人能力描述 -- ROBOT CAPABILITIES (arm / base-lock / carrier / drone, who needs a carrier, lift rule) + this team's roster + the activity's lift table | `prompt_sections.py` `ROBOT_CAPABILITIES`, `robot_capabilities_section` | each robot's own `SymbolicObservation` flags (`is_carrier`, `base_locked_while_holding`, `lift_role`) and `lift_rules`, read in [`comm_topology/llm_team.py`](comm_topology/llm_team.py) `TeamBrain._robot_profiles` / `_lift_rules`; the flags come from the layout via [`behavior_env/team_config.py`](behavior_env/team_config.py) and [`behavior_env/world_state.py`](behavior_env/world_state.py); the lift table from the activity's `route.json` via [`behavior_env/route_spec.py`](behavior_env/route_spec.py) |
 | 4 | 当前合作模式规则 -- COOPERATION MODE (individual / broadcast_chain / centralized leader / centralized follower / decentralized_messageboard / tag) | `prompt_sections.py` `COOPERATION_RULES`, `cooperation_section`; the notify rule `MESSAGEBOARD_NOTIFY_RULES` is appended only while `MessageboardTeamBrain.NOTIFY_TOOL_ENABLED` | `TeamBrain.COOPERATION_MODE`, set per brain class in `llm_team.py` (`TeamBrain`, `ChainTeamBrain`, `LeaderTeamBrain`, `FollowerTeamBrain`, `MessageboardTeamBrain`) and `llm_tag.py` (`TagTeamBrain`) |
-| 5 | 预留的提示prompt -- DIGTAG manual | `prompt_sections.py` `reserved_section` | `TeamBrain.reserved_system_prompt`: empty, except `TagTeamBrain` sets it to `llm_tag.TAG_MANUAL` (the graph's vocabulary, the three-part answer, said to a team controller) |
+| 5 | 预留的提示prompt -- BEST PRACTICE (what works, as against what the world enforces in 2-3 and the mode requires in 4), then the DIGTAG manual under `tag` | `prompt_sections.py` `BEST_PRACTICES` (first entry `HANDOFF_ORDER`), `reserved_section` | constant, plus `TeamBrain.reserved_system_prompt` (empty except `TagTeamBrain` = `llm_tag.TAG_MANUAL`). Six one-line practices, each stated only here: the handoff order (navigate the arm to the target first, then the carrier to the arm -- `unload_from` locks a base-locked arm the instant the cargo is in its hand; measured on `v4_s1_v4_lh`, arm-to-carrier satisfies both gates 14/25, carrier-to-arm 25/25); navigate_to an object before acting on it unless its listing shows no distance; one robot per object; plans of similar length; size a wait by the other's travel; read section 9 before replanning |
+
+
+Under `broadcast_chain` the plan call returns `LLMChainPlanResponse`: the plans **and** a
+`broadcast` sentence for the teams behind, written by the same reasoning, appended to the
+closing instruction by `ChainTeamBrain._plan_closing` and sent by `after_plan`. It replaced
+`_plan_summary`, a join of each robot's `plan.specification`, which with one cargo made every
+team's broadcast identical and silent on who held it (measured, 2026-09-13 LH run). The
+summary remains only as the fallback for a response with no sentence. The chain's
+*interrupt* round says its piece the same way -- `LLMChainInterruptResponse`
+adds `broadcast` to the per-robot decisions, `_interrupt_closing` asks for it,
+`after_interrupt` sends it, and `_current_allocation()` is that path's fallback.
+Section 4 also names this team's own neighbours -- `ChainTeamBrain._cooperation_extra`
+appends UPSTREAM (every team ahead in the chain order, whose commitments section 7
+carries) and DOWNSTREAM (`send_to`, who plan on the broadcast), with the head and
+tail told they have none (user, 2026-09-14). The mode text above them could only say
+"the teams ahead of you", leaving a team to infer from robot ids whether a sender
+was ahead of it or behind. Upstream is NOT `wait_for`, which is only the immediate
+predecessor this team blocks on.
 
 Assembled by `prompt_sections.build_team_system_prompt`, called from
 `TeamBrain._system_prompt`. [`cognitive/agent/prompts.py`](cognitive/agent/prompts.py)

@@ -61,6 +61,7 @@ from __future__ import annotations
 import threading
 import os
 import re
+import textwrap
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -70,6 +71,8 @@ from coop2.cognitive.agent.cognitive_agent import parse_plan_response
 from coop2.cognitive.agent.llm_client import (
     InterruptDecision,
     LLMMessageboardNotifyPlanResponse,
+    LLMChainInterruptResponse,
+    LLMChainPlanResponse,
     LLMMessageboardPlanResponse,
 )
 from coop2.cognitive.agent.memory import AgentMemory
@@ -349,10 +352,8 @@ class TeamBrain:
 
     def _interrupt_closing(self) -> str:
         """The closing instruction of an interrupt prompt."""
-        return ("For each robot decide 'resume' or 'replan'. Resume unless the "
-                "message actually contradicts what that robot is doing -- replanning "
-                "a robot the message did not concern throws away work it has already "
-                "paid for. A 'replan' decision must carry its new_plan.")
+        return ("Per robot: 'resume' unless the message contradicts what it is doing, "
+                "else 'replan' with its new_plan.")
 
     def before_interrupt_decision(self, messages: List[Dict]) -> List[Dict]:
         """Runs once per interrupt round, before the model is asked.
@@ -1163,7 +1164,21 @@ class TeamBrain:
         for member in members:
             _, task = self._split_task(member.symbolic_view or "")
             if task:
-                return "\n" + task.replace("YOUR TASK", "THE TEAM'S TASK (the same for every robot)", 1)
+                return task.replace("YOUR TASK, in the ids it is written in:", "THE TEAM'S TASK:", 1)
+        return ""
+
+    #: The per-robot view's first line and its house line, both of which the
+    #: team prompt states once instead of once per robot.
+    _STEP_PREFIX = re.compile(r"^Step \d+(?:/\d+)? \| ")
+    _HOUSE_PREFIX = "Rooms in this house"
+
+    def _house_line(self, members: List["LLMTeamAgent"]) -> str:
+        """The "Rooms in this house" line, once: it is the same for every
+        robot, and nine robots repeated it nine times."""
+        for member in members:
+            for line in (member.symbolic_view or "").splitlines():
+                if line.startswith(self._HOUSE_PREFIX):
+                    return line
         return ""
 
     def _member_block(self, member: "LLMTeamAgent") -> str:
@@ -1171,12 +1186,17 @@ class TeamBrain:
 
         The per-agent observation is reused rather than re-rendered -- it is
         the same text a single-agent topology would send -- minus its YOUR
-        TASK block, which the team prompt states once (`_team_task_block`).
+        TASK block and its house line, which the team prompt states once
+        (`_team_task_block`, `_house_line`), and minus the "Step N/M | "
+        prefix, which section 6's header already carries.
         """
         lines = [f"=== ROBOT {member.agent_id} ==="]
         if member.symbolic_view:
             view, _ = self._split_task(member.symbolic_view)
-            lines.append(view)
+            kept = [l for l in view.splitlines() if not l.startswith(self._HOUSE_PREFIX)]
+            if kept:
+                kept[0] = self._STEP_PREFIX.sub("", kept[0])
+            lines.append("\n".join(kept))
         elif member.target_hints:
             lines.append(member.target_hints)
         else:
@@ -1208,8 +1228,8 @@ class TeamBrain:
         return current_messages_section(self.COOPERATION_MODE, messages, self._render_message)
 
     def _plan_closing(self, members: List["LLMTeamAgent"]) -> str:
-        return (f"Return exactly {len(members)} plans, one per robot, using each "
-                "robot's own ids. Say in `reasoning` how you divided the work.")
+        return (f"Return exactly {len(members)} plans, one per robot, in each robot's "
+                "own ids; `reasoning` says how the work was divided.")
 
     def _build_team_prompt(self, members: List["LLMTeamAgent"]) -> List[Dict[str, str]]:
         """Sections 6-9, then the closing instruction."""
@@ -1222,6 +1242,7 @@ class TeamBrain:
                 task_block=self._team_task_block(members),
                 goal_instruction=self.goal_instruction,
                 reserved_task_observation=getattr(self, "reserved_task_observation", ""),
+                house=self._house_line(members),
             ),
             current_messages=self._current_messages_block(new),
             conversation_history=conversation_history_section(
@@ -1246,7 +1267,8 @@ class TeamBrain:
                 task_block=self._team_task_block(members),
                 goal_instruction=self.goal_instruction,
                 reserved_task_observation=getattr(self, "reserved_task_observation", ""),
-                preface="\nThe team was interrupted by a message.",
+                preface="The team was interrupted by a message.",
+                house=self._house_line(members),
             ),
             current_messages=self._current_messages_block(list(messages or [])),
             conversation_history=conversation_history_section(
@@ -1345,11 +1367,9 @@ class MessageboardTeamBrain(TeamBrain):
         return built
 
     def _plan_closing(self, members: List["LLMTeamAgent"]) -> str:
-        return (f"Return exactly {len(members)} plans, one per robot, using each "
-                "robot's own ids. Say in `reasoning` how you divided the work, and in "
-                "`board_post` tell the other teams -- in one or two sentences, in the "
-                "task's ids -- which robot of yours takes which cargo or leg this round "
-                "and what you leave to them.")
+        return (super()._plan_closing(members)
+                + " `board_post`: which robot takes which cargo or leg this round and "
+                  "what you leave to others, in the task's ids, one or two sentences.")
 
     def _cooperation_extra(self) -> str:
         from coop2.cognitive.agent.prompt_sections import MESSAGEBOARD_NOTIFY_RULES  # noqa: PLC0415
@@ -1397,12 +1417,91 @@ class ChainTeamBrain(TeamBrain):
 
     COOPERATION_MODE = "broadcast_chain"
 
+    #: What this round's model call said to the teams behind, until `after_plan`
+    #: or `after_interrupt` sends it. A class default so a brain that has not
+    #: called yet still answers. Planning and interrupting never overlap for one
+    #: team -- a team in I is not at its planning barrier -- so one slot serves.
+    _pending_broadcast = ""
+
     def before_plan(self) -> None:
         self._await_speakers()
 
+    # -- where in the chain this team stands ---------------------------------
+
+    def _chain_position(self) -> tuple:
+        """(teams ahead, teams behind), in the chain's own order.
+
+        Not `wait_for` and `send_to`: `wait_for` is only the team immediately
+        ahead -- the one whose message this team blocks on -- while *every*
+        earlier team's broadcast reaches it and lands in section 7. Naming only
+        the predecessor would leave a team told to fit around one plan while
+        reading three.
+        """
+        order = list(getattr(self, "all_teams", None) or {})
+        if self.team_name in order:
+            index = order.index(self.team_name)
+            return order[:index], order[index + 1:]
+        return list(self.wait_for), list(self.send_to)
+
+    def _cooperation_extra(self) -> str:
+        """Name this team's own upstream and downstream (user, 2026-09-14).
+
+        Section 4 is one text for every team in the mode, so it could only say
+        "the teams ahead of you" -- and a team reading a broadcast had to work
+        out from the ids whether the sender was ahead of it or behind, which is
+        exactly what it cannot see. The names are known at wiring time; this
+        puts them in the prompt.
+        """
+        ahead, behind = self._chain_position()
+        lines = []
+        if ahead:
+            lines.append(f"UPSTREAM (plan before you): {', '.join(ahead)}. Their "
+                         "commitments are in section 7: fit your plan around them, take "
+                         "what they left, never the leg or cargo they claimed.")
+        else:
+            lines.append("UPSTREAM: none -- you are the head of the chain. Nobody "
+                         "constrains you, and section 7 is empty every round; choose the "
+                         "first leg and say so.")
+        if behind:
+            lines.append(f"DOWNSTREAM (plan after you, on what you say): "
+                         f"{', '.join(behind)}. Your `broadcast` is all they get from "
+                         "you: name which robot of yours holds or goes for which cargo, "
+                         "which leg you take, and what you leave to them.")
+        else:
+            lines.append("DOWNSTREAM: none -- you are the tail. Nobody plans around "
+                         "you, so take what the teams ahead left.")
+        return "\n".join(textwrap.fill(line, width=78) for line in lines)
+
+    # -- the response --------------------------------------------------------
+
+    @property
+    def plan_response_format(self):
+        return LLMChainPlanResponse
+
+    def _call_plan_model(self, prompt: List[Dict[str, str]]):
+        return self.llm_client.generate(
+            prompt, response_format=self.plan_response_format, temperature=self.temperature
+        )
+
+    def _plan_closing(self, members: List["LLMTeamAgent"]) -> str:
+        return (super()._plan_closing(members)
+                + " `broadcast`: what the teams behind you must know -- which robot of "
+                  "yours holds or is going for the cargo, which leg you take this round, "
+                  "what you leave to them, in the task's ids, one or two sentences.")
+
+    def _on_plan_response(self, response: Any) -> None:
+        """Keep the round's own words; `after_plan` sends them."""
+        self._pending_broadcast = (getattr(response, "broadcast", "") or "").strip()
+
     def after_plan(self) -> None:
-        if self._pending_plans:
-            self._say(self._plan_summary(self._pending_plans), "broadcast_chain", interrupts=True)
+        if not self._pending_plans:
+            return
+        # The model's sentence when it wrote one, the mechanical summary only
+        # as a fallback: a round that says nothing is worse than a round that
+        # says what it is doing in ids.
+        text = getattr(self, "_pending_broadcast", "")
+        self._say(text or self._plan_summary(self._pending_plans), "broadcast_chain", interrupts=True)
+        self._pending_broadcast = ""
 
     def before_interrupt_decision(self, messages: List[Dict]) -> List[Dict]:
         """Wait for the team ahead to relay, then decide knowing what it said.
@@ -1429,17 +1528,41 @@ class ChainTeamBrain(TeamBrain):
         relayed = self._await_relay()
         return list(messages) + relayed if relayed else messages
 
+    def _interrupt_response_format(self):
+        return LLMChainInterruptResponse
+
+    def _call_interrupt_model(self, prompt: List[Dict[str, str]]):
+        return self.llm_client.generate(
+            prompt, response_format=self._interrupt_response_format(),
+            temperature=self.temperature,
+        )
+
+    def _interrupt_closing(self) -> str:
+        return (super()._interrupt_closing()
+                + " `broadcast`: what this changed for your robots and what the teams "
+                  "behind you must know, in the task's ids, one or two sentences -- "
+                  "also when everyone resumed.")
+
+    def _on_interrupt_response(self, response: Any) -> None:
+        self._pending_broadcast = (getattr(response, "broadcast", "") or "").strip()
+
     def after_interrupt(self, decisions: Dict[str, Any]) -> None:
         """Relay onward, whatever this team decided.
 
-        Exactly once per round and after the decision, so the summary is what
+        Exactly once per round and after the decision, so what is said is what
         the robots will actually do. Resume counts: a team that changed nothing
         still has to say so, or the team behind it waits out `before_interrupt_
         decision` for a message that was never coming -- which is the difference
-        between an ordering and a stall. This is also why it reports every
-        robot's current plan rather than only the replanned ones.
+        between an ordering and a stall.
+
+        The words are the model's own, written in the decision call
+        (`LLMChainInterruptResponse.broadcast`). `_current_allocation()`, every
+        robot's current plan specification joined, is the fallback for a
+        response that carried no sentence.
         """
-        self._say(self._current_allocation(), "broadcast_chain", interrupts=True)
+        text = getattr(self, "_pending_broadcast", "")
+        self._say(text or self._current_allocation(), "broadcast_chain", interrupts=True)
+        self._pending_broadcast = ""
 
     # -- ordering ----------------------------------------------------------
 

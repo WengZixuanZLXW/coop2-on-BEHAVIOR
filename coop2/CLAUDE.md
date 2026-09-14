@@ -277,7 +277,7 @@ anything for an apple would make the table unreachable from any pose.
 Measured on the same seed, tightening 0.8 -> 0.6 **helped**: goal at env_step 1230
 against 1485, and `TOO_FAR` 15 -> 11, with `NO_SPACE_AROUND_TARGET` still 0. A
 narrower annulus puts the sampled standing pose closer to the target, so the
-travel charge shrinks. **The charge is 20 ticks/m since 2026-09-13, 30 from 2026-09-11** (it was 60
+travel charge shrinks. **The charge is 10 ticks/m since 2026-09-14, 20 from 2026-09-13, 30 from 2026-09-11** (it was 60
 when this was measured); travel is most of the tick budget, so no step count
 recorded at 60 is comparable with one recorded now. Any metric recorded before
 this has different
@@ -455,7 +455,18 @@ quoted the same message four times into its next prompt. `_collect_heard`
 de-dupes on (sender, timestamp, content) for the same reason.
 
 Three brains carry the roles: `ChainTeamBrain` waits on the preceding team's
-speaker then broadcasts its allocation onward; `LeaderTeamBrain` interrupts the
+speaker then broadcasts onward a sentence the model wrote in the same call as
+the plans (`LLMChainPlanResponse.broadcast`, the `board_post` pattern; user,
+2026-09-14: what teams send each other is natural language, and it comes out of
+the reasoning that made the plan). Before that it sent `_plan_summary`, a join of
+each robot's `plan.specification`: with one cargo every team's broadcast read the
+same and none of them said who was holding it, so the chain carried no
+information and the teams went on taking the same leg. The summary is now only
+the fallback for a response with no sentence, and the interrupt round relays the
+same way (`LLMChainInterruptResponse.broadcast`, fallback `_current_allocation`)
+because it too is a call that decides what the robots will do. Section 4 names
+that team's own upstream and downstream teams, so "plan around the teams ahead"
+points at ids the model can match against a sender; `LeaderTeamBrain` interrupts the
 follower teams for status, waits, then plans; `FollowerTeamBrain` answers from
 its own state rather than spending an LLM call to paraphrase what it already
 knows. What a team heard goes into its next prompt.
@@ -1904,7 +1915,8 @@ the prompt keeps the structure of `PROMPTS.md`.** Built in the worktree
 `digtag-port` while a sweep ran in this checkout, then merged back.
 
 **What was vendored.** The whole `dig_tag/` package, at their commit
-`274882b`, unmodified, into `coop2/dig_tag/`; their golden tests into
+`e39c56e` (2026-09-14; `274882b` plus "Letter the T band's marks", the
+renderer change that stops labels overlapping), unmodified, into `coop2/dig_tag/`; their golden tests into
 `coop2/dig_tag_tests/` (78 pass in the behavior env:
 `cd coop2 && python -m pytest dig_tag_tests -q`). The whole package rather
 than `tag/` alone because `render/` -- which draws the graph -- imports
@@ -1971,10 +1983,51 @@ the board's):
 Runner: `run_tag.py` is `run_individual.main(topology="tag")`, with
 `interrupt_on_message=True` for this mode; `sweep_grid`, `run_s1_grid`,
 `run_grid` and `build_results_table` know the name. `test_tag_team_stubbed.py`
-pins it (eight tests, DIG-TAG's runtime tests said to teams). **No GPU episode
-has been run in this mode yet**; when one is, measure tokens first -- every
-round carries every open task's history (last 8 steps), relations and
-evidence, and a notify cascade adds a prompt per interrupted team.
+pins it (eight tests, DIG-TAG's runtime tests said to teams).
+
+**First GPU episode (2026-09-13 evening):** S1 LL, `sets_3.json` (three teams
+of three), gpt-5.6-terra, seed 0, 5000 steps, notify budget 1 -- run folder
+`tag_agents3_repair_off_seed0_20260913_211932_729755` (the `agents3` in the
+name is `--agents`' default; the folder is named before the layout is read,
+a pre-existing quirk every `--team-config` run shares). **Route 10/10 at
+env_step 3127, 0 out of order, `check_goal` agreeing at the same step.** Same
+layout, model, seed and task as the day's sweep (`experiment_log/S1_3team_v2`),
+where after the navigation fix every mode also finishes LL:
+
+| mode | goal at env_step | LLM calls | tokens | work plans (ok / failed / cut) | wall |
+|---|---|---|---|---|---|
+| individual | 2119 | 18 | 117 592 | 54 (41 / 6 / 7) | 4.6 min |
+| broadcast_chain | 1905 | 33 | 242 031 | 71 (28 / 4 / 39) | 8.3 min |
+| centralized | 3807 | 47 | 281 651 | 60 (40 / 10 / 10) | 8.5 min |
+| **tag** | 3127 | 28 | 229 685 | 81 (68 / 2 / 11) | ~21 min* |
+
+\*wall clock is not comparable: the tag run shared the GPU with the sweep's
+three Isaac instances. One seed, so no ranking; what is worth carrying:
+
+* **The vocabulary was learned at first sight**: 18 graph actions (3 open,
+  13 update, 2 close), **0 rejected**. All three teams opened the same task
+  at t=0 (k1, k2, k3); two closed theirs as duplicates once they read k1, and
+  k1 then carried the whole route in 12 updates by team_3, whose drone did
+  every node. No evidence was attached, and after the first round nobody
+  notified anyone again: 3 notifications sent (all in round one, one of them
+  answered as a `late_notify` round), 0 dropped, 25 rounds with an empty
+  `notify`.
+* **Contention nearly vanished**: 2 failed plans (1 `OBJECT_CLAIMED`) against
+  individual's 6 and centralized's 10, `Y_plan` 0.971. The other two teams
+  read the graph and planned `wait` -- the collision `individual` cannot avoid
+  (three drones for one die) did not happen. Team holds were 6.4 % of
+  robot-steps.
+* Tokens sit between individual and chain: ~8.2k per call, 28 calls. The
+  graph section stayed small because the model kept one task and updated it
+  rather than opening many.
+
+Read a tag run in this order: `tag_rounds.json` for rejected actions and
+dropped notifications first, then `tag.png` (the bipartite drawing renders
+headless; since e39c56e each action's square is lettered by its tool -- o
+open, e edit, u update, s split, j join, c close, i an initial version --
+and an attachment by its evidence id, so a dense record stays legible), then
+`route_progress.json` against `tag.json`'s final `state` to see whether what
+the team *said* matched what the simulator *showed*.
 
 Two things to know before reading a `tag` run against a routed task: the
 graph's `state` is what a team *says*, and `RouteTracker` is what the
@@ -2060,6 +2113,55 @@ failed for 1738; 14 LLM calls / 92k tokens against 46 / 319k, 5 failed plans
 against 39, none of them NO_SPACE or TOO_FAR. Only the last step is a fair
 before/after -- C1-C8 were never blocked and their timings vary with the
 model's sampling, seed or not.
+
+## The floor map was of a different scene (2026-09-13)
+
+Every LH/HL/HH episode stopped at route node C4, and the attribution was the
+same each time: `Cannot reach armchair_qplklw_2 {'room': 125, 'trav': 75,
+'robots': 0}` -- 200 of 200 base poses refused, and of the 75 that were in the
+right room, all 75 refused for traversability. Measured on the ring a robot
+must stand in:
+
+| map | ridgeback | jackal |
+|---|---|---|
+| `floor_trav_0.png` (what the runtime loaded) | **0.0 %** | **0.0 %** |
+| `floor_trav_no_obj_0.png` | 26.4 % | 25.7 % |
+| ...of which inside furniture that really is there | 52 % | 55 % |
+
+The dataset bakes two maps per scene and a task instance matches neither. The
+with-objects map is the *shipped* layout, and a V4 port deletes 84 objects and
+moves others -- including this armchair, into a corner 1.4 m from a wall -- so
+it blocks floor that was cleared. The no-object map is the building shell, so
+it opens floor that is occupied. Nothing upstream derives a map from a loaded
+scene: `TraversableMap` only reads the PNGs, and `ScanSensor.occupancy_grid` is
+a robot-local 5 m lidar grid.
+
+`behavior_env/trav_map_rebuild.py` takes the shell and paints back the live
+world AABB of every object the scene actually holds. It reuses upstream's own
+loader for the shell -- flip `trav_map_with_objects`, call `load_map` again --
+so the resize, the 255 threshold and the `world_to_map` convention stay
+upstream's; only the painting is ours. Not painted: floors, carpets and rugs
+(walked on), walls/ceilings/windows/doors (already the shell, and V4 deletes
+the doors), robots (`_clear_of_other_robots` owns those), and anything under
+0.10 m -- a die on the floor is not an obstacle, and painting the cargo would
+block the pose needed to pick it up. On by default; `COOP2_NO_TRAV_REBUILD=1`
+restores the old behaviour.
+
+Measured after: Merom_1_int shell 84.6 m2 minus 15 objects -> 71.3 m2, the
+breakfast table's centre blocked, and the C4 armchair **200/200** poses for the
+ridgeback and 194/200 for the jackal. Beechwood_0_int 153.5 -> 138.2 m2 over 35
+objects, Beechwood_1_int 213.8 -> 188.6 over 42; every task object reachable in
+both, the one unblocked centre in each being the cargo itself.
+
+Two traps found while writing it, both by measuring rather than reading:
+`_load_map` computes `map_size` only when `trav_map_original_size` is None, so
+reloading without clearing it hands `cv2.resize` a `(None, None)`; and it
+assigns `self.floor_map = []` afresh, so a list captured before the reload is a
+discarded object -- painting into that one left the scene on the bare shell,
+with every pose inside real furniture accepted. An assertion now checks that
+the painted map is the one the scene reads.
+
+**Results from before this fix measure the map, not the modes.**
 
 ## Open defects
 

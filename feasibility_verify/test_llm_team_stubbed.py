@@ -62,16 +62,23 @@ class StubClient:
         self.last_text_prompt = None
         self.text_prompts = []
         self.interrupt_script = {}
+        self.plan_formats = []
+        self.interrupt_formats = []
+        self.interrupt_prompts = []
+        #: what the model writes for a schema field beside `plans` -- the
+        #: chain's `broadcast`, the board's `board_post`.
+        self.broadcast = "team_0 has the die; the bedroom leg is yours"
+        #: and what it writes in an interrupt call -- a different sentence, so
+        #: a test can tell which call the relay came out of.
+        self.relay = "the message changed nothing for us; agent_0 still has the die"
 
     def _members_in(self, messages):
         """Read the agent ids out of the prompt the brain built."""
         text = messages[-1]["content"]
         return [line.split()[2] for line in text.split("\n") if line.startswith("=== ROBOT ")]
 
-    def generate_team_plan(self, messages, temperature=0.7):
-        self.plan_calls += 1
-        self.last_prompt = messages[-1]["content"]
-        plans = [
+    def _plans_for(self, messages):
+        return [
             TeamAgentPlan(
                 agent_id=name,
                 task=TaskSpecification(task=Task.ONTOP, object_type="apple.n.01_1",
@@ -81,10 +88,38 @@ class StubClient:
             )
             for name in self._members_in(messages)
         ]
-        return LLMTeamPlanResponse(plans=plans, reasoning="split by distance"), dict(USAGE)
+
+    def generate_team_plan(self, messages, temperature=0.7):
+        self.plan_calls += 1
+        self.last_prompt = messages[-1]["content"]
+        return LLMTeamPlanResponse(
+            plans=self._plans_for(messages), reasoning="split by distance"
+        ), dict(USAGE)
 
     def generate(self, messages, response_format=None, temperature=0.7):
-        """Plain text, for a follower composing its report."""
+        """Plain text, for a follower composing its report -- unless a schema
+        with `plans` is asked for, which is how a chain team plans: its
+        broadcast is written in the same call, so the plans come back through
+        `generate` rather than `generate_team_plan`."""
+        fields = getattr(response_format, "model_fields", {})
+        if "decisions" in fields:
+            # A chain team decides and writes its relay in one call.
+            self._note_interrupt(messages)
+            self.interrupt_formats.append(response_format)
+            extra = {name: self.relay for name in fields
+                     if name not in ("decisions", "reasoning")}
+            return response_format(
+                decisions=self._decisions_for(messages), reasoning="scripted", **extra
+            ), dict(USAGE)
+        if "plans" in fields:
+            self.plan_calls += 1
+            self.last_prompt = messages[-1]["content"]
+            self.plan_formats.append(response_format)
+            extra = {name: self.broadcast for name in fields
+                     if name not in ("plans", "reasoning")}
+            return response_format(
+                plans=self._plans_for(messages), reasoning="split by distance", **extra
+            ), dict(USAGE)
         self.text_calls += 1
         self.last_text_prompt = messages[-1]["content"]
         self.text_prompts.append(messages[-1]["content"])
@@ -94,12 +129,7 @@ class StubClient:
             return "follow: take C1 with your drone; we take the rest", dict(USAGE)
         return "we will take the west apples, leave the east to you", dict(USAGE)
 
-    def generate_team_interrupt_decision(self, messages, temperature=0.7):
-        self.interrupt_calls += 1
-        # Recorded here too, or an assertion about the interrupt prompt reads
-        # whatever the last *plan* prompt was and passes for the wrong reason.
-        self.last_prompt = messages[-1]["content"]
-        self.last_interrupt_prompt = messages[-1]["content"]
+    def _decisions_for(self, messages):
         decisions = []
         for name in self._members_in(messages):
             choice = self.interrupt_script.get(name, InterruptDecision.RESUME)
@@ -122,7 +152,23 @@ class StubClient:
                     new_plan=new_plan,
                 )
             )
-        return LLMTeamInterruptResponse(decisions=decisions, reasoning="scripted"), dict(USAGE)
+        return decisions
+
+    def generate_team_interrupt_decision(self, messages, temperature=0.7):
+        self._note_interrupt(messages)
+        return LLMTeamInterruptResponse(
+            decisions=self._decisions_for(messages), reasoning="scripted"
+        ), dict(USAGE)
+
+    def _note_interrupt(self, messages):
+        self.interrupt_calls += 1
+        # Recorded here too, or an assertion about the interrupt prompt reads
+        # whatever the last *plan* prompt was and passes for the wrong reason.
+        self.last_prompt = messages[-1]["content"]
+        self.last_interrupt_prompt = messages[-1]["content"]
+        # Every one of them, not just the last: three teams share one client and
+        # which of them calls last is a thread race.
+        self.interrupt_prompts.append(messages[-1]["content"])
 
 
 def make_team(size, name="alpha"):
@@ -759,8 +805,18 @@ def main() -> int:
                  if m["sender"] == "team_0"]
     assert announced, "team_0 replanned on the interrupt and told nobody"
     assert (announced[-1]["metadata"] or {}).get("type") == "broadcast_chain"
-    assert "agent_0" in str(announced[-1]["content"])
-    ok("the replan goes downstream, the way a fresh plan does")
+    # And what goes downstream is a sentence the model wrote, in the same call
+    # that made the decision -- not `_current_allocation()`, every robot's plan
+    # specification joined, which with one cargo read the same for every team
+    # and named no holder (user, 2026-09-14: teams send each other natural
+    # language, written with the plan). The plan call carries its own sentence,
+    # and this one is the interrupt call's, so the relay is not last round's.
+    assert announced[-1]["content"] == client.relay, announced[-1]["content"]
+    assert client.interrupt_formats, "the chain still used the plain interrupt schema"
+    assert "broadcast" in client.interrupt_formats[-1].model_fields
+    first = broker.message_log[said_after_plan - 1]
+    assert first["content"] == client.broadcast, first["content"]
+    ok("the replan goes downstream in the model's words, the way a fresh plan does")
 
     print("test 20: a leader blocked for a reply and a follower sending it both finish")
     # The lock-ordering inversion that hung a run for twenty minutes at
@@ -1025,18 +1081,14 @@ def main() -> int:
     class SlowChain(StubClient):
         """A model call takes time, which is where the ordering bug lived.
 
-        Every prompt is kept, not just the last: three teams share one client
-        and which of them calls last is a thread race.
+        The delay sits in the decision builder rather than in one entry point:
+        a chain team decides through `generate` (its relay rides in the same
+        call), so a sleep on `generate_team_interrupt_decision` alone would
+        leave the very race this test exists for untimed.
         """
-        def __init__(self):
-            super().__init__()
-            self.interrupt_prompts = []
-
-        def generate_team_interrupt_decision(self, messages, temperature=0.7):
+        def _decisions_for(self, messages):
             time.sleep(0.3)
-            result = super().generate_team_interrupt_decision(messages, temperature)
-            self.interrupt_prompts.append(messages[-1]["content"])
-            return result
+            return super()._decisions_for(messages)
 
     chain_client = SlowChain()
     chain_teams = {"team_0": ["agent_0"], "team_1": ["agent_1"], "team_2": ["agent_2"]}
@@ -1102,8 +1154,10 @@ def main() -> int:
         f"{len(team1_msgs)} relays for one round -- a chain team must speak "
         "once and exactly once"
     )
-    assert "agent_1:" in str(team1_msgs[0]["content"]), team1_msgs[0]["content"]
-    ok("one relay per round, carrying what the robots will actually do")
+    # What it says is the sentence the decision call wrote. `_current_allocation()`
+    # -- every robot's plan specification joined -- is only the fallback now.
+    assert team1_msgs[0]["content"] == chain_client.relay, team1_msgs[0]["content"]
+    ok("one relay per round, in the words of the call that decided")
 
     print("test 28: no relay is coming, so the team behind does not wait it out")
     # team_1 entirely in R: the broker does not interrupt R, so it opens no

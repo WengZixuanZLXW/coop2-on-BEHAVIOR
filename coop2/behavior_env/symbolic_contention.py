@@ -88,7 +88,7 @@ DEFAULT_GATED_PRIMITIVES = frozenset(
 DEFAULT_RADIUS_MARGIN = 0.05
 
 #: Ticks of travel per metre. One env step is 1/``action_frequency`` seconds
-#: (30 Hz by default), so 20 ticks/m is 0.67 s/m, i.e. a 1.5 m/s base. Tune it as
+#: (30 Hz by default), so 10 ticks/m is 0.33 s/m, i.e. a 3 m/s base. Tune it as
 #: an experiment variable: this number sets how expensive distance is relative
 #: to a decision.
 #:
@@ -112,11 +112,11 @@ DEFAULT_RADIUS_MARGIN = 0.05
 #: Any metric recorded at 60 ticks/m is **not comparable** with one recorded
 #: here -- travel is most of the tick budget, so every step count moves.
 #:
-#: **20 since 2026-09-13** (user). Was 30 from 2026-09-11 and 60 before that; no
+#: **10 since 2026-09-14** (user). Was 20 from 2026-09-13, 30 from 2026-09-11 and 60 before that; no
 #: step count recorded under one rate is comparable with one recorded under
 #: another. The prompts state the same figure and test_symbolic_contention
 #: fails if they part.
-DEFAULT_TRAVEL_TICKS_PER_METER = 20.0
+DEFAULT_TRAVEL_TICKS_PER_METER = 10.0
 
 #: Ticks a ``wait`` holds for when the agent does not say. Long enough that a
 #: teammate's NAVIGATE_TO (300-500 ticks here) makes real progress during it.

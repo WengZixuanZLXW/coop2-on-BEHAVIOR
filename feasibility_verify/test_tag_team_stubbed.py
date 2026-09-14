@@ -40,6 +40,7 @@ from coop2.cognitive.agent.llm_client import (
 )
 from coop2.cognitive.agent.prompt_sections import cooperation_section, current_messages_section
 from coop2.cognitive.messages import MessageBroker
+from coop2.cognitive.agent.prompt_sections import HANDOFF_ORDER
 from coop2.comm_topology.llm_tag import (
     NOTIFY_MESSAGE_TYPE,
     TAG_MANUAL,
@@ -177,7 +178,9 @@ def main() -> int:
     assert shared_tag(agents) is brains["team_1"].tag
     system = brains["team_1"]._system_prompt(agents["drone_1"])
     assert "## 4. COOPERATION MODE: SHARED TASK GRAPH" in system
-    assert system.rstrip().endswith("## 5. DIGTAG\n" + TAG_MANUAL.strip()), system[-200:]
+    # Section 5 is the best practice list (handoff order first), the manual after it.
+    assert system.rstrip().endswith("DIGTAG:\n" + TAG_MANUAL.strip()), system[-200:]
+    assert "## 5. BEST PRACTICE" in system and HANDOFF_ORDER in system
     for tool in ("open(goal, rule, state)", "update(task, state)", "close(identity)", "attach(task, payload)"):
         assert tool in system, tool
     ok("three TagTeamBrains, one graph, empty wiring, sections 4 and 5 in place")

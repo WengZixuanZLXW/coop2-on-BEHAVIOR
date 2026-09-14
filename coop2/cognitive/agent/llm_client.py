@@ -683,6 +683,30 @@ class LLMMessageboardPlanResponse(LLMTeamPlanResponse):
     )
 
 
+class LLMChainPlanResponse(LLMTeamPlanResponse):
+    """The team plan plus what to tell the teams behind -- `broadcast_chain`.
+
+    In the same call as the plans, for the reason `board_post` is: the teams
+    behind act on this, so it must come from the reasoning that produced the
+    plans. What it replaces was `_plan_summary`, a mechanical join of each
+    robot's `plan.specification`. Measured on the 2026-09-13 LH run: with one
+    cargo in the activity every team's broadcast read
+    `drone_1: ontop(notebook.n.01_1, cabinet.n.01_1); jackal_1:
+    holding(notebook.n.01_1); ...` -- identical across teams, silent on who
+    actually held the notebook and which leg was claimed, so the teams behind
+    could not tell whose turn it was and grabbed the cargo from each other.
+    """
+
+    broadcast: str = Field(
+        description=(
+            "One or two sentences for the teams behind you in the chain, in the task's "
+            "ids: which of your robots holds or is going for the cargo, which leg you "
+            "are taking this round, and what you are leaving to them. They act on this, "
+            "so say what you are committing to, not what you might do."
+        )
+    )
+
+
 class NotifyRequest(BaseModel):
     """Reserved: a team's request to interrupt named teams -- the notify tool.
 
@@ -731,6 +755,29 @@ class LLMTeamInterruptResponse(BaseModel):
         description="Exactly one decision per robot on the team"
     )
     reasoning: str = Field(description="What the message means for the team as a whole")
+
+
+class LLMChainInterruptResponse(LLMTeamInterruptResponse):
+    """The interrupt decisions plus what to relay onward -- `broadcast_chain`.
+
+    The chain relays once per interrupt round whatever it decided, resume
+    included, or the team behind waits out `_await_relay` for a message that
+    was never coming. What it relayed was `_current_allocation()`, a join of
+    every robot's current plan specification, which has the fault
+    `LLMChainPlanResponse` documents: with one cargo it reads the same for
+    every team and names no holder. Same call as the decisions, for the same
+    reason -- the teams behind act on it, so it must come from the reasoning
+    that made the decision.
+    """
+
+    broadcast: str = Field(
+        description=(
+            "One or two sentences for the teams behind you, in the task's ids: what "
+            "this message changed for your robots, which robot of yours holds or is "
+            "going for the cargo, and what you leave to them. Say it even when "
+            "everyone resumed -- they are waiting to hear from you."
+        )
+    )
 
 
 # ============================================================================

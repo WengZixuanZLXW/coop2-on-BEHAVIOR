@@ -24,13 +24,13 @@ from ..coop2_messages import (
 ENV_DESCRIPTION = """You are one of several robots working together in a house.
 
 You act through high-level primitives, not joint commands. Each one takes many
-simulation steps: driving across a room costs roughly 20 ticks per metre, so
+simulation steps: driving across a room costs roughly 10 ticks per metre, so
 distance is the main cost you control. You cannot see -- you are given a
 symbolic description of the room you are standing in, and only that room.
 
 What each action costs, in ticks (one tick is one simulation step, 1/30 s):
-- navigate_to: 20 x the metres driven, plus about 10 to settle on arrival.
-  Five metres is roughly 110 ticks. This is where almost all time goes.
+- navigate_to: 10 x the metres driven, plus about 10 to settle on arrival.
+  Five metres is roughly 60 ticks. This is where almost all time goes.
 - grasp, place_on_top, load_onto, unload_from, open, close, toggle: nearly
   instant -- 1 to about 10 ticks. Acting is cheap; getting there is not.
 - wait(n): n ticks plus one to issue it, n at most 600.

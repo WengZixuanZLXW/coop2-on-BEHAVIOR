@@ -2,6 +2,8 @@
 axis, time running left to right in the order of opens, calls, and closes.
 Every call is a square, every returned event a circle, every delivery a
 dashed arrow into the activation it was presented to; ids are optional.
+A T band's square is lettered by its tool (o, e, u, s, j, c), a root
+version i, so a dense record stays legible.
 The record may be a DIG-TAG (all three bands), a DIG on its own (D and
 Z), or a TAG on its own -- a `TAGGraph` or the `TAGParallelInterface` over it
 (T alone, versions at the actions that returned them). `render_bars` is
@@ -35,10 +37,18 @@ LABEL_PAD = 0.15         # before a lane label
 BAND_GAP = 0.1
 Z_H = 0.36
 AXIS_H = 0.22
-RIGHT = 0.3              # room for a trailing label
+RIGHT = 0.2              # room for a trailing label
+LABEL_UP = 0.04          # a letter's baseline above its lane; an id hangs the same way below
 ARC_H = 0.12             # the height of an arc over the nodes between an edge's ends
 
 ROUTED = ("send", "root", "start")     # deliveries that a send or the entry routed, drawn dashed
+
+
+def letter(name: str) -> str:
+    """A mark's label, the first letter of what it is: o, e, u, s, j, c for
+    the task tool an action applied, i for an initial version. An
+    attachment is labeled by its evidence id instead."""
+    return name[0]
 
 
 def tool_fill(call: ToolCall) -> str:
@@ -185,7 +195,7 @@ def render_record(panel: Panel, record: Any, *, bands: Optional[Sequence[str]] =
                   action_labels: bool = True, pitch: Optional[float] = None,
                   timeline: Optional[Timeline] = None) -> None:
     """`ids` labels versions, activations, and attachments; `action_labels`
-    names each action above its square; `context`
+    letters each action above its square (`letter`); `context`
     also draws, dotted, the events an activation had from earlier;
     `highlight` = {"versions": ids, "evidence": ids, "actions": ids} draws
     the named versions, attachments, and actions bold -- an action's
@@ -354,7 +364,7 @@ class _RecordDrawing:
 
     def task_nodes(self) -> None:
         """T: the bipartite graph's nodes. Each action is a red square at
-        its call on its first output's lane, labeled above; each version is a circle
+        its call on its first output's lane, lettered above; each version is a circle
         ACTION_GAP after the action that returned it, on its identity's
         lane, a root version at the left. What is closed is gray: the
         versions of a closed identity and the actions whose every output
@@ -371,10 +381,8 @@ class _RecordDrawing:
             self.pos_action[action.id] = (x, y)
             bold, closed = self.on_lineage(action), self._closed_action(action)
             panel.square((x, y), S.CLOSED if closed else S.TASK_TOOL, side=S.T_SQ, z=6, lw=1.0 if bold else 0.5)
-            if self.action_labels:                  # above the square; a close's below, clear of the join before it
-                where = (x + 0.09, y - 0.05) if action.label is TaskAction.Label.CLOSE else (x - S.T_SQ / 2, y + S.T_SQ / 2 + 0.02)
-                panel.text(where, action.label.value, fontsize=S.FONT_MIN, ha="left",
-                           va="top" if action.label is TaskAction.Label.CLOSE else "bottom",
+            if self.action_labels:                  # the tool's letter, centered above the square
+                panel.text((x, y + LABEL_UP), letter(action.label.value), fontsize=S.FONT_MIN, va="bottom",
                            color=self._label_color(bold, closed))
             if "D" in self.size.bands:
                 panel.line((x, self.lane_d[self._agent_of(action.issuer)] + S.SQ / 2), (x, y - S.T_SQ / 2),
@@ -390,12 +398,10 @@ class _RecordDrawing:
         panel.circle(p, S.CLOSED if closed else S.TASK_EVENT, r=S.R_TASK, z=6,
                      edge=S.INK if bold else S.MARK_EDGE, lw=1.1 if bold else 0.5)
         if root:
-            panel.text((x, p[1] + 0.06), "initial", fontsize=S.FONT_MIN, va="bottom",
+            panel.text((x, p[1] + LABEL_UP), letter("initial"), fontsize=S.FONT_MIN, va="bottom",
                        color=S.CLOSED if closed else S.LABEL_RED)
-        if self.ids:
-            side = -1 if root else 1
-            panel.text((x + side * 0.045, p[1] - 0.04), task.id, fontsize=S.FONT_MIN,
-                       ha="right" if side < 0 else "left", va="top",
+        if self.ids:                            # centered under the circle, clear of the next call's letter on the lane below
+            panel.text((x, p[1] - LABEL_UP), task.id, fontsize=S.FONT_MIN, va="top",
                        color=S.CLOSED if closed else "#7a4a1a", backdrop=S.BAND_T)
 
     def task_edges(self) -> None:
@@ -435,7 +441,7 @@ class _RecordDrawing:
     def attachments(self) -> None:
         """T: each attachment as a link from the attaching call up to its
         target's lane -- from the call's square when D is drawn, else from
-        the foot of the band."""
+        the foot of the band -- labeled by its evidence id."""
         panel = self.panel
         for at, phi, agent in self.timeline.attachments():
             x, target = self.x_at(at), self.pos_task[phi.target]
@@ -445,7 +451,7 @@ class _RecordDrawing:
                        style="solid" if bold else "dotted", color=S.EVIDENCE, lw=1.0 if bold else 0.5, z=4)
             if self.ids:
                 where = (x + 0.02, target[1] - 0.1) if "D" in self.size.bands else (x + 0.02, foot)
-                panel.text(where, f"attach {phi.id}", fontsize=S.FONT_MIN, ha="left",
+                panel.text(where, phi.id, fontsize=S.FONT_MIN, ha="left",
                            va="top" if "D" in self.size.bands else "bottom",
                            color=S.EVIDENCE if bold or not self.highlight else self.dim)
 

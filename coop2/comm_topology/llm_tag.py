@@ -2,7 +2,8 @@
 teams coordinate through.
 
 The graph is the reference implementation from HappyEureka/dig-tag-icra,
-commit 274882b ("The message board has one tool: write"), vendored unmodified
+commit e39c56e ("Letter the T band's marks"; the graph itself is 274882b's,
+the renderer letters its marks so labels no longer overlap), vendored unmodified
 into ``coop2/dig_tag/`` with its golden tests in ``coop2/dig_tag_tests/``.
 This is the one runtime file that imports it -- their rule, kept: the graph
 is LLM- and environment-agnostic and nothing else here should learn its
@@ -78,36 +79,24 @@ TAG_FIGURE_PITCH = 0.2
 
 #: Section 5. DIG-TAG's TAG_ROLE, said to a team controller rather than to a
 #: robot: the vocabulary and the three-part answer are unchanged.
-TAG_MANUAL = """THE SHARED TASK GRAPH -- how it works and how you act on it.
-A task has a persistent identity (k1, k2, ...) and a current version (q1,
-q2, ...) carrying a goal, a rule for judging it, and a reported state. The
-graph shows you the open tasks' current versions, each task's history (which
-team did what to it), what it came from and what came from it, and the
-evidence attached to its current version.
-
-tag_actions -- changes to the graph, applied in order, before anything else
-in your answer takes effect:
-  - open(goal, rule, state): a new task with a fresh identity.
-  - edit(task, goal, rule): a new version of that task with a new goal or rule.
-  - update(task, state): a new version of that task with a new reported state.
-  - split(task, parts): replace a task by two or more parts, each with its own
-    goal, rule and state; leave a part's identity null for a fresh one.
-  - join(tasks, goal, rule, state): integrate versions of distinct tasks into one.
-  - close(identity): mark a task identity closed; no further work is needed.
-  - attach(task, payload): attach evidence or a note to an exact version.
-Name versions by their ids (q3) and tasks by their identities (k1). Only the
-current version of a task can be continued; acting on an older version starts
-a new task. A rejected action is reported back to you and the rest still apply.
-
-notify -- team names to wake so they read the graph now. Each notification
-interrupts that whole team. Your budget until the next environment step is
-shown with the graph; leave the list empty when nothing needs their attention,
-and past the budget a notification is dropped.
-
-Keep the graph small and true: open what the teams should work on, update
-states as work progresses, attach what you learned, close what is done. State
-tasks in the task's own ids (the cargo, the support, the room), so another
-team can act on them without asking you."""
+TAG_MANUAL = """A task has a persistent identity (k1, k2, ...) and a current version (q1,
+q2, ...) with a goal, a rule for judging it, and a reported state; the graph
+shows each open task's current version, history (which team did what),
+relations, and evidence.
+tag_actions, applied in order:
+- open(goal, rule, state): a new task, fresh identity.
+- edit(task, goal, rule): a new version with a new goal or rule.
+- update(task, state): a new version with a new reported state.
+- split(task, parts): two or more parts, each with goal, rule, state; identity
+  null for a fresh one.
+- join(tasks, goal, rule, state): versions of distinct tasks into one.
+- close(identity): no further work on that task.
+- attach(task, payload): evidence or a note on an exact version.
+Open what nobody is doing, update the state of what your robots do, attach
+what you learned, close what is done, in the task's own ids (cargo, support,
+room). Only a task's current version can be continued; acting on an older one
+starts a new task. A rejected action is reported back and the others still
+apply."""
 
 _round_sequence = itertools.count()
 _round_sequence_lock = threading.Lock()
@@ -149,8 +138,7 @@ def format_tag_observation(tag_observation: Dict[str, Any], team_names: List[str
     histories = tag_observation.get("histories", {})
     relations = tag_observation.get("relations", {})
     evidence = tag_observation.get("evidence", {})
-    lines = [f"Shared task graph (read and written by {', '.join(team_names)}). "
-             "Open tasks, their current versions, and how they got there:"]
+    lines = [f"Open tasks (graph shared by {', '.join(team_names)}):"]
     if versions:
         for version in versions:
             lines.append(
@@ -177,7 +165,7 @@ def format_tag_observation(tag_observation: Dict[str, Any], team_names: List[str
             for phi in evidence.get(version.id, []):
                 lines.append(f"    evidence {phi['id']} by {phi['source']}: {phi['payload']}")
     else:
-        lines.append("  (none yet -- the graph is empty; what you open is what the other teams will read)")
+        lines.append("  (none yet)")
     idle = [identity for identity in tag_observation.get("open", [])
             if all(v.identity != identity for v in versions)]
     if idle:
@@ -243,16 +231,13 @@ class TagTeamBrain(TeamBrain):
         return super()._build_interrupt_prompt(members, messages)
 
     def _plan_closing(self, members) -> str:
-        return (f"Return exactly {len(members)} plans, one per robot, using each "
-                "robot's own ids. Say in `reasoning` how you divided the work. In "
-                "`tag_actions` put the changes the shared task graph needs so the "
-                "other teams can see what your robots are doing (empty if none); in "
-                "`notify` the teams that must read it now (usually empty).")
+        return (super()._plan_closing(members)
+                + " `tag_actions`: changes the shared graph needs (empty if none); "
+                  "`notify`: teams that must read it now (usually empty).")
 
     def _interrupt_closing(self) -> str:
         return (super()._interrupt_closing()
-                + " Also return `tag_actions` (changes to the shared task graph, empty "
-                  "if none) and `notify` (teams that must read it now, usually empty).")
+                + " Also `tag_actions` (empty if none) and `notify` (usually empty).")
 
     # -- the calls ---------------------------------------------------------
 

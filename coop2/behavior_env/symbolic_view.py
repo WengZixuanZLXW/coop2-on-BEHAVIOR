@@ -65,8 +65,9 @@ def render_route_block(spec, progress, description: Optional[str] = None) -> str
         for node in route.nodes:
             mark = "done" if node.id in done else ("NEXT" if node.id == nxt else "    ")
             lines.append(f"  {mark}  {node.id:<3} {node.predicate}({node.cargo}, {node.support})")
-    lines.append("A support reached out of order does not count, and nothing is lost by it: "
-                 "progress resumes when the NEXT one holds.")
+    # A legend, not a rule: the rule is section 2's. Out of order does not
+    # count; only NEXT does.
+    lines.append("(out of order does not count; only NEXT does)")
     return "\n".join(lines)
 
 
