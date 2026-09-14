@@ -41,12 +41,17 @@ from typing import Optional, Sequence, Tuple
 
 import torch as th
 
+from coop2.behavior_env.geometry_cache import aabb_cache, invalidate_aabb_cache
 from omnigibson.action_primitives.action_primitive_set_base import ActionPrimitiveError
 from omnigibson.action_primitives.symbolic_semantic_action_primitives import (
     SymbolicSemanticActionPrimitives,
 )
 
-__all__ = ["DestinationRegistry", "NavigableSymbolicActionPrimitives"]
+__all__ = [
+    "DestinationRegistry",
+    "NavigableSymbolicActionPrimitives",
+    "invalidate_aabb_cache",
+]
 
 
 class DestinationRegistry:
@@ -548,15 +553,29 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
     @staticmethod
     def _aabb_of(obj):
         """``(lo, hi)`` world AABB of @obj, from ``aabb`` when the object has
-        one, else from its position and ``aabb_extent`` (the CPU fakes)."""
+        one, else from its position and ``aabb_extent`` (the CPU fakes).
+
+        Memoised for the current tick (`geometry_cache`): the scan in
+        ``support_of`` asks for the same objects over and over within one
+        observation, and recomputing them was most of what an observation
+        cost.
+        """
+        cache = aabb_cache()
+        key = getattr(obj, "name", None) or id(obj)
+        hit = cache.get(key)
+        if hit is not None:
+            return hit
         aabb = getattr(obj, "aabb", None)
         if aabb is not None and not callable(aabb):
             lo, hi = aabb
-            return [float(v) for v in lo], [float(v) for v in hi]
+            box = ([float(v) for v in lo], [float(v) for v in hi])
+            cache[key] = box
+            return box
         position = obj.get_position_orientation()[0]
         extent = getattr(obj, "aabb_extent", None) or (0.0, 0.0, 0.0)
         lo = [float(position[i]) - float(extent[i]) / 2.0 for i in range(3)]
         hi = [float(position[i]) + float(extent[i]) / 2.0 for i in range(3)]
+        cache[key] = (lo, hi)
         return lo, hi
 
     def support_of(self, obj):

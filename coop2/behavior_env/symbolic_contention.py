@@ -48,6 +48,7 @@ from typing import Any, Iterable, Optional, Sequence, Tuple
 
 from omnigibson.action_primitives.action_primitive_set_base import ActionPrimitiveError
 
+from coop2.behavior_env.geometry_cache import invalidate_aabb_cache
 from coop2.behavior_env.symbolic_navigation import NavigableSymbolicActionPrimitives
 
 __all__ = [
@@ -635,6 +636,7 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
         # (under it, for a drone -- see _hold_position).
         hold = self._hold_position(riding)
         riding.set_position_orientation(position=hold)
+        invalidate_aabb_cache()
         try:
             riding.keep_still()
         except Exception:  # noqa: BLE001
@@ -734,6 +736,7 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
                     obj.keep_still()
                 except Exception as error:  # noqa: BLE001 - never let bookkeeping kill a navigate
                     print(f"[nav] could not move {getattr(obj, 'name', obj)} with {self.robot.name}: {error}")
+            invalidate_aabb_cache()
         if first is not None:
             yield first
         yield from teleport
@@ -793,6 +796,7 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
         # eef origin; the joint is anchored at the same point.
         hold = self._hold_position(obj)
         obj.set_position_orientation(position=hold)
+        invalidate_aabb_cache()
         try:
             obj.keep_still()
         except Exception:  # noqa: BLE001
@@ -858,6 +862,7 @@ class ContentiousSymbolicActionPrimitives(NavigableSymbolicActionPrimitives):
             self.robot.release_grasp_immediately(arm=arm)
 
         obj_in_hand.set_position_orientation(*obj_pose)
+        invalidate_aabb_cache()
         # Teleporting does not zero velocity, and the object carries whatever it
         # picked up in the gripper; the settle below would otherwise integrate it.
         obj_in_hand.keep_still()

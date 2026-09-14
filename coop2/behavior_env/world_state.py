@@ -243,8 +243,13 @@ class BehaviorWorldState:
         self._exclude_states = exclude_states
         self._builder = None
         self._graph = None
-        self._facts_cache_key = None
-        self._facts_cache: List[PredicateFact] = []
+        # Per world refresh, and keyed by *which* entity set was asked for.
+        # One slot was not enough: `_build_info` asks once per agent, so
+        # robots in rooms A, B, A evicted A's answer before it was reused
+        # (user, 2026-09-14). A dict keyed by the entity set, dropped whole
+        # when `step_index` moves, costs one small dict per macro step.
+        self._facts_by_set: Dict[frozenset, List[PredicateFact]] = {}
+        self._facts_step = -1
         self.step_index = 0
 
         # Stable type-local ids, assigned on first sight and never reused: the
@@ -558,7 +563,13 @@ class BehaviorWorldState:
         return out
 
     def entities(self) -> Dict[str, EntityObservation]:
-        """Every entity in the scene, keyed by stable id."""
+        """Every entity in the scene, keyed by stable id.
+
+        Always recomputed: callers read it between world refreshes and expect
+        it to be live. What avoids the repeated scan is `observation_for`'s
+        ``entities`` argument, which lets one refresh compute it once and hand
+        the same mapping to every agent.
+        """
         held = self.held_objects()
         fixed = self._fixed_objects()
         out: Dict[str, EntityObservation] = {}
@@ -659,12 +670,16 @@ class BehaviorWorldState:
         Uses the same ``obj.states[X].get_value(other)`` calls the graph
         builder makes; what is replaced is only its scan policy, which is
         every ordered pair in the scene against every relative boolean state.
-        Results are memoised per world refresh, since both agents in a room
-        ask for the same set.
+        Results are memoised per world refresh, keyed by the entity set, since
+        every agent in a room asks for the same one.
         """
-        key = (self.step_index, frozenset(entity.name for entity in entities.values()))
-        if self._facts_cache_key == key:
-            return list(self._facts_cache)
+        key = frozenset(entity.name for entity in entities.values())
+        if self._facts_step != self.step_index:
+            self._facts_by_set = {}
+            self._facts_step = self.step_index
+        hit = self._facts_by_set.get(key)
+        if hit is not None:
+            return list(hit)
 
         by_name = self._objects_by_name()
         pairs = []
@@ -690,8 +705,7 @@ class BehaviorWorldState:
                         continue
 
         facts.sort(key=lambda f: (f.predicate, f.args))
-        self._facts_cache_key = key
-        self._facts_cache = facts
+        self._facts_by_set[key] = facts
         return list(facts)
 
     def _objects_by_name(self) -> Dict[str, Any]:
@@ -766,6 +780,7 @@ class BehaviorWorldState:
         goal_terms: Optional[str] = None,
         last_action_id: Optional[str] = None,
         last_error: Optional[str] = None,
+        entities: Optional[Dict[str, EntityObservation]] = None,
     ) -> SymbolicObservation:
         """The room-level view for one agent.
 
@@ -788,7 +803,10 @@ class BehaviorWorldState:
         if include_seen_rooms:
             visible_rooms |= self._seen_rooms.get(agent_id, set())
 
-        everything = self.entities()
+        # @entities lets one macro step compute the scene scan once and give
+        # the same mapping to every agent; without it each agent re-read every
+        # object's pose, room and unary states.
+        everything = self.entities() if entities is None else entities
         entities = {}
         for entity_id, entity in everything.items():
             if entity.name == agent_id:

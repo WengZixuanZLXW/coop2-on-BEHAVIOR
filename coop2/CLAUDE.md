@@ -2163,6 +2163,51 @@ the painted map is the one the scene reads.
 
 **Results from before this fix measure the map, not the modes.**
 
+## The observation path was recomputing the scene's geometry (2026-09-14)
+
+A nine-robot HL episode cost **469 ms per env step** against 24 ms for three
+robots in the same scene. `cProfile` over three macro steps put 85% of it in
+one chain: `target_hints` -> `interaction_radius_for` per entity ->
+`support_of`, which answers "what is this resting on?" by scanning **every**
+object in the scene and taking each one's world AABB. 2277 `_aabb_of` calls
+per three macro steps, `entity_prim.aabb` rebuilding collision points in world
+frame on each, 0.32 s of that inside `torch.tensor` alone.
+
+`coop2/behavior_env/geometry_cache.py` memoises world AABBs for the length of
+one tick -- nothing can move while nothing steps. `primitive_engine.tick`
+clears it after `env.step`, `coop_env.reset` clears it after placement, and the
+four teleport sites in `symbolic_contention` clear it too. Its own module, with
+no omnigibson import, so the engine can clear the cache without pulling in the
+controller stack; the three stubbed tests that load modules by file path
+register it the same way they fake omnigibson.
+
+Measured: a macro step for nine robots 606 -> 41 ms in one room, 214 -> 11 ms
+spread over eight; a real `individual` / `sets_3` / HL episode 469 -> 47 ms per
+step, and it now *solves* -- 10/10 nodes at env_step 893, 0 out of order, where
+the archived run reached 8/10 in 3972 steps.
+
+Two smaller fixes, both real and both minor next to that one. `_facts_scoped`
+kept only the last entity set, so robots asking about rooms A, B, A evicted A's
+answer before it was reused (user, 2026-09-14); it is a dict now, dropped whole
+when `step_index` moves. And `observation_for` takes the entity mapping as an
+argument, so `_build_info` scans the scene once for all nine agents instead of
+once each. Together they were under 10% -- which is the lesson: the profile
+disagreed with both standing hypotheses, including a well-reasoned one.
+
+**Reverted:** sharing the per-entity radius cache across agents. The radius is
+`clearance + reach`, and both the reach and the robot radius are per robot, so
+one cache would hand a Crazyflie the Ridgeback's gate.
+
+**Torch threads are not worth capping for a single run.** 75% of a run's CPU is
+PyTorch's 16-thread intra-op pool spinning at a barrier (equal CPU times to
+0.15%, `stime` ~0, `wchan` 0), but `set_num_threads(1)` makes raw stepping
+*slower*: 17.8 ms against 16.6 ms per `env.step`, measured by alternating three
+times. The only reason to cap is parallel cells, unmeasured.
+
+After all this the wall clock of a nine-robot episode is 84% the world frozen
+waiting for the model and 16% ticking, so `sweep_grid --parallel` is now the
+dominant lever. `PERFORMANCE.md` at the repo root has the full accounting.
+
 ## Open defects
 
 Fixed ones are not listed here -- the fix and its reasoning live in the commit

@@ -116,7 +116,36 @@ def _install_omnigibson_stubs():
     )
 
 
+def _register_geometry_cache():
+    """Put ``coop2.behavior_env.geometry_cache`` in sys.modules.
+
+    The module under test imports it by its package path. It is pure stdlib --
+    a dict of world AABBs valid for one tick -- so the real file is loaded
+    rather than stubbed; only the package namespace around it is faked, the
+    way this file fakes omnigibson.
+    """
+    import types
+
+    for name in ("coop2", "coop2.behavior_env"):
+        if name not in sys.modules:
+            package = types.ModuleType(name)
+            package.__path__ = []
+            sys.modules[name] = package
+    name = "coop2.behavior_env.geometry_cache"
+    if name in sys.modules:
+        return
+    path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "coop2", "behavior_env", "geometry_cache.py",
+    )
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+
+
 def _load_module():
+    _register_geometry_cache()
     path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "coop2",

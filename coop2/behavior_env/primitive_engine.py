@@ -81,6 +81,8 @@ from omnigibson.action_primitives.starter_semantic_action_primitives import (
 )
 from omnigibson.robots import Robot
 
+from coop2.behavior_env.geometry_cache import invalidate_aabb_cache
+
 __all__ = [
     "MotionMode",
     "ReasonCode",
@@ -772,6 +774,10 @@ class MultiAgentPrimitiveEngine:
                 outcomes[agent_id] = outcome
 
         obs, rewards, terminated, truncated, info = self.env.step(action)
+        # Bodies have moved, so every cached world AABB is stale. Clearing
+        # here is what makes the cache safe: it holds for exactly the tick it
+        # was filled in.
+        invalidate_aabb_cache()
         self.last_env_transition = (obs, rewards, terminated, truncated, info)
         self.last_advanced = advanced
         self.env_step += 1

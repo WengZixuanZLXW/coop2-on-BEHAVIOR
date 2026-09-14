@@ -641,7 +641,13 @@ class CooperativeBehaviorEnv:
             self.seed = seed
         if not self._loaded:
             self._build()
+        from coop2.behavior_env.geometry_cache import invalidate_aabb_cache  # noqa: PLC0415
+
         self._pending_outcomes = {}
+        # Building the scene places every robot and settles the task objects,
+        # none of it through `engine.tick()`, so anything cached before this
+        # point describes where things *were*.
+        invalidate_aabb_cache()
         # Re-applied here because a scene reset restores the initial file, and a
         # task object that is allowed to sleep is invisible to OnTop.
         self._keep_task_objects_awake()
@@ -917,10 +923,16 @@ class CooperativeBehaviorEnv:
         from coop2.behavior_env.symbolic_view import render_symbolic_view, target_hints  # noqa: PLC0415
 
         info: Dict[str, Any] = {}
+        # One scene scan for the whole refresh. `entities()` reads a pose, a
+        # room and the unary states of every object, and it used to run once
+        # per agent even though nothing moves between two agents of the same
+        # macro step.
+        everything = self.world.entities()
+        task_block = self._task_block()
         for agent_id in self.agent_names:
             observation = self.world.observation_for(
                 agent_id, max_steps=self.length, env_step=self.engine.env_step,
-                goal_terms=self._task_block(),
+                goal_terms=task_block, entities=everything,
             )
             # Resolve the radius per entity, not once from a probe object. The
             # gate is per-object (a table's radius exceeds an apple's), so a
@@ -930,6 +942,12 @@ class CooperativeBehaviorEnv:
             radius = None
             controller = self.controllers.get(agent_id)
             if controller is not None:
+                # Per agent, not shared: the radius is `clearance + reach`, and
+                # both the reach and the robot radius differ per robot, so one
+                # cache across agents would hand a Crazyflie the Ridgeback's
+                # gate. What the agents do share is the AABB cache underneath
+                # (`symbolic_navigation._AABB_CACHE`), which is where the cost
+                # actually was.
                 cache: Dict[str, Optional[float]] = {}
 
                 def radius(entity, _controller=controller, _cache=cache):

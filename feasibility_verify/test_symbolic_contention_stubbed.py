@@ -208,6 +208,7 @@ def _load_modules():
     sub = types.ModuleType("coop2.behavior_env")
     sub.__path__ = []
     sys.modules["coop2.behavior_env"] = sub
+    _load("coop2.behavior_env.geometry_cache", "coop2/behavior_env/geometry_cache.py")
     _load("coop2.behavior_env.primitive_engine", "coop2/behavior_env/primitive_engine.py")
     _load("coop2.behavior_env.symbolic_navigation", "coop2/behavior_env/symbolic_navigation.py")
     return _load("coop2.behavior_env.symbolic_contention", "coop2/behavior_env/symbolic_contention.py")
