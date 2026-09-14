@@ -734,6 +734,72 @@ class LLMTeamInterruptResponse(BaseModel):
 
 
 # ============================================================================
+# The task-graph mode (`tag`): DIG-TAG's task-graph actions and notify, riding
+# in the team plan and in the team interrupt decision. The vocabulary is
+# dig_tag's (coop2/comm_topology/llm_tag.py applies it); these are only the
+# shapes the model fills in. Mirrors dig-tag-icra's TAGPart / TAGToolCall.
+# ============================================================================
+
+TagTool = Literal["open", "edit", "update", "split", "join", "close", "attach"]
+
+
+class TagPart(BaseModel):
+    """One part of a split."""
+
+    goal: str = Field(description="The part's goal")
+    rule: Optional[str] = Field(default=None, description="How the part is judged")
+    state: Optional[str] = Field(default=None, description="The part's reported state")
+    identity: Optional[str] = Field(
+        default=None, description="An existing task identity the part continues, or null for a fresh one"
+    )
+
+
+class TagToolCall(BaseModel):
+    """One task-graph action; the fields a tool does not take stay null."""
+
+    tool: TagTool = Field(description="open, edit, update, split, join, close, or attach")
+    task: Optional[str] = Field(default=None, description="Version id (q3) for edit, update, split, and attach")
+    tasks: Optional[List[str]] = Field(default=None, description="Version ids to join")
+    identity: Optional[str] = Field(
+        default=None, description="Task identity (k1): the target of close, or the identity a join continues"
+    )
+    goal: Optional[str] = Field(default=None, description="Goal for open, edit, and join")
+    rule: Optional[str] = Field(default=None, description="Rule for open, edit, and join")
+    state: Optional[str] = Field(default=None, description="Reported state for open, update, and join")
+    parts: Optional[List[TagPart]] = Field(default=None, description="Parts for split (two or more)")
+    payload: Optional[str] = Field(default=None, description="Evidence or note text for attach")
+
+
+class LLMTagPlanResponse(LLMTeamPlanResponse):
+    """The team plan plus the task-graph part of the round -- `tag`.
+
+    Applied in this order: `tag_actions` on the shared graph, then `notify`
+    (each named team is interrupted and reads the graph), then the plans go
+    to the robots. Same call on purpose: the graph is changed by the reasoning
+    that made the plans, so the two cannot drift.
+    """
+
+    tag_actions: List[TagToolCall] = Field(
+        description="Task-graph actions, applied to the shared graph in order; may be empty"
+    )
+    notify: List[str] = Field(
+        description="Team names to wake so they read the task graph now; may be empty"
+    )
+
+
+class LLMTagInterruptResponse(LLMTeamInterruptResponse):
+    """The interrupt decision plus the task-graph part -- the same round, as
+    DIG-TAG has it: a notified team observes the graph and answers the same way."""
+
+    tag_actions: List[TagToolCall] = Field(
+        description="Task-graph actions, applied to the shared graph in order; may be empty"
+    )
+    notify: List[str] = Field(
+        description="Team names to wake so they read the task graph now; may be empty"
+    )
+
+
+# ============================================================================
 # Utility functions
 # ============================================================================
 

@@ -14,6 +14,13 @@ through this same script: ``run_decentralized_messageboard.py`` calls
 ``main(topology="decentralized_messageboard")`` and nothing else differs --
 no waiting, no messages, no interrupts; the board is read and written inside
 the planning call. The board is saved as ``message_board.json``.
+
+`tag` is individual with a shared task graph and the notify tool (DIG-TAG):
+``run_tag.py`` calls ``main(topology="tag")``. Teams still never wait for one
+another, but a team may notify others, which interrupts them, within
+``--notify-budget`` per environment step; the budgets are reset after every
+step here. The graph is saved as ``tag.json``, every team output as
+``tag_rounds.json``, and the graph is drawn to ``tag.pdf`` / ``tag.png``.
 """
 
 import sys
@@ -45,7 +52,11 @@ from coop2.cognitive.agent.llm_io_log import LLMIORecorder
 from coop2.experiment.agent_timeline import plot_from_run_dir, save_team_timeline
 from coop2.experiment.stall_watch import StallWatch
 from coop2.behavior_env.team_config import homogeneous_layout, load_team_layout
-from coop2.comm_topology.llm_team import create_llm_team_topology
+from coop2.comm_topology.llm_team import (
+    MessageboardTeamBrain,
+    create_llm_team_topology,
+    reset_notify_budgets,
+)
 try:
     from llm_usage import print_llm_usage_summary
 except ImportError:
@@ -76,6 +87,7 @@ def run_individual_experiment(
     team_size=None,
     run_name=None,
     topology="individual",
+    notify_budget=1,
 ):
     """
     Run experiment with individual LLM agents (no communication).
@@ -93,11 +105,14 @@ def run_individual_experiment(
         seed: Environment random seed.
         record_video: If True, record and save an episode GIF.
         output_root: Optional directory where this run directory should be created.
-        topology: "individual" or "decentralized_messageboard" -- the two modes
-            in which teams never address each other; see the module docstring.
+        topology: "individual", "decentralized_messageboard" or "tag" -- the
+            modes in which teams never wait for each other; see the module
+            docstring.
+        notify_budget: notifications a team may send between two environment
+            steps (`tag`, and the board with its notify tool on).
     """
-    if topology not in ("individual", "decentralized_messageboard"):
-        raise ValueError(f"this runner is for the non-messaging modes, not {topology!r}")
+    if topology not in ("individual", "decentralized_messageboard", "tag"):
+        raise ValueError(f"this runner is for the modes without a speaking order, not {topology!r}")
     print("="*80)
     print(f"{topology.upper()} TOPOLOGY WITH LLM AGENTS")
     print("="*80)
@@ -195,6 +210,9 @@ def run_individual_experiment(
     print(f"\nCreating {topology} topology with {n_agents} agents...")
     if topology == "decentralized_messageboard":
         print("  Teams plan independently; each reads and posts to one shared message board")
+    elif topology == "tag":
+        print("  Teams plan independently around one shared task graph; a team may notify "
+              f"others to read it, {notify_budget} time(s) per environment step")
     else:
         print(f"  All agents operate independently (no communication)")
     if coop2_precheck_enabled:
@@ -211,15 +229,20 @@ def run_individual_experiment(
         temperature=0.7,
         verbose=verbose,
         goal_instruction=goal_instruction,
+        notify_budget=notify_budget,
     )
-    
-    # Wrap with planning environment
+
+    # Wrap with planning environment. Only the notify tool sends anything in
+    # these modes, and a notification is an interrupt by definition.
+    notifies = topology == "tag" or (
+        topology == "decentralized_messageboard" and MessageboardTeamBrain.NOTIFY_TOOL_ENABLED
+    )
     plan_env = PlanningEnvWrapper(
         base_env,
         agent_names=agent_names,
         agents=agents,
         log_file=os.path.join(output_dir, "plan_logs.json"),
-        interrupt_on_message=False,  # No messages in either mode (notify is reserved)
+        interrupt_on_message=notifies,
         coop2_precheck_enabled=coop2_precheck_enabled,
     )
     
@@ -274,7 +297,10 @@ def run_individual_experiment(
                 break
             
             obs_dict, rewards, terminated, truncated, info = env.step()
-            
+            # After a step every team may notify again (DIG-TAG's rule: the
+            # budget is per agent between two environment steps).
+            reset_notify_budgets(agents)
+
             if env.current_step % 10 == 0:
                 print(f"\n--- Step {env.current_step}/{max_steps} ---")
                 for agent_id, agent in agents.items():
@@ -331,6 +357,13 @@ def run_individual_experiment(
     if boards:
         with open(os.path.join(output_dir, "message_board.json"), "w") as f:
             json.dump([b.to_records() for b in boards.values()][0], f, indent=2)
+    # The task graph, if this run had one: the record (every version, action
+    # and attachment), every team output in order, and the drawing.
+    if topology == "tag":
+        from coop2.comm_topology.llm_tag import save_tag_outputs  # noqa: PLC0415
+
+        for line in save_tag_outputs(agents, output_dir):
+            print(line)
     
     comprehensive_timeline_path = os.path.join(output_dir, 'comprehensive_timeline.png')
     visualize_comprehensive_timeline(
@@ -420,6 +453,10 @@ def build_parser(topology="individual"):
     parser.add_argument("--run-name", type=str, default=None, metavar="NAME",
                         help="Folder name for this run under --output-root, instead of the "
                              "generated <topology>_agents<N>_..._<timestamp>.")
+    parser.add_argument("--notify-budget", type=int, default=1, metavar="N",
+                        help="How many times a team may notify (interrupt) other teams between "
+                             "two environment steps; reset after every step. Used by the tag "
+                             "mode, and by the board mode when its notify tool is on.")
     parser.add_argument("--gui", action="store_true",
                         help="Open the Isaac Sim viewport. Needs a DISPLAY, and note that "
                              "--show is a no-op: the visualisation wrapper is a stub, and "
@@ -457,6 +494,7 @@ def main(argv=None, topology="individual"):
         team_size=args.team_size,
         run_name=args.run_name,
         topology=topology,
+        notify_budget=args.notify_budget,
     )
 
 

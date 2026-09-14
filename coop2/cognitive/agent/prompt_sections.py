@@ -287,6 +287,26 @@ the other teams read the next time THEY plan.
   answers it, and a team already executing will not see it until it next
   plans. Plan as if the others act on what they posted, not on what you
   post.""",
+    "tag": """## 4. COOPERATION MODE: SHARED TASK GRAPH
+Every team plans for itself, and the teams coordinate through ONE TASK GRAPH
+that every team reads and writes; its manual is section 5. Each time you plan,
+and each time another team notifies you, you are shown the graph in section 6
+-- the open tasks, their current versions, who did what to each, and the
+evidence attached -- above your robots' observations. Every answer you return
+carries two more fields: `tag_actions`, changes to the graph, applied in order
+BEFORE your plans or decisions take effect; and `notify`, the names of teams
+to wake so they read the graph now.
+
+- Read the graph before dividing the work. A task whose current version says
+  another team is doing it is taken: open what nobody is doing, update the
+  state of what your robots are doing, attach what you learned, close what is
+  done. Name versions by their ids (q3) and tasks by their identities (k1).
+- Notifying a team INTERRUPTS all its robots and costs it a decision. Your
+  notify budget until the next environment step is shown with the graph; a
+  notification beyond it is dropped. Leave `notify` empty unless a team's
+  robots are doing something the graph now shows to be wrong or finished.
+- Nobody reads what you did not write down. The graph is the only memory the
+  teams share across rounds; a plan that is not on it is invisible to them.""",
 }
 
 #: Reserved for the notify tool: appended to section 4 only when a brain has
@@ -380,6 +400,7 @@ _CURRENT_HEADINGS = {
     # Reserved: the board mode has no direct messages until the notify tool
     # delivers one; this is the heading such a message would arrive under.
     "decentralized_messageboard": "## 7. MESSAGES RECEIVED NOW -- a team interrupted you with notify",
+    "tag": "## 7. MESSAGES RECEIVED NOW -- a team notified you: read the task graph in section 6",
 }
 
 

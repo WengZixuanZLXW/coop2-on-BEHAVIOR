@@ -28,6 +28,7 @@ TOPOLOGY_SCRIPTS = {
     "centralized": EXPERIMENT_DIR / "run_centralized.py",
     "broadcast_chain": EXPERIMENT_DIR / "run_broadcast_chain.py",
     "decentralized_messageboard": EXPERIMENT_DIR / "run_decentralized_messageboard.py",
+    "tag": EXPERIMENT_DIR / "run_tag.py",
 }
 
 

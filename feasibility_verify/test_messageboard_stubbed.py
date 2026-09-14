@@ -38,6 +38,7 @@ from coop2.comm_topology.llm_team import (
     MessageboardTeamBrain,
     TeamBrain,
     create_llm_team_topology,
+    reset_notify_budgets,
 )
 from coop2.comm_topology.message_board import MessageBoard, render_board
 
@@ -198,19 +199,37 @@ def main() -> int:
         notifies = b3.board.notifies()
         assert len(notifies) == 1 and notifies[0].sender == "team_3", notifies
         assert notifies[0].targets == ["team_1"], "the sender is not among its own targets"
-        assert notifies[0].delivered == [], "recorded only: no deliverer is installed"
+        assert notifies[0].delivered == [], "no broker is attached, so there was nowhere to send"
         assert b1._heard == [] and agents["drone_1"].get_messages(clear_buffer=False) == [], "nobody was interrupted"
-        # A deliverer, when someone writes one, is called with the record.
-        seen = []
-        b3.board.deliverer = lambda record: seen.append(record) or record.targets
+        assert b3.notify_left == 1, "an undeliverable request spends no budget"
+        # With a broker the factory's deliverer sends: the named team's robots
+        # are interrupted, the budget is spent, and the record says who.
+        from coop2.cognitive.agent.agent import AgentState
+        from coop2.cognitive.messages import MessageBroker
+        broker = MessageBroker(agents)
+        for agent in agents.values():
+            agent.message_broker = broker
+        for name in ("drone_1", "jackal_1"):
+            agents[name]._set_state(AgentState.W, timestamp=0.0, env_step=0)
         b3._generate_team_plans()
-        assert seen and seen[0].targets == ["team_1"] and b3.board.notifies()[-1].delivered == ["team_1"]
-        assert b3.board.to_records()["notifies"][-1]["delivered"] == ["team_1"]
+        record = b3.board.notifies()[-1]
+        assert record.delivered == ["team_1"], record
+        assert agents["drone_1"].state is AgentState.I and agents["jackal_1"].state is AgentState.I
+        sent = [m for m in broker.get_message_log() if (m.get("metadata") or {}).get("type") == "notify"]
+        assert len(sent) == 1 and sent[0]["sender"] == "team_3" and sent[0]["recipients"] == ["team_1"], sent
+        assert sent[0]["metadata"]["interrupts_execution"] is True
+        assert b3.notify_left == 0
+        b3._generate_team_plans()
+        assert b3.board.notifies()[-1].delivered == [], "over the budget: dropped"
+        assert len([m for m in broker.get_message_log()
+                    if (m.get("metadata") or {}).get("type") == "notify"]) == 1
+        reset_notify_budgets(agents)
+        assert b3.notify_left == 1
+        assert b3.board.to_records()["notifies"][1]["delivered"] == ["team_1"]
     finally:
         b3.NOTIFY_TOOL_ENABLED = False
-        b3.board.deliverer = None
     assert "NOTIFY (a tool)" not in b3._system_prompt(agents["tiago_3"])
-    ok("off: no field, no rule; on: recorded, delivered only through an installed deliverer")
+    ok("off: no field, no rule; on: delivered through the broker as an interrupt, within the budget")
 
     print("test 8: the plain brain is untouched")
     class Plain:

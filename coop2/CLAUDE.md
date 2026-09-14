@@ -15,7 +15,7 @@ This file is only the operational summary.
 | layer | package | status |
 |---|---|---|
 | L6 experiment (runners, grid, metrics) | `coop2/experiment/` | **all three runners GPU-verified against a real LLM**; `inspect_scene.py` loads a scene without an episode |
-| L5 comm_topology (individual/chain/centralized) | `coop2/comm_topology/` | **all three exercised at 9 and 12 robots**; `llm_team.py` makes a *team* the unit of every topology |
+| L5 comm_topology (individual/chain/centralized/messageboard/tag) | `coop2/comm_topology/` | **the first three exercised at 9 and 12 robots**; `llm_team.py` makes a *team* the unit of every topology; `tag` (DIG-TAG's shared task graph, `llm_tag.py` over the vendored `coop2/dig_tag/`) is CPU-tested, no GPU run yet |
 | L4 cognitive/agent (FSM, memory, broker, prompts, LLM) | `coop2/cognitive/agent/` | **BDDL vocabulary aligned, FSM GPU-verified**; prompt scoped to the activity's objects, with plan history |
 | L3 cognitive/plan (plan lifecycle, PlanningEnvWrapper) | `coop2/cognitive/plan/` | **GPU-verified driving the facade** (2026-09-06) |
 | L2 cognitive/action (symbolic action → primitive) | `coop2/cognitive/action/behavior_action.py` | **rewritten, GPU-verified** (M5) |
@@ -1895,6 +1895,172 @@ topology="decentralized_messageboard")` -- `run_individual` took a
 `build_results_table` know the name. `test_messageboard_stubbed.py` pins
 the mode (nine tests). No GPU episode has been run in this mode yet.
 
+## A fifth mode: tag -- DIG-TAG's shared task graph (2026-09-13)
+
+The coordination method of `HappyEureka/dig-tag-icra` (the ICRA submission
+"Coordinating LLM agents through a shared task graph"), ported as decided
+with the user: **the graph is vendored, one TAG agent is one team brain, and
+the prompt keeps the structure of `PROMPTS.md`.** Built in the worktree
+`digtag-port` while a sweep ran in this checkout, then merged back.
+
+**What was vendored.** The whole `dig_tag/` package, at their commit
+`274882b`, unmodified, into `coop2/dig_tag/`; their golden tests into
+`coop2/dig_tag_tests/` (78 pass in the behavior env:
+`cd coop2 && python -m pytest dig_tag_tests -q`). The whole package rather
+than `tag/` alone because `render/` -- which draws the graph -- imports
+`dig/` and `interface/`; only `tag/` and `render/` are used. The package is
+stdlib except `render` (matplotlib, numpy). Their rule that **one runtime
+file imports the graph** is kept: it is `coop2/comm_topology/llm_tag.py`;
+`llm_team.py`'s factory imports that file lazily for the `tag` branch, and
+`run_individual` asks it for the outputs to save.
+
+**What the method is, in their own terms.** A task is a *version* q = (identity
+k, spec = goal + rule, state), frozen; eight tools -- open / edit / update /
+split / join / close, plus attach (evidence on an exact version) and observe.
+The graph is bipartite (actions consume and return versions); an identity is
+continued only from its frontier version and an action on a consumed version
+*branches*, so two agents updating one version concurrently leave two tasks
+rather than a conflict. The graph never evaluates a rule or checks a state:
+goal, rule and state are opaque text, and "done" is what an agent reports.
+The round (`notify.py`, shared with their message-board ablation): observe
+the graph in front of the environment, answer with `tag_actions` (applied in
+order; a rejected one is recorded and the round goes on), `notify` (agents to
+interrupt, within a per-step budget; over it, dropped and recorded) and a
+plan or null. Reasoning and interrupt handling are the same round. The graph
+starts empty.
+
+**How it lands here** (`llm_tag.TagTeamBrain`, a `TeamBrain` subclass like
+the board's):
+
+* Sections 5 and 6 of the prompt were reserved for exactly this and are
+  filled: 5 is the manual (`TAG_MANUAL`, their `TAG_ROLE` said to a team
+  controller), the slot in 6 is the graph (`format_tag_observation`: open
+  tasks, histories, relations, evidence, budget left) -- above the robots, as
+  O_T precedes O_E for them. Section 4 has the mode's rules; section 7 has
+  the heading a notification arrives under.
+* The plan call answers `LLMTagPlanResponse` = the team plan + `tag_actions`
+  + `notify`; the interrupt call answers `LLMTagInterruptResponse` = the
+  per-robot decisions + the same two. `TeamBrain` grew two seams for that
+  (`_call_interrupt_model`, `_on_interrupt_response`) and one for the closing
+  line (`_interrupt_closing`), all with do-nothing defaults. Actions are
+  issued under the team's name; `notify` names teams. Order is theirs:
+  `_round` applies the actions, then notifies, and only then do the plans (or
+  decisions) go out.
+* **notify is delivered**, not reserved. `_say` takes per-call `recipients`;
+  a notification is a `send_team_message` with `interrupts_execution` under
+  type `notify`, so the broker interrupts the named team and its interrupt
+  barrier runs the same round. Budget per team per environment step
+  (`--notify-budget`, default 1), reset by the runner after every `env.step`
+  (`reset_notify_budgets`). The board's reserved seam is filled by the same
+  machinery: the factory installs `MessageboardTeamBrain._deliver_notify` as
+  the board's deliverer, so with `NOTIFY_TOOL_ENABLED` the board mode is
+  their ablation exactly; the flag stays off by default.
+* **A notification that arrives during a team's planning call is answered
+  before its plans go out** -- their `_rounds` loop. The broker skips a team
+  in R, so such a message only lands in the inboxes; `after_plan` drains
+  them, and a `notify` the prompt did not quote is decided on as an interrupt
+  round (`stage: late_notify`), a replanned robot taking the new plan.
+* Every round is recorded (`tag_rounds.json`: seq, team, env_step, stage,
+  versions observed, actions with `applied`/`rejected: <reason>`, notify
+  requested/sent/dropped); the graph is `tag.json`
+  (`TAGParallelInterface.load_json` reloads it) and is drawn to `tag.pdf` /
+  `tag.png` by their renderer. Saved before `env.close()`, so an interrupted
+  run keeps them; verified on an empty graph too (a run where the model
+  never opened a task still writes all four files).
+
+Runner: `run_tag.py` is `run_individual.main(topology="tag")`, with
+`interrupt_on_message=True` for this mode; `sweep_grid`, `run_s1_grid`,
+`run_grid` and `build_results_table` know the name. `test_tag_team_stubbed.py`
+pins it (eight tests, DIG-TAG's runtime tests said to teams). **No GPU episode
+has been run in this mode yet**; when one is, measure tokens first -- every
+round carries every open task's history (last 8 steps), relations and
+evidence, and a notify cascade adds a prompt per interrupted team.
+
+Two things to know before reading a `tag` run against a routed task: the
+graph's `state` is what a team *says*, and `RouteTracker` is what the
+simulator *shows* -- two truths, kept apart on purpose (the paper's graph is
+opaque; the environment writes nothing into it); and the graph is empty at
+t=0, the task being stated in section 6 as for every mode. Seeding the graph
+with the route, or attaching the tracker's events as evidence, would be an
+experiment variable, not part of the port.
+
+## Two answers to "which room is it in", and the one the sampler gave (2026-09-13)
+
+Every S1 LL run of the 3-team sweep -- individual, broadcast_chain, centralized
+-- reached route node C9 (die on the bedroom bed) and then failed every
+`navigate_to(die)` until the budget ran out. All of them, every time, with the
+same attribution:
+
+    NO_SPACE_AROUND_TARGET  Cannot reach dice_154  {'room': 200, 'trav': 0, 'robots': 0}
+
+Not one pose rejected for traversability or for another robot: all 200 rejected
+by the *room* filter. The die was in bedroom_0; the sampler was only accepting
+poses in childs_room_0, because `symbolic_navigation._target_rooms` preferred
+the object's `in_rooms` -- static load-time metadata, written when the die was
+sampled in the child's room and never updated as it was carried through nine
+stations. The world model (`world_state.rooms_of`) had long done the right
+thing -- fixed furniture keeps its label, movable objects are point-queried --
+so the prompt told the agent the die was in the bedroom while the sampler
+refused every bedroom pose. Two implementations of one question, disagreeing.
+
+Why C2-C8 worked and C9 did not: the die was retrieved from furniture in
+other rooms at every station, but `support_of` resolved those -- the sampler
+approaches the *support* and uses the support's (correct, fixed) room. The
+bed is where `support_of` gives up: it accepts a support only if the support's
+AABB top is within 0.15 m of the object's bottom, and a bed's AABB top is its
+headboard, well above the mattress the die rests on. So the sampler fell back
+to the die itself, and the die's own label was the stale one. Two defects
+compounded; this fix repairs the fallback, so an object whose support is not
+recognised is still approached where it actually is. The support test is fixed too, the same day: a support is anything whose
+vertical span contains the object's bottom, above its base (a die on the floor
+under a table is *at* the table, not on it). But recognising the bed must not
+mean *treating* it like a cabinet -- navigating "to the bed" is a 1.9-2.5 m ring
+around its centre, which in that bedroom failed 4 of 4 (room 124 / trav 67 /
+robots 9). So `reach_across(support)` decides: a support whose narrower
+half-extent is within arm reach (cabinet, bookcase, fridge, table) is stood at
+and reached across; a wider one (a bed: 0.85 m against 0.6) is recognised, and
+the object on it is approached where it is. `approach_anchor` is the one rule
+the sampler and `interaction_radius_for` both use. Measured on the real scene:
+die on the C9 bed -> support bed_zrumze_1, anchor the die, 5/5 poses, gate
+0.90 m; die on the C2 bookcase -> anchor the bookcase, 5/5, gate 2.17 m. Then the same evening the 3-team sweep put the die on the *wall* side of the
+bed (x 4.65-4.77, the +x edge at 5.17, wall from 5.2): the die-centred ring had
+no floor in it, and the open side was 2.2-2.8 m away -- TOO_FAR 35 times. So
+wide furniture is now approached at its **edge** rather than the object: the
+sampler draws a point on the footprint's perimeter, pushed out by the robot's
+radius plus up to one reach, biased to the object's side, and takes the nearest
+of eight valid spots to the object. And the reach gate accepts standing at the
+edge of what the object rests on -- the symbolic grasp teleports anyway -- with
+the threshold equal to the sampler's band (radius + margin + reach; measured
+with reach alone it refused a robot the sampler had just put 0.67 m out). A
+floor is never a support and never an edge target: `is_walkable_surface`
+excludes it in `support_of`, in the edge band and in the gate, or "at its
+edge" would mean anywhere in the room and everything on the floor would be in
+reach. Narrow furniture keeps the stand-at-it ring; floors keep walk-onto-it.
+End to end (same cell again): 10/10 at env_step 2833, `check_goal` fired, zero
+`Cannot reach` on the die or the bed in the whole run; C9->D took 184 steps as
+navigate_to(die) -> grasp -> navigate_to(bed.n.01_1) -> place, first try. And
+C6->C7 was done by ridgeback_1 through the carrier -- grasp, load_onto(jackal_1),
+both drive, unload_from, place -- the first unscripted handoff seen in an
+individual-mode episode.
+
+The discriminating check is the LH notebook, which never left childs_room_0:
+its `Cannot reach` lines carry mixed attributions (`room 129-143 / trav 33-46 /
+robots 20-25`, or `room 0 / trav 86-129 / robots 71-114`) -- real crowding,
+never 200/0/0.
+
+The sampler now mirrors `rooms_of` (fixed -> label, movable -> live query, label
+only as a fallback when the point is on no room). `test_symbolic_navigation`'s
+"explicit in_rooms wins" case now holds for a *fixed* object, and a new case
+puts a movable object under a stale label and requires it to be reachable where
+it stands. **The 2026-09-13 S1 LL results predate this fix and say nothing about
+the modes; they measure the sampler.** Re-run of the identical cell
+(individual, s1/sets_3, terra, seed 0) after the fix: 10/10 nodes, `check_goal`
+at env_step 2374, the C9->D retrieval taking 327 steps where yesterday it
+failed for 1738; 14 LLM calls / 92k tokens against 46 / 319k, 5 failed plans
+against 39, none of them NO_SPACE or TOO_FAR. Only the last step is a fair
+before/after -- C1-C8 were never blocked and their timings vary with the
+model's sampling, seed or not.
+
 ## Open defects
 
 Fixed ones are not listed here -- the fix and its reasoning live in the commit
@@ -1991,9 +2157,12 @@ python -u -m coop2.experiment.run_individual --agents 2 --steps 4000 --seed 0 \
   --bddl-activity coop_two_apples_pomaria \
   --goal "Put both apples on coffee_table.n.01_1." \
   --model gpt-5.6-luna --llm-quiet
-# run_centralized / run_broadcast_chain / run_decentralized_messageboard take
-# the same flags. Output lands in coop2/runs/<topology>_agents<N>_..._<timestamp>/;
-# the board mode also writes message_board.json there.
+# run_centralized / run_broadcast_chain / run_decentralized_messageboard /
+# run_tag take the same flags. Output lands in
+# coop2/runs/<topology>_agents<N>_..._<timestamp>/; the board mode also writes
+# message_board.json there, and the tag mode tag.json, tag_rounds.json and
+# tag.pdf. run_tag also takes --notify-budget N (default 1: how many times a
+# team may interrupt other teams between two environment steps).
 
 # Twelve robots as three teams of four on the nine-apple hall -- the 2026-09-11
 # sweep, about 17 minutes a topology. --time-limit-seconds 0 is required or the

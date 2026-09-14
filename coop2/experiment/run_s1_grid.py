@@ -33,6 +33,7 @@ RUNNERS = {
     "broadcast_chain": "coop2.experiment.run_broadcast_chain",
     "centralized": "coop2.experiment.run_centralized",
     "decentralized_messageboard": "coop2.experiment.run_decentralized_messageboard",
+    "tag": "coop2.experiment.run_tag",
 }
 
 #: The three messaging modes, in the order the results table uses.

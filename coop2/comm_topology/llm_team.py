@@ -97,6 +97,7 @@ __all__ = [
     "TEAM_BRAIN_ROLES",
     "TeamBrain",
     "create_llm_team_topology",
+    "reset_notify_budgets",
 ]
 
 
@@ -331,6 +332,28 @@ class TeamBrain:
         """Once per successful planning call, with the parsed response, before
         the plans are handed out. Default: nothing."""
 
+    def _call_interrupt_model(self, prompt: List[Dict[str, str]]):
+        """The model call of an interrupt round: ``(response, usage)``.
+
+        Overridden by a brain whose interrupt answer carries more than the
+        per-robot decisions -- the task-graph mode's actions and notify ride
+        in the same call, as they do in its planning call.
+        """
+        return self.llm_client.generate_team_interrupt_decision(
+            messages=prompt, temperature=self.temperature
+        )
+
+    def _on_interrupt_response(self, response: Any) -> None:
+        """Once per successful interrupt call, with the parsed response, before
+        the decisions are handed out. Default: nothing."""
+
+    def _interrupt_closing(self) -> str:
+        """The closing instruction of an interrupt prompt."""
+        return ("For each robot decide 'resume' or 'replan'. Resume unless the "
+                "message actually contradicts what that robot is doing -- replanning "
+                "a robot the message did not concern throws away work it has already "
+                "paid for. A 'replan' decision must carry its new_plan.")
+
     def before_interrupt_decision(self, messages: List[Dict]) -> List[Dict]:
         """Runs once per interrupt round, before the model is asked.
 
@@ -470,15 +493,18 @@ class TeamBrain:
         return "\n".join(lines)
 
     def _say(self, content: str, kind: str, interrupts: bool,
-             expected_reply: bool = False) -> None:
+             expected_reply: bool = False, recipients: Optional[List[str]] = None) -> None:
         """Send @content to every member of the teams this one addresses.
 
         ``expected_reply`` marks an answer the recipient asked for and is
         blocked waiting on, which the broker then delivers without interrupting
-        anyone -- see the note there.
+        anyone -- see the note there. ``recipients`` names the teams for this
+        one send; the default is the topology's fixed ``send_to``. The notify
+        tool is the case that chooses per call.
         """
         broker = self._broker()
-        if not self.send_to or broker is None:
+        targets = list(recipients) if recipients is not None else list(self.send_to)
+        if not targets or broker is None:
             return
         # Stamped before it goes out: a reply written synchronously inside the
         # delivery (a follower answering from on_interrupt) would otherwise be
@@ -488,7 +514,7 @@ class TeamBrain:
         broker.send_team_message(
             timestamp=sent_at,
             sender_team=self.team_name,
-            recipients=list(self.send_to),
+            recipients=targets,
             content=content,
             metadata={
                 "type": kind,
@@ -500,13 +526,13 @@ class TeamBrain:
         # nothing on the team's side did, so its next prompt showed the other
         # teams' words and none of its own.
         self.memory.record_message_out(
-            sender=self.team_name, recipients=list(self.send_to), content=content,
+            sender=self.team_name, recipients=targets, content=content,
             # On the broker's clock (relative to the agents' start), the same
             # clock every incoming message carries, so the two sort together.
             timestamp=broker._relative(sent_at, list(self.member_ids)), env_step=self._env_step(),
         )
         if self.verbose:
-            print(f"  [{self.team_name}] -> {self.send_to} ({kind}): {content[:60]}...")
+            print(f"  [{self.team_name}] -> {targets} ({kind}): {content[:60]}...")
 
     def _broker(self):
         """The message broker, with every team declared on it.
@@ -1013,9 +1039,7 @@ class TeamBrain:
         if anchor._should_print_llm_io():
             anchor._print_llm_messages(f"Team Interrupt [{self.team_name}]", prompt)
         try:
-            response, usage = self.llm_client.generate_team_interrupt_decision(
-                messages=prompt, temperature=self.temperature
-            )
+            response, usage = self._call_interrupt_model(prompt)
             anchor._record_llm_usage(
                 usage, f"Team Interrupt [{self.team_name}]", prompt, response
             )
@@ -1046,6 +1070,10 @@ class TeamBrain:
                 f"{name}={decisions[name][0].value}" for name in decisions
             )
             print(f"  [{self.team_name}] interrupt: {summary}")
+        try:
+            self._on_interrupt_response(response)
+        except Exception as error:  # noqa: BLE001 - a bad side effect must not cost the decisions
+            print(f"  [{self.team_name}] interrupt response hook failed: {error}")
         return decisions
 
     # -- prompts -----------------------------------------------------------
@@ -1224,10 +1252,7 @@ class TeamBrain:
             conversation_history=conversation_history_section(
                 self._messages_block("## 8. CONVERSATION HISTORY", exclude=messages)),
             action_history=action_history_section([self._action_history_block(m) for m in members]),
-            closing=("For each robot decide 'resume' or 'replan'. Resume unless the "
-                     "message actually contradicts what that robot is doing -- replanning "
-                     "a robot the message did not concern throws away work it has already "
-                     "paid for. A 'replan' decision must carry its new_plan."),
+            closing=self._interrupt_closing(),
         )
         return [
             {"role": "system", "content": self._system_prompt(anchor)},
@@ -1249,26 +1274,27 @@ class MessageboardTeamBrain(TeamBrain):
     reasoning that produced the plans, and a team that plans a moment later
     reads it.
 
-    **The notify tool is reserved, not built.** The seam is in three places
-    and one flag turns all three: ``NOTIFY_TOOL_ENABLED``. When set, the
-    response schema gains ``notify`` (which teams to interrupt, with what),
-    section 4 gains the rule for using it (``MESSAGEBOARD_NOTIFY_RULES``), and
-    ``_on_plan_response`` hands the request to ``board.notify`` -- which
-    records it and delivers it only through a ``board.deliverer``, of which
-    there is none. Delivering would mean sending through the broker with
-    ``interrupts_execution`` to the named teams' members (``_say`` does this
-    for a fixed ``send_to``; notify would choose its recipients per call) and
-    letting those teams' interrupt rounds answer resume/replan as they do for
-    a chain message. That, and the interrupt prompt's section 7 heading for
-    this mode, is what is left to build.
+    **The notify tool is built and off by default.** One flag,
+    ``NOTIFY_TOOL_ENABLED``, turns all of it: the response schema gains
+    ``notify`` (which teams to interrupt, with what), section 4 gains the rule
+    for using it (``MESSAGEBOARD_NOTIFY_RULES``), and ``_on_plan_response``
+    hands the request to ``board.notify``, which records it and delivers it
+    through the board's ``deliverer``. The factory installs that deliverer:
+    it is the sending brain's :meth:`_deliver_notify`, which spends one unit
+    of the team's notify budget (``notify_budget`` per environment step, the
+    runner resetting it after each step, as DIG-TAG's runner does) and sends
+    through the broker with ``interrupts_execution`` to the named teams --
+    ``_say`` with per-call recipients -- so their interrupt rounds answer
+    resume/replan as they do for a chain message. With the flag on, this mode
+    is DIG-TAG's shared-message-board ablation; with it off, the board alone.
     """
 
     COOPERATION_MODE = "decentralized_messageboard"
-    #: Reserved. False: the model is never offered `notify`, and no post can
-    #: interrupt anyone.
+    #: False: the model is never offered `notify`, and no post can interrupt
+    #: anyone. Turned on per run by the caller that wants the ablation.
     NOTIFY_TOOL_ENABLED = False
 
-    def __init__(self, *args, board: Optional[MessageBoard] = None, **kwargs):
+    def __init__(self, *args, board: Optional[MessageBoard] = None, notify_budget: int = 1, **kwargs):
         super().__init__(*args, **kwargs)
         #: Shared with every other brain in the run by the factory; a brain
         #: built alone gets a board of its own so it still works.
@@ -1276,6 +1302,30 @@ class MessageboardTeamBrain(TeamBrain):
         #: The board's sequence number when this team last built a planning
         #: prompt: posts after it are (new) next time.
         self._board_seen = 0
+        #: Notifications this team may still send before the next environment
+        #: step. Bounds the interrupt cascade; the runner resets it.
+        self.notify_budget = int(notify_budget)
+        self.notify_left = self.notify_budget
+
+    def reset_notify_budget(self) -> None:
+        """Called by the runner after every environment step."""
+        self.notify_left = self.notify_budget
+
+    def _deliver_notify(self, record) -> List[str]:
+        """The board's deliverer, for a request this team made: interrupt the
+        named teams, within the budget. Returns the teams actually addressed;
+        an empty list means the request was dropped (budget spent) or there
+        was nobody to send through."""
+        if self.notify_left <= 0:
+            if self.verbose:
+                print(f"  [{self.team_name}] notify -> {record.targets} dropped: budget spent")
+            return []
+        targets = [t for t in record.targets if t in (self.all_teams or {}) and t != self.team_name]
+        if not targets or self._broker() is None:
+            return []
+        self.notify_left -= 1
+        self._say(record.content, "notify", interrupts=True, recipients=targets)
+        return targets
 
     # -- the board in the prompt --------------------------------------------
 
@@ -1759,7 +1809,17 @@ TEAM_BRAIN_ROLES = {
     "broadcast_chain": "teams speak in order, each broadcasting to the later ones",
     "centralized": "the first team leads; the rest report to it",
     "decentralized_messageboard": "no team talks to any other, but every team reads and writes one shared board",
+    "tag": "every team reads and writes one shared task graph, and may notify others to read it",
 }
+
+
+def reset_notify_budgets(agents: Dict[str, Any]) -> None:
+    """After an environment step every team may notify again. A no-op for
+    brains without a budget (the modes that never notify)."""
+    for brain in {id(a.brain): a.brain for a in agents.values() if hasattr(a, "brain")}.values():
+        reset = getattr(brain, "reset_notify_budget", None)
+        if reset is not None:
+            reset()
 
 
 def _read_view_header(view: Optional[str]) -> Tuple[str, str]:
@@ -1905,6 +1965,7 @@ def create_llm_team_topology(
     temperature: float = 0.7,
     verbose: bool = True,
     goal_instruction: str = "",
+    notify_budget: int = 1,
 ) -> Dict[str, LLMTeamAgent]:
     """One brain per team, one agent per robot, wired for @topology.
 
@@ -1917,6 +1978,9 @@ def create_llm_team_topology(
         teams: ``{team name: [agent ids]}``, straight from the layout. Order
             matters: it is the chain's speaking order, and the first team leads
             under `centralized`.
+        notify_budget: how many times a team may notify others between two
+            environment steps, in the modes that have the tool (`tag`, and the
+            board with ``NOTIFY_TOOL_ENABLED``).
     """
     if topology not in TEAM_BRAIN_ROLES:
         raise ValueError(f"unknown topology {topology!r}; have {sorted(TEAM_BRAIN_ROLES)}")
@@ -1926,6 +1990,13 @@ def create_llm_team_topology(
     # One board for the whole run: the mode is the sharing, so it is built
     # here, where every brain is, and not by any one of them.
     board = MessageBoard() if topology == "decentralized_messageboard" else None
+    # Likewise one task graph. Imported here and nowhere else in this module:
+    # `llm_tag` is the one runtime file that knows dig_tag (its own rule).
+    tag_graph = None
+    if topology == "tag":
+        from coop2.comm_topology.llm_tag import TagTeamBrain, new_shared_tag  # noqa: PLC0415
+
+        tag_graph = new_shared_tag()
     for index, team_name in enumerate(names):
         extra: Dict[str, Any] = {}
         if topology == "broadcast_chain":
@@ -1935,6 +2006,11 @@ def create_llm_team_topology(
         elif topology == "decentralized_messageboard":
             factory = MessageboardTeamBrain
             extra["board"] = board
+            extra["notify_budget"] = notify_budget
+        elif topology == "tag":
+            factory = TagTeamBrain
+            extra["tag"] = tag_graph
+            extra["notify_budget"] = notify_budget
         else:
             factory = TeamBrain
         brains[team_name] = factory(
@@ -1981,6 +2057,10 @@ def create_llm_team_topology(
         # Its own entry included: harmless, and leaving it out would make the
         # map mean something different depending on who is reading it.
         brain.peers = dict(brains)
+    if board is not None:
+        # The board's notify deliverer: the request is delivered by the brain
+        # that made it, which is the one whose budget it spends.
+        board.deliverer = lambda record: brains[record.sender]._deliver_notify(record)
     for agent in agents.values():
         # Mirrors of the brain's wiring, in team names. Nothing in the team path
         # reads them -- the brain does all the waiting and sending -- but they
