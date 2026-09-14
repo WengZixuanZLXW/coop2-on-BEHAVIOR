@@ -1023,6 +1023,15 @@ class CooperativeBehaviorEnv:
             self.observation_every > 0 and self.engine.env_step % self.observation_every == 0
         )
         if refresh:
+            # Belt and braces before the world model is rebuilt and the
+            # observations are read off it. `engine.tick` already clears the
+            # AABB cache after every `env.step`, so this is normally a clear of
+            # an empty dict -- but it makes "an observation is built on current
+            # geometry" true regardless of how the physics was advanced, rather
+            # than true only because one call site remembers to say so.
+            from coop2.behavior_env.geometry_cache import invalidate_aabb_cache  # noqa: PLC0415
+
+            invalidate_aabb_cache()
             self.world.step()
             route_tracker = getattr(self, "route_tracker", None)
             if outcomes and route_tracker is not None:
