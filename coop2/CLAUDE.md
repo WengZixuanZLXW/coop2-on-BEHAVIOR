@@ -970,6 +970,21 @@ and both carry verbs with NO_ARM; without it the refusal still happened
 somewhere useless (`load_onto` reported "you are not holding anything to load",
 which is true and is not the reason).
 
+**But `navigate_to` is not one of the hand verbs, and used to be gated as if
+it were** (fixed 2026-09-14). The teammate branch of `target_hints` skipped an
+entity unless the observer had an arm *and* the entity was a carrier, and
+`navigate_to` sat inside that gate -- so a carrier saw every teammate as a bare
+name with no verb and no distance. The pairing the gate excluded is the one the
+handoff needs: BEST PRACTICE tells a team to "navigate the carrier to the arm",
+and the carrier's own listing never offered it. Measured on
+`tag_s1_sets_5_v4_s1_v4_lh`: ridgeback_3 grasped the cargo at step 1516, its
+base locked, and for the remaining 2400 steps its team sent jackal_3 -- two
+metres away, same room, free -- to the *destination* instead, `load_onto`
+failing TOO_FAR at 2.1-5.1 m every round. The engine had always accepted
+`navigate_to(<robot>)`; only the view hid it. Now the driving verb is gated on
+nothing but a locked base, and the two cargo verbs keep the arm-and-carrier
+gate they always had.
+
 ### Cargo has to be visibly unavailable
 
 A load is a FixedJoint from the carrier's base to the object -- the same thing
@@ -1169,6 +1184,77 @@ seventh, eighth and ninth samplers fail, one per team in the chain run,
 whoever they are and however well the teams coordinated. That is a capacity of
 the receptacle, and no allocation of nine robots to one table gets round it.
 
+### Some of it was the sampler's budget, not the receptacle
+
+`sampling_attempts` was 200 and is **800** since 2026-09-14 (user). The number
+only matters where the valid fraction is tiny, and it costs nothing on the
+success path: the sampler returns on its first valid candidate, and the whole
+budget is spent only on a failure, which was already paying for a replan.
+
+### And most of it was the robot's own body, counted twice
+
+Fixed 2026-09-14, and only after two wrong diagnoses, both of which the
+measurement killed. Worth keeping because the reasoning that felt obvious was
+wrong twice.
+
+**What is actually there.** Standable floor around `breakfast_table_skczfi_0`,
+by distance from its footprint (Merom_1_int, Ridgeback):
+
+| from the edge | in room | traversable |
+|---|---|---|
+| 0.0-0.2 | 246 | 0 |
+| **0.2-0.4** | 133 | **31** |
+| **0.4-0.6** | 125 | **10** |
+| 0.6-0.8 | 87 | **0** |
+| 0.8-1.0 | 32 | 0 |
+| 1.0-1.4 | 2 | 0 |
+
+Every spot that exists is 0.2-0.6 m out, and **there is none past 0.6 m** --
+the dining room is that small. So the two numbers that decided the route were
+the sampler's minimum offset and the shape it measured from.
+
+**The body was in the account twice.** `trav_map_rebuild` paints the table's
+footprint into the map and `_erode_trav_map` erodes it by the robot's own size,
+so a surviving cell already means the robot fits. The sampler then pushed out
+*another* `robot_radius + margin` -- 0.40 m Ridgeback, 0.54 m Jackal -- from the
+same footprint, which is exactly the 0.30-0.40 slice where the floor is.
+
+**And the shape was a circle.** `clearance_for` starts at the object's
+half-DIAGONAL, so the ring for that table is 1.30-1.90 m from its centre: out
+past the ends, into the walls. The band in `_edge_candidate` was reserved for
+supports too wide to reach across (`reach_across`), which a table is not.
+
+Neither is enough alone, which is why each was measured at nothing and nearly
+discarded. Hit rate per single draw:
+
+| target (Ridgeback) | before | band only | half-width only | **both** |
+|---|---|---|---|---|
+| breakfast_table | 0% | 0% | 1% | **8%** |
+| armchair | 4% | 17% | 5% | **18%** |
+| bookcase | 34% | 37% | 38% | **42%** |
+| bed | 30% | 42% | 31% | **44%** |
+| coffee_table | 49% | 52% | 48% | **52%** |
+
+So: the band is the only path for anything not walked on, and the offset is
+`body_offset()` -- the chassis **half-width**, not the circumscribed radius,
+because a base pose is yawed to face its target and what points at the object
+is a face (0.25 vs 0.354 Ridgeback, 0.35 vs 0.495 Jackal). Separation *between*
+robots keeps the radius: two robots have no agreed facing.
+
+Measured on the shipped code, both blockers are now reachable within the
+budget -- breakfast_table 8%/draw for the Ridgeback (certain in 800) and
+0.5% for the Jackal (98.2%), armchair 18% and 6% (both certain) -- and no pose
+is closer than the chassis half-width: minimum over 300 accepted poses per
+target is 0.300-0.310 m for the Ridgeback and 0.400-0.417 m for the Jackal.
+
+**A bug the change surfaced.** `_edge_candidate` took its yaw from
+``atan2(by - y, bx - x)``, the angle from the robot to the target, where the
+ring uses the angle from the target to the robot. `_facing_yaw_offset` then
+turns that to face back, so the band's poses were pi out -- the robot stood
+with its back to what it came for. Only the bed ever reached that path, so
+nothing caught it until the band became the only path. Facing is now 100% of
+accepted poses on every target.
+
 ### The model read three identical failures and did the reasonable wrong thing
 
 With `[FAILED] ... no free floor space around it` three times in its history
@@ -1179,6 +1265,82 @@ from the table. Given what it could see this was sound; what it could not see
 is that the congestion was its own teammates and the other teams' finished
 robots, and that they would still be there when agent_3 arrived. The prompt
 carries object distances per robot and no robot-to-robot distances.
+
+**Both halves of that are fixed now** (2026-09-14). `_blocking_robot` returns
+the *name* of the robot occupying a candidate -- body or `DestinationRegistry`
+reservation -- and the samplers tally names as well as counts, so
+`NO_SPACE_AROUND_TARGET` and `NO_SPACE_IN_ROOM` carry `blocked_by: {'jackal_1':
+146, 'drone_2': 37}` in their metadata and name them in the sentence the model
+reads. A count said *wait*; a name says who to ask. And `target_hints` now
+gives every teammate a `navigate_to` with its distance, so robot-to-robot
+distances are in the prompt at all.
+
+**One shape, whatever the target.** The tail is the same for an object, a
+teammate and a room (user, 2026-09-14) -- `navigate_to(<teammate>)` runs
+through the same `_navigate_to_obj`, and a separate wording for it was one
+more thing to keep in step for no gain:
+
+```
+Cannot reach armchair.n.01_1: there is no free floor space around it to stand on.
+Robots occupying the space now: jackal_2, ridgeback_2, ridgeback_4, drone_5.
+Message them to leave, or take a different target.
+```
+
+Every blocker by name, most candidates cost first, never "and N other
+robot(s)": a robot the agent is not told about is one it cannot address. The
+annulus is not in the prose either -- the agent does not choose where it
+stands, the sampler does, so "(need a spot 0.9-1.5 m away, clear of walls,
+furniture and other agents)" was 62 characters it could not act on, and it
+stays in `sampling_range` for the logs.
+
+**The no-robot branch still has to be honest**, because it is the common one.
+The sentence used to be fixed -- "Another agent may already be standing there.
+Try a different target, or wait for them to move." -- whatever had rejected the
+poses. Over the 189 navigation failures of the `S1_full_fast` sweep the filter
+that rejected the most candidates was the **room in 53%**, traversability in
+**33%** and another robot in only **14%**; 26 had no robot rejection at all. So
+five times in six the agent was told to wait for a teammate who was not there,
+for a ring that walls had taken -- and waiting is what it did. With no blockers
+it now says so in one line rather than naming an empty list:
+
+```
+... No robot is in the way -- walls or the room itself take the space, so
+waiting will not free it. Take a different target.
+```
+
+### The failure an agent reads was cut in half, and in the wrong dialect
+
+Two defects in the same line of prompt, both fixed 2026-09-14 by
+`primitive_engine.readable_failure`, which every failure goes through at the
+one choke point (`_failure`), so the prompt, `plan_logs.json` and the metrics'
+`failure_reasons` all get it.
+
+**It was truncated at 200 characters**, and what it cut was live text.
+`ActionPrimitiveError.__init__` appends `. Additional info: {metadata}` to
+every message and `ActionPrimitiveErrorGroup` wraps even one attempt in a
+52-character header, so the 200 was mostly spent on those two -- lines ended
+on `{'target object': 'jackal_3', 'distance':`, an opened dict that never
+closes. The dict is a duplicate (the same metadata is already structural on
+the outcome) and the wrapper says nothing when there was one attempt, so both
+come off; measured over the 48 cells of `S1_full_fast`, the longest failure
+goes 595 -> 342 characters and **nothing is truncated at all** (the cap is now
+400, and it cuts at a word). Per code: TOO_FAR 236 -> 127, OBJECT_CLAIMED
+303 -> 137, NO_SPACE_AROUND_TARGET 538 -> 265.
+
+**It named objects in a dialect the agent had never been shown.** A primitive
+raises with the scene name -- `notebook_154`, `armchair_qplklw_2` -- because
+that is all the controller has, while every id in the listing and in the goal
+reads `notebook.n.01_1`, and the agent is told to use only the ids it was
+shown and never to invent one. The annulus is gone from the prose too (user, 2026-09-14): the agent does
+not choose where it stands, the sampler does, so "need a spot 0.9-1.5 m away,
+clear of walls, furniture and other agents" was 62 characters it could not act
+on. It stays in `sampling_range` for the logs. So "Cannot reach armchair_qplklw_2" is a
+failure it cannot act on: it cannot tell which of its targets failed.
+`world_state.entity_id_of_name` was written for exactly this ("the reverse of
+entity_id_for, for error text") and was wired to nothing; `coop_env` now hands
+it to the engine, after `adopt_task_scope` so the ids are the activity's own
+bindings. A name the map does not know is left alone, and a robot maps to
+itself -- `jackal_3` is already what the prompt calls it.
 
 Then `_ensure_task_terminal_action` appended `place_on_top(coffee_table)` to
 the staging plan, because the specification was still `ontop(apple_5, table)`
