@@ -32,7 +32,7 @@ RUNNERS = {
     "individual": "coop2.experiment.run_individual",
     "broadcast_chain": "coop2.experiment.run_broadcast_chain",
     "centralized": "coop2.experiment.run_centralized",
-    "decentralized_messageboard": "coop2.experiment.run_decentralized_messageboard",
+    "board": "coop2.experiment.run_board",
     "tag": "coop2.experiment.run_tag",
 }
 

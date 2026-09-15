@@ -9,11 +9,11 @@ Decision Flow:
     2. Generate plan using LLM (no waiting, no messages)
     3. Execute plan
 
-`decentralized_messageboard` is individual with a shared board, so it runs
-through this same script: ``run_decentralized_messageboard.py`` calls
-``main(topology="decentralized_messageboard")`` and nothing else differs --
-no waiting, no messages, no interrupts; the board is read and written inside
-the planning call. The board is saved as ``message_board.json``.
+`board` is DIG-TAG's ablation of `tag` -- the same round with an unstructured
+shared message board in place of the task graph -- so it runs through this same
+script: ``run_board.py`` calls ``main(topology="board")``. It notifies and is
+interrupted exactly as `tag` does; the board is saved as ``board.json`` and the
+rounds as ``board_rounds.json``.
 
 `tag` is individual with a shared task graph and the notify tool (DIG-TAG):
 ``run_tag.py`` calls ``main(topology="tag")``. Teams still never wait for one
@@ -53,7 +53,6 @@ from coop2.experiment.agent_timeline import plot_from_run_dir, save_team_timelin
 from coop2.experiment.stall_watch import StallWatch
 from coop2.behavior_env.team_config import homogeneous_layout, load_team_layout
 from coop2.comm_topology.llm_team import (
-    MessageboardTeamBrain,
     create_llm_team_topology,
     reset_notify_budgets,
 )
@@ -105,13 +104,12 @@ def run_individual_experiment(
         seed: Environment random seed.
         record_video: If True, record and save an episode GIF.
         output_root: Optional directory where this run directory should be created.
-        topology: "individual", "decentralized_messageboard" or "tag" -- the
-            modes in which teams never wait for each other; see the module
-            docstring.
+        topology: "individual", "tag" or "board" -- the modes in which teams
+            never wait for each other; see the module docstring.
         notify_budget: notifications a team may send between two environment
-            steps (`tag`, and the board with its notify tool on).
+            steps (`tag` and `board`).
     """
-    if topology not in ("individual", "decentralized_messageboard", "tag"):
+    if topology not in ("individual", "tag", "board"):
         raise ValueError(f"this runner is for the modes without a speaking order, not {topology!r}")
     print("="*80)
     print(f"{topology.upper()} TOPOLOGY WITH LLM AGENTS")
@@ -208,8 +206,9 @@ def run_individual_experiment(
     
     # Create individual LLM agents
     print(f"\nCreating {topology} topology with {n_agents} agents...")
-    if topology == "decentralized_messageboard":
-        print("  Teams plan independently; each reads and posts to one shared message board")
+    if topology == "board":
+        print("  Teams plan independently around one shared message board; a team may notify "
+              f"others to read it, {notify_budget} time(s) per environment step")
     elif topology == "tag":
         print("  Teams plan independently around one shared task graph; a team may notify "
               f"others to read it, {notify_budget} time(s) per environment step")
@@ -234,9 +233,7 @@ def run_individual_experiment(
 
     # Wrap with planning environment. Only the notify tool sends anything in
     # these modes, and a notification is an interrupt by definition.
-    notifies = topology == "tag" or (
-        topology == "decentralized_messageboard" and MessageboardTeamBrain.NOTIFY_TOOL_ENABLED
-    )
+    notifies = topology in ("tag", "board")
     plan_env = PlanningEnvWrapper(
         base_env,
         agent_names=agent_names,
@@ -351,12 +348,13 @@ def run_individual_experiment(
     # Before the figure: the team lanes are drawn from this file.
     save_team_timeline(agents, os.path.join(output_dir, "team_timeline.json"))
     plot_from_run_dir(output_dir)
-    # The board, if this run had one: every post in order, plus any reserved
-    # notify requests. The broker log has none of this -- a post is not a message.
-    boards = {id(a.brain.board): a.brain.board for a in agents.values() if hasattr(a.brain, "board")}
-    if boards:
-        with open(os.path.join(output_dir, "message_board.json"), "w") as f:
-            json.dump([b.to_records() for b in boards.values()][0], f, indent=2)
+    # The board, if this run had one: every post in order, and every team
+    # output. The broker log has neither -- a post is not a message.
+    if topology == "board":
+        from coop2.comm_topology.llm_board import save_board_outputs  # noqa: PLC0415
+
+        for line in save_board_outputs(agents, output_dir):
+            print(line)
     # The task graph, if this run had one: the record (every version, action
     # and attachment), every team output in order, and the drawing.
     if topology == "tag":
@@ -456,7 +454,7 @@ def build_parser(topology="individual"):
     parser.add_argument("--notify-budget", type=int, default=1, metavar="N",
                         help="How many times a team may notify (interrupt) other teams between "
                              "two environment steps; reset after every step. Used by the tag "
-                             "mode, and by the board mode when its notify tool is on.")
+                             "and board modes, which share the round.")
     parser.add_argument("--gui", action="store_true",
                         help="Open the Isaac Sim viewport. Needs a DISPLAY, and note that "
                              "--show is a no-op: the visualisation wrapper is a stub, and "

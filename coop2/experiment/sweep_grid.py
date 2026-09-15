@@ -45,7 +45,7 @@ Globs work for layouts: ``--layouts 'coop2/team_layouts/s1/sets_*.json'``.
 Nothing here touches the runners; it only builds their command lines.
 
 Modes: the three messaging modes and ``tag`` (DIG-TAG's shared task graph)
-run by default; ``decentralized_messageboard`` on request. ``--notify-budget``
+run by default; ``board`` -- DIG-TAG's ablation -- on request. ``--notify-budget``
 is passed only to the runners that take it (``tag``, and the board), and a
 ``tag`` cell's summary row carries what its graph did (``tag``: rounds,
 actions applied / rejected, notifications sent / dropped) beside the route
@@ -74,7 +74,7 @@ RUNNERS = {
     "individual": "coop2.experiment.run_individual",
     "broadcast_chain": "coop2.experiment.run_broadcast_chain",
     "centralized": "coop2.experiment.run_centralized",
-    "decentralized_messageboard": "coop2.experiment.run_decentralized_messageboard",
+    "board": "coop2.experiment.run_board",
     "tag": "coop2.experiment.run_tag",
 }
 
@@ -151,7 +151,7 @@ def build_command(args, mode: str, layout: str, task: str, scene: str, room: str
 
 
 #: The modes whose runner takes --notify-budget.
-NOTIFYING_MODES = ("tag", "decentralized_messageboard")
+NOTIFYING_MODES = ("tag", "board")
 
 
 def tag_summary(run_dir: Path):

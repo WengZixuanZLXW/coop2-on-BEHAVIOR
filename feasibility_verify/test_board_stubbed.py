@@ -1,18 +1,22 @@
-"""CPU-only checks on `tag`: one team brain per DIG-TAG agent, one shared graph.
+"""CPU-only checks on `board`: DIG-TAG's message-board ablation on our team
+layer -- `tag` with the graph replaced by an unstructured shared board.
 
-What is pinned is DIG-TAG's round on our team layer (their runtime tests,
-`ma_crafter/tests/test_tag_runner.py`, said to teams): the graph is section
-6 of every prompt, above the robots; a team's `tag_actions` land on the
-shared graph in order before its `notify` goes out, so a notified team reads
-what was done; a rejected action is recorded with the graph's reason and the
-round goes on; a notification interrupts the named team, which answers with
-the same two fields from its interrupt round; the budget drops a second
-notification and is reset after an environment step; a notification that
-arrives while a team is planning is answered before its plans go out; and a
-run's record round-trips. No Isaac, no model.
+The ablation's claim is that the two modes differ **only** in the shared
+space, so this file checks the same eight things
+`test_tag_team_stubbed.py` checks, against the board: the space is section 6
+of every prompt above the robots, shown in full; a team's `write` lands
+before its `notify` goes out, so a notified team reads it; a notification
+interrupts the named team, which answers with the same two fields from its
+interrupt round; the budget drops a second notification and is reset after an
+environment step; a notification arriving mid-call is answered before the
+plans go out; and a run's record round-trips.
+
+The round is `notifying_team.NotifyingTeamBrain`, shared with `tag`, so this
+also pins that the shared base works through the board's seams -- which is
+the part a copy would have let drift. No Isaac, no model.
 
 Run:
-    python feasibility_verify/test_tag_team_stubbed.py
+    python feasibility_verify/test_board_stubbed.py
 """
 
 from __future__ import annotations
@@ -23,30 +27,26 @@ import re
 import sys
 import tempfile
 
-os.environ.setdefault("MPLBACKEND", "Agg")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from coop2.cognitive.agent.agent import AgentState
 from coop2.cognitive.agent.llm_client import (
     InterruptDecision,
-    LLMTagInterruptResponse,
-    LLMTagPlanResponse,
+    LLMBoardInterruptResponse,
+    LLMBoardPlanResponse,
     NavigateToAction,
-    TagToolCall,
-    Task,
     TeamAgentInterruptDecision,
     TeamAgentPlan,
 )
-from coop2.cognitive.agent.prompt_sections import cooperation_section, current_messages_section
+from coop2.cognitive.agent.prompt_sections import BEST_PRACTICES, cooperation_section, current_messages_section
 from coop2.cognitive.messages import MessageBroker
-from coop2.cognitive.agent.prompt_sections import BEST_PRACTICES
-from coop2.comm_topology.llm_tag import (
+from coop2.comm_topology.llm_board import (
+    BOARD_MANUAL,
     NOTIFY_MESSAGE_TYPE,
-    TAG_MANUAL,
-    TagTeamBrain,
-    save_tag_outputs,
-    shared_tag,
-    tag_rounds_of,
+    BoardTeamBrain,
+    board_rounds_of,
+    save_board_outputs,
+    shared_board,
 )
 from coop2.comm_topology.llm_team import (
     TEAM_BRAIN_ROLES,
@@ -54,7 +54,6 @@ from coop2.comm_topology.llm_team import (
     create_llm_team_topology,
     reset_notify_budgets,
 )
-from coop2.dig_tag.tag import TAGParallelInterface
 
 
 def ok(message: str) -> None:
@@ -63,24 +62,23 @@ def ok(message: str) -> None:
 
 USAGE = {"total_tokens": 10, "prompt_tokens": 6, "completion_tokens": 4, "latency_seconds": 0.1}
 
-OPEN = TagToolCall(tool="open", goal="carry die.n.01_1 to C1", rule="ontop(die.n.01_1, cabinet.n.01_5)",
-                   state="team_1: drone_1 doing it")
-BAD_UPDATE = TagToolCall(tool="update", task="q9", state="nowhere")
-ATTACH_Q1 = TagToolCall(tool="attach", task="q1", payload="the die is 2 m from drone_1")
-UPDATE_Q1 = TagToolCall(tool="update", task="q1", state="team_2 saw it; we take C2")
+CLAIM = "team_1: drone_1 is taking die.n.01_1 to C1, leave it to us"
+SEEN = "team_2: we saw the die move; we take C2"
+NOTE = "team_1: the die is 2 m from drone_1"
 
 
 class StubClient:
-    """Answers the tag schemas: plans per robot, and scripted (actions, notify)
-    per (team, kind); records what every call saw. A hook may run inside a
-    team's planning call, to stand in for a notification arriving then."""
+    """Answers the board schemas: plans per robot, and a scripted (write,
+    notify) per (team, kind); records what every call saw. A hook may run
+    inside a team's planning call, to stand in for a notification arriving
+    then. Same shape as the tag stub -- the modes take the same calls."""
 
     model = "stub"
 
     def __init__(self):
         self.formats = []
         self.prompts = []
-        self.script = {}            # (team, "plan"|"interrupt") -> [(tag_actions, notify), ...]
+        self.script = {}            # (team, "plan"|"interrupt") -> [(write, notify), ...]
         self.during_plan = {}       # team -> callable run inside that team's planning call
         self.plan_calls = 0
         self.interrupt_calls = 0
@@ -96,19 +94,19 @@ class StubClient:
 
     def _next(self, team, kind):
         queue = self.script.get((team, kind), [])
-        return queue.pop(0) if queue else ([], [])
+        return queue.pop(0) if queue else (None, [])
 
     def generate(self, messages, response_format=None, temperature=0.7):
         self.formats.append(response_format)
         self.prompts.append(messages)
         team = self._team_in(messages)
         members = self._members_in(messages)
-        if response_format is LLMTagPlanResponse:
+        if response_format is LLMBoardPlanResponse:
             self.plan_calls += 1
             hook = self.during_plan.pop(team, None)
             if hook is not None:
                 hook()
-            actions, notify = self._next(team, "plan")
+            write, notify = self._next(team, "plan")
             plans = [
                 TeamAgentPlan(
                     agent_id=name,
@@ -118,27 +116,27 @@ class StubClient:
                 )
                 for name in members
             ]
-            return LLMTagPlanResponse(plans=plans, reasoning="split", tag_actions=actions, notify=notify), dict(USAGE)
-        if response_format is LLMTagInterruptResponse:
+            return LLMBoardPlanResponse(plans=plans, reasoning="split", write=write, notify=notify), dict(USAGE)
+        if response_format is LLMBoardInterruptResponse:
             self.interrupt_calls += 1
-            actions, notify = self._next(team, "interrupt")
+            write, notify = self._next(team, "interrupt")
             decisions = [TeamAgentInterruptDecision(agent_id=name, decision=InterruptDecision.RESUME,
                                                     reasoning="keep going") for name in members]
-            return LLMTagInterruptResponse(decisions=decisions, reasoning="noted", tag_actions=actions,
-                                           notify=notify), dict(USAGE)
+            return LLMBoardInterruptResponse(decisions=decisions, reasoning="noted", write=write,
+                                             notify=notify), dict(USAGE)
         raise AssertionError(f"unexpected response format {response_format}")
 
     def generate_team_plan(self, messages, temperature=0.7):
-        raise AssertionError("the tag mode must ask for its own plan schema")
+        raise AssertionError("the board mode must ask for its own plan schema")
 
     def generate_team_interrupt_decision(self, messages, temperature=0.7):
-        raise AssertionError("the tag mode must ask for its own interrupt schema")
+        raise AssertionError("the board mode must ask for its own interrupt schema")
 
 
 def make_run(teams, notify_budget=1):
     client = StubClient()
     agents = create_llm_team_topology(
-        llm_client=client, teams=teams, topology="tag", verbose=False, notify_budget=notify_budget
+        llm_client=client, teams=teams, topology="board", verbose=False, notify_budget=notify_budget
     )
     broker = MessageBroker(agents)
     for agent in agents.values():
@@ -160,109 +158,101 @@ def notifications(broker):
 def main() -> int:
     teams = {"team_1": ["drone_1", "jackal_1"], "team_2": ["drone_2"], "team_3": ["tiago_3"]}
 
-    print("test 1: the mode exists, wires nothing, and every brain shares one graph")
-    assert "tag" in TEAM_BRAIN_ROLES
-    sec4 = cooperation_section("tag")
-    assert sec4.startswith("## 4. COOPERATION MODE: SHARED TASK GRAPH"), sec4[:80]
-    for token in ("tag_actions", "notify", "section 5", "section 6", "budget", "INTERRUPTS"):
+    print("test 1: the mode exists, wires nothing, and every brain shares one board")
+    assert "board" in TEAM_BRAIN_ROLES
+    sec4 = cooperation_section("board")
+    assert sec4.startswith("## 4. COOPERATION MODE: SHARED MESSAGE BOARD"), sec4[:80]
+    for token in ("`write`", "notify", "section 5", "section 6", "budget", "INTERRUPTS"):
         assert token in sec4, token
-    heading = current_messages_section("tag", [{"sender": "team_2", "content": "x"}], lambda m: m["content"])
+    heading = current_messages_section("board", [{"sender": "team_2", "content": "x"}], lambda m: m["content"])
     assert heading.startswith("## 7. MESSAGES RECEIVED NOW -- a team notified you"), heading
     client, agents, brains, broker = make_run(teams)
     for brain in brains.values():
-        assert isinstance(brain, TagTeamBrain) and brain.COOPERATION_MODE == "tag"
+        assert isinstance(brain, BoardTeamBrain) and brain.COOPERATION_MODE == "board"
         assert brain.wait_for == [] and brain.send_to == []
         assert brain.notify_left == 1
-    assert len({id(b.tag) for b in brains.values()}) == 1
-    assert shared_tag(agents) is brains["team_1"].tag
+    assert len({id(b.board) for b in brains.values()}) == 1
+    assert shared_board(agents) is brains["team_1"].board
     system = brains["team_1"]._system_prompt(agents["drone_1"])
-    assert "## 4. COOPERATION MODE: SHARED TASK GRAPH" in system
-    # Section 5 is the best practice list (handoff order first), the manual after it.
-    assert system.rstrip().endswith("## 5.1 DIGTAG MANUAL\n" + TAG_MANUAL.strip()), system[-200:]
+    assert "## 4. COOPERATION MODE: SHARED MESSAGE BOARD" in system
+    assert system.rstrip().endswith("## 5.1 DIGTAG MANUAL\n" + BOARD_MANUAL.strip()), system[-200:]
     assert "## 5. BEST PRACTICE" in system
     for practice in BEST_PRACTICES:
         assert practice in system, practice
-    for tool in ("open(goal, rule, state)", "update(task, state)", "close(identity)", "attach(task, payload)"):
-        assert tool in system, tool
-    ok("three TagTeamBrains, one graph, empty wiring, sections 4 and 5 in place")
+    assert "write(text)" in system
+    # The ablation is one tool against the graph's eight: nothing structural.
+    for graph_tool in ("open(goal", "update(task", "close(identity)", "attach(task"):
+        assert graph_tool not in system, graph_tool
+    ok("three BoardTeamBrains, one board, empty wiring, sections 4 and 5 in place")
 
-    print("test 2: the empty graph is section 6, above the robots, with the budget")
+    print("test 2: the empty board is section 6, above the robots, with the budget")
     b1 = brains["team_1"]
     user = b1._build_team_prompt(members(b1))[1]["content"]
     assert "## 6.1 DIGTAG TASK OBSERVATION" in user, user[:400]
     slot = user.index("## 6.1 DIGTAG TASK OBSERVATION")
     assert user.index("## 6. OBSERVATIONS") < slot < user.index("=== ROBOT drone_1 ===")
-    assert "(none yet" in user, user[:400]
-    # The budget counts notifications, and one may name several teams -- the
-    # line says both, because with the old wording the model read the budget
-    # as "one team" and never notified more than one (2026-09-14).
+    assert "(nothing posted yet)" in user, user[:400]
     assert "Notifications left until the next environment step: 1" in user, user[-400:]
     assert "one notification may name several teams" in user, user[-400:]
     closing = user.rsplit("\n\n", 1)[1]
-    assert "`tag_actions`" in closing and "`notify`" in closing, closing
+    assert "`write`" in closing and "`notify`" in closing, closing
     assert "## 7." not in user, "nothing was received"
-    ok("graph rendered empty in the reserved slot, before the first robot; closing asks for both fields")
+    ok("board rendered empty in the reserved slot, before the first robot; closing asks for both fields")
 
-    print("test 3: actions land in order (a rejected one recorded), then the notification goes out")
-    client.script[("team_1", "plan")] = [([OPEN, BAD_UPDATE, ATTACH_Q1], ["team_2", "team_1", "nobody"])]
+    print("test 3: the write lands before the notification goes out")
+    client.script[("team_1", "plan")] = [(CLAIM, ["team_2", "team_1", "nobody"])]
     agents["drone_2"]._set_state(AgentState.W, timestamp=0.0, env_step=0)
     plans = b1._generate_team_plans()
     assert set(plans) == {"drone_1", "jackal_1"}
-    assert client.formats == [LLMTagPlanResponse], client.formats
-    graph = b1.tag.tag
-    assert list(graph.tasks) == ["q1"] and graph.tasks["q1"].identity == "k1"
-    assert graph.tasks["q1"].state == "team_1: drone_1 doing it"
-    assert [a.issuer for a in graph.actions.values()] == ["team_1"]
-    (phi,) = graph.evidence.values()
-    assert (phi.target, phi.source) == ("q1", "team_1")
+    assert client.formats == [LLMBoardPlanResponse], client.formats
+    board = b1.board
+    assert [p["text"] for p in board.history()] == [CLAIM]
+    assert board.history()[0]["author"] == "team_1" and board.history()[0]["index"] == 0
     (round1,) = b1.round_records
     assert round1["stage"] == "planning" and round1["observed"] == []
-    results = [a["result"] for a in round1["tag_actions"]]
-    assert results[0] == "applied" and results[1].startswith("rejected") and results[2] == "applied", results
-    assert "q9" in results[1]
+    assert round1["write"] == CLAIM
     assert round1["notify"] == {"requested": ["team_2"], "sent": ["team_2"], "dropped": False}, round1["notify"]
     sent = notifications(broker)
     assert len(sent) == 1 and sent[0]["sender"] == "team_1" and sent[0]["recipients"] == ["team_2"], sent
     assert sent[0]["metadata"]["interrupts_execution"] is True
+    assert "message board" in sent[0]["content"]
     assert agents["drone_2"].state is AgentState.I, agents["drone_2"].state
     assert b1.notify_left == 0
-    ok("open applied, update of an unknown version rejected, attach applied; team_2 interrupted, self and strangers dropped")
+    ok("the post landed; team_2 interrupted, self and strangers dropped")
 
     print("test 4: the notified team answers from its interrupt round with the same two fields")
-    client.script[("team_2", "interrupt")] = [([UPDATE_Q1], ["team_1"])]
+    client.script[("team_2", "interrupt")] = [(SEEN, ["team_1"])]
     agents["drone_2"].handle_interrupt()
-    assert client.formats[-1] is LLMTagInterruptResponse
+    assert client.formats[-1] is LLMBoardInterruptResponse
     prompt = client.prompts[-1][1]["content"]
     assert "## 7. MESSAGES RECEIVED NOW -- a team notified you" in prompt
     assert "notification from team_1" in prompt
-    # goal / rule / state are a line each now, so the id line ends at the id.
-    assert "q1 [task k1]" in prompt, "the open had landed before team_2 was woken"
-    assert "goal: carry die.n.01_1 to C1" in prompt
-    assert "history: open by team_1 -> q1" in prompt
-    assert "evidence phi1 by team_1: the die is 2 m from drone_1" in prompt
-    assert list(graph.tasks) == ["q1", "q2"] and graph.tasks["q2"].identity == "k1"
-    assert graph.tasks["q2"].state == "team_2 saw it; we take C2"
+    assert f"[0] step 0 team_1: {CLAIM}" in prompt, "the post had landed before team_2 was woken"
+    assert [p["text"] for p in board.history()] == [CLAIM, SEEN]
     b2 = brains["team_2"]
     (round2,) = b2.round_records
-    assert round2["stage"] == "interrupted" and round2["observed"] == ["q1"]
-    assert round2["notify"]["sent"] == ["team_1"]
+    assert round2["stage"] == "interrupted" and round2["observed"] == ["0"]
+    assert round2["write"] == SEEN and round2["notify"]["sent"] == ["team_1"]
     # team_1's robots were in R (planning), which the broker does not stop:
     # the notification waits in their inboxes.
     assert len(notifications(broker)) == 2
     assert agents["drone_1"].state is AgentState.R
     assert [m["sender"] for m in agents["drone_1"].get_messages(clear_buffer=False)] == ["team_2"]
-    ok("team_2 read q1 and its history, updated it to q2 under k1, notified team_1 back")
+    ok("team_2 read the post, wrote its own, notified team_1 back")
 
     print("test 5: a second notification is dropped, and the budget resets after a step")
-    client.script[("team_1", "plan")] = [([], ["team_3"])]
+    client.script[("team_1", "plan")] = [(None, ["team_3"])]
     agents["tiago_3"]._set_state(AgentState.W, timestamp=0.0, env_step=0)
     b1._generate_team_plans()
+    assert b1.round_records[-1]["write"] is None, "null write posts nothing"
+    assert len(board.history()) == 2
     assert b1.round_records[-1]["notify"] == {"requested": ["team_3"], "sent": [], "dropped": True}
     assert len(notifications(broker)) == 2 and agents["tiago_3"].state is AgentState.W
     reset_notify_budgets(agents)
     assert all(b.notify_left == 1 for b in brains.values())
-    client.script[("team_1", "plan")] = [([], ["team_3"])]
+    client.script[("team_1", "plan")] = [("   ", ["team_3"])]
     b1._generate_team_plans()
+    assert b1.round_records[-1]["write"] is None and len(board.history()) == 2, "blank write posts nothing"
     assert b1.round_records[-1]["notify"]["sent"] == ["team_3"] and agents["tiago_3"].state is AgentState.I
     ok("budget of 1: second notify dropped and recorded; reset after the step; then sent")
 
@@ -272,10 +262,10 @@ def main() -> int:
     # team_2 notifies team_1 while team_1's model call is in flight: team_1's
     # robot is in R, so the broker buffers rather than interrupts.
     client.during_plan["team_1"] = lambda: b2._say(
-        "notification from team_2: read the shared task graph", NOTIFY_MESSAGE_TYPE,
+        "notification from team_2: read the shared message board", NOTIFY_MESSAGE_TYPE,
         interrupts=True, recipients=["team_1"])
-    client.script[("team_1", "plan")] = [([OPEN], [])]
-    client.script[("team_1", "interrupt")] = [([ATTACH_Q1], [])]
+    client.script[("team_1", "plan")] = [(CLAIM, [])]
+    client.script[("team_1", "interrupt")] = [(NOTE, [])]
     agents["drone_1"]._set_state(AgentState.R, timestamp=0.0, env_step=0)
     plan = agents["drone_1"].handle_reasoning()
     assert plan is not None and plan.specification.startswith("ontop("), plan.specification
@@ -285,53 +275,65 @@ def main() -> int:
     late_prompt = client.prompts[-1][1]["content"]
     assert "The team was interrupted by a message." in late_prompt
     assert "notification from team_2" in late_prompt
-    assert "q1 [task k1]" in late_prompt, "the late round saw the graph as the planning round left it"
-    assert list(b1.tag.tag.evidence.values())[0].target == "q1"
+    assert CLAIM in late_prompt, "the late round saw the board as the planning round left it"
+    assert [p["text"] for p in b1.board.history()] == [CLAIM, NOTE]
     assert agents["drone_1"].get_messages(clear_buffer=False) == [], "drained: it was answered"
     assert b1._heard == []
     assert agents["drone_1"].state is AgentState.R
-    ok("planning round, then a late-notify round on the same graph, before the robot took its plan")
+    ok("planning round, then a late-notify round on the same board, before the robot took its plan")
 
-    print("test 7: the run's record: tag.json round-trips, rounds are in order, the graph draws")
+    print("test 7: the run's record: board.json round-trips, rounds are in order")
     client, agents, brains, broker = make_run(teams)
-    client.script[("team_1", "plan")] = [([OPEN, ATTACH_Q1], ["team_2"])]
-    client.script[("team_2", "interrupt")] = [([UPDATE_Q1], [])]
+    client.script[("team_1", "plan")] = [(CLAIM, ["team_2"])]
+    client.script[("team_2", "interrupt")] = [(SEEN, [])]
     agents["drone_2"]._set_state(AgentState.W, timestamp=0.0, env_step=0)
     brains["team_1"]._generate_team_plans()
     agents["drone_2"].handle_interrupt()
     with tempfile.TemporaryDirectory() as tmp:
-        lines = save_tag_outputs(agents, tmp)
-        assert any(l.startswith("Task graph saved") for l in lines), lines
-        assert not any(l.startswith("Task graph not drawn") for l in lines), lines
-        for name in ("tag.json", "tag_rounds.json", "tag.pdf", "tag.png"):
+        lines = save_board_outputs(agents, tmp)
+        assert any(l.startswith("Message board saved") for l in lines), lines
+        for name in ("board.json", "board_rounds.json"):
             assert os.path.exists(os.path.join(tmp, name)), (name, os.listdir(tmp))
-        loaded = TAGParallelInterface.load_json(os.path.join(tmp, "tag.json"))
-        assert [v.identity for v in loaded.tag.tasks.values()] == ["k1", "k1"]
-        assert loaded.tag.tasks["q2"].state == "team_2 saw it; we take C2"
-        assert len(loaded.tag.evidence) == 1
-        with open(os.path.join(tmp, "tag_rounds.json"), encoding="utf-8") as handle:
+        with open(os.path.join(tmp, "board.json"), encoding="utf-8") as handle:
+            saved = json.load(handle)
+        with open(os.path.join(tmp, "board_rounds.json"), encoding="utf-8") as handle:
             rounds = json.load(handle)
+    assert saved["schema"] == "message_board.v1"
+    assert [p["text"] for p in saved["posts"]] == [CLAIM, SEEN]
+    assert [p["index"] for p in saved["posts"]] == [0, 1]
     assert [r["team"] for r in rounds] == ["team_1", "team_2"]
     assert [r["seq"] for r in rounds] == sorted(r["seq"] for r in rounds)
-    assert rounds == tag_rounds_of(agents)
-    assert set(rounds[0]) >= {"seq", "team", "env_step", "stage", "observed", "reasoning", "tag_actions", "notify"}
-    ok("tag.json reloads with both versions and the evidence; rounds ordered; pdf and png written")
+    assert rounds == board_rounds_of(agents)
+    assert set(rounds[0]) >= {"seq", "team", "env_step", "stage", "observed", "reasoning", "write", "notify"}
+    ok("board.json holds every post in order; rounds ordered and complete")
 
-    print("test 8: the other modes are untouched")
+    print("test 8: the board is `tag` minus the graph, and the other modes are untouched")
+    # The ablation, structurally: both brains are the same round, and neither
+    # mode can gain a field the other has not -- a copy is what let that drift.
+    from coop2.comm_topology.llm_tag import TagTeamBrain
+    from coop2.comm_topology.notifying_team import NotifyingTeamBrain
+    assert issubclass(BoardTeamBrain, NotifyingTeamBrain) and issubclass(TagTeamBrain, NotifyingTeamBrain)
+    shared = {"reset_notify_budget", "_round", "_notify", "after_plan", "_refresh_task_observation",
+              "_build_team_prompt", "_build_interrupt_prompt", "_call_plan_model", "_call_interrupt_model",
+              "_on_plan_response", "_on_interrupt_response", "_team_names"}
+    for name in sorted(shared):
+        assert name not in vars(BoardTeamBrain), f"{name} is the shared round's, not the board's"
+        assert name not in vars(TagTeamBrain), f"{name} is the shared round's, not the graph's"
+    seams = {"_observe_space", "_space_section", "_observed", "_record_fields", "_apply", "_summary"}
+    for name in sorted(seams):
+        assert name in vars(BoardTeamBrain) and name in vars(TagTeamBrain), name
 
     class Plain:
         model = "stub"
 
     plain = create_llm_team_topology(llm_client=Plain(), teams={"t": ["a"]}, verbose=False)["a"].brain
-    assert type(plain) is TeamBrain and not hasattr(plain, "tag") and not hasattr(plain, "reset_notify_budget")
-    reset_notify_budgets({"a": plain.members["a"]})
+    assert type(plain) is TeamBrain and not hasattr(plain, "board") and not hasattr(plain, "reset_notify_budget")
     for a in plain.members.values():
         a.symbolic_view = "v"
         a.observe({}, 0)
     text = plain._build_team_prompt(members(plain))[1]["content"]
-    assert "DIGTAG TASK OBSERVATION" not in text and "tag_actions" not in text
-    assert "## 5. DIGTAG" not in plain._system_prompt(plain.members["a"])
-    ok("individual mode has no graph, no manual, no budget")
+    assert "DIGTAG TASK OBSERVATION" not in text and "message board" not in text
+    ok("both modes share the round and differ only in the six seams; individual mode has neither")
 
     print("\nALL TESTS PASSED")
     return 0

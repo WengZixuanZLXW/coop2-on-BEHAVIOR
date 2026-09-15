@@ -5,14 +5,14 @@ System prompt
     2. ENVIRONMENT RULES    -- <环境规则>          what the world lets an action do
     3. ROBOT CAPABILITIES   -- <不同机器人能力描述>  arm / carrier / drone, and this team's robots
     4. COOPERATION MODE     -- <当前合作模式规则>    individual / broadcast_chain / centralized /
-                               decentralized_messageboard
+                               tag / board
     5. BEST PRACTICE        -- <预留的提示prompt>    what works (handoff order last), then the digtag manual under tag
 
 User prompt
     6. OBSERVATIONS         -- 全队的<机器人observation和available action>, plus the
                                reserved <digtag任务observation> slot
-    7. CURRENT MESSAGES     -- <当前收到的消息>, worded for the cooperation mode; under
-                               decentralized_messageboard this is the shared MESSAGE BOARD
+    7. CURRENT MESSAGES     -- <当前收到的消息>, worded for the cooperation mode. Under
+                               tag and board the shared space is section 6.1, not here
     8. CONVERSATION HISTORY -- <对话历史>
     9. ACTION HISTORY       -- <行动历史和失败原因>
 
@@ -32,7 +32,6 @@ __all__ = [
     "ENVIRONMENT_RULES",
     "ROBOT_CAPABILITIES",
     "COOPERATION_RULES",
-    "MESSAGEBOARD_NOTIFY_RULES",
     "role_section",
     "robot_capabilities_section",
     "cooperation_section",
@@ -153,14 +152,14 @@ Followers answer in section 7 (accept, or what they do instead and why); then yo
     "centralized_follower": """## 4. COOPERATION MODE: CENTRALIZED -- YOU ARE A FOLLOWER
 Each round the leader's assignment arrives in section 7: your team's leg or object and the robot kind for it.
 Answer in two or three sentences from your robots' actual state -- accept and name which robot does which part, or say what you do instead and why (cannot lift the cargo, leg already done, target held by another team) -- then plan consistently with your answer.""",
-    "decentralized_messageboard": """## 4. COOPERATION MODE: DECENTRALIZED MESSAGE BOARD
-Every team plans for itself as in individual mode: nobody waits, nobody is messaged, nothing you write interrupts anybody.
-Shared: ONE MESSAGE BOARD.
-Each plan call shows the whole board (section 7), oldest first, posts since you last planned marked (new); each plan you return carries one `board_post`, read by the other teams when they next plan.
-- A cargo or leg another team posted it is taking is taken: send your robots elsewhere or have them wait.
-- Post which of your robots takes which cargo or leg THIS round, in the task's ids, and what you leave to others: one or two sentences, no narration, no questions, no repeats.
-- A post is a commitment, not a message: nobody is told, nobody answers, an executing team sees it only when it next plans.
-  Plan as if the others act on what they posted.""",
+    "board": """## 4. COOPERATION MODE: SHARED MESSAGE BOARD
+Every team plans for itself; the teams share ONE MESSAGE BOARD (its one tool is in section 5), shown in section 6 above the robots each time you plan or are notified, in full.
+Every answer carries `write` (the message to post, null for none) and `notify` (teams to wake so they read the board now).
+- The board has no structure: nothing is claimed, nothing is retracted, and a post is only as true as it was when written. Say who is doing what, and read what others said before choosing a target.
+- Notifying a team INTERRUPTS all its robots and costs it a decision; your notify budget until the next environment step is shown with the board, and a notification beyond it is dropped.
+  Leave `notify` empty unless a team's robots are doing what the board now shows to be wrong or finished.
+- The budget counts notifications, not teams: `notify` is a list, and one notification wakes every team you name for the same one unit.
+  Name all of them at once rather than one per step.""",
     "tag": """## 4. COOPERATION MODE: SHARED TASK GRAPH
 Every team plans for itself; the teams share ONE TASK GRAPH (manual in section 5), shown in section 6 above the robots each time you plan or are notified.
 Every answer carries `tag_actions` (changes to the graph, applied in order BEFORE your plans or decisions take effect) and `notify` (teams to wake so they read the graph now).
@@ -170,14 +169,6 @@ Every answer carries `tag_actions` (changes to the graph, applied in order BEFOR
 - The budget counts notifications, not teams: `notify` is a list, and one notification wakes every team you name for the same one unit.
   Name all of them at once rather than one per step.""",
 }
-
-#: The notify tool's rule, appended to section 4 only when a brain has
-#: ``NOTIFY_TOOL_ENABLED`` set.
-MESSAGEBOARD_NOTIFY_RULES = """
-NOTIFY (a tool): a post waits for its readers; `notify` does not.
-Set it to interrupt named teams with one or two sentences, only when what they are doing now is wrong given what you know (a cargo they head for that you hold, a leg you just completed).
-It stops all their robots and costs them a decision; leave `notify` null otherwise."""
-
 
 def cooperation_section(mode: str, extra: str = "") -> str:
     """Section 4 for @mode, plus @extra (the reserved notify rule) when given."""
@@ -219,7 +210,8 @@ def reserved_section(text: str = "") -> str:
 
     Standing rather than mode-specific: a base-locked arm and a carrier appear
     in every S1 layout, so individual, broadcast_chain and centralized all
-    need the handoff order, and only `TagTeamBrain` ever fills @text.
+    need the handoff order, and only the notifying brains (`tag`, `board`)
+    ever fill @text -- with their own space's manual.
     """
     lines = ["## 5. BEST PRACTICE"] + [f"- {practice}" for practice in BEST_PRACTICES]
     text = (text or "").strip()
@@ -291,9 +283,9 @@ _CURRENT_HEADINGS = {
     "broadcast_chain": "## 7. MESSAGES RECEIVED NOW -- what the teams ahead of you committed to",
     "centralized_leader": "## 7. MESSAGES RECEIVED NOW -- your followers' responses to your assignment",
     "centralized_follower": "## 7. MESSAGES RECEIVED NOW -- your leader's assignment",
-    # Reserved: the board mode has no direct messages until the notify tool
-    # delivers one; this is the heading such a message would arrive under.
-    "decentralized_messageboard": "## 7. MESSAGES RECEIVED NOW -- a team interrupted you with notify",
+    # `board` notifies exactly as `tag` does (the round is shared), so its
+    # notification arrives under the same heading, pointing at its own space.
+    "board": "## 7. MESSAGES RECEIVED NOW -- a team notified you: read the message board in section 6",
     "tag": "## 7. MESSAGES RECEIVED NOW -- a team notified you: read the task graph in section 6",
 }
 

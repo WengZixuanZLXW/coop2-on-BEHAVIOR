@@ -2,7 +2,7 @@
 Run the MA-Crafter COOP2 experiment grid.
 
 Default grid:
-  topology: individual, centralized, broadcast_chain (decentralized_messageboard on request)
+  topology: individual, centralized, broadcast_chain (tag and board on request)
   agent count: 3, 6
   repair: off, on
   seed: 42
@@ -27,7 +27,7 @@ TOPOLOGY_SCRIPTS = {
     "individual": EXPERIMENT_DIR / "run_individual.py",
     "centralized": EXPERIMENT_DIR / "run_centralized.py",
     "broadcast_chain": EXPERIMENT_DIR / "run_broadcast_chain.py",
-    "decentralized_messageboard": EXPERIMENT_DIR / "run_decentralized_messageboard.py",
+    "board": EXPERIMENT_DIR / "run_board.py",
     "tag": EXPERIMENT_DIR / "run_tag.py",
 }
 

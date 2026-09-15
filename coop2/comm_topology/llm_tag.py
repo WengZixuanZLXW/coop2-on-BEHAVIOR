@@ -9,6 +9,11 @@ This is the one runtime file that imports it -- their rule, kept: the graph
 is LLM- and environment-agnostic and nothing else here should learn its
 types. ``run_individual`` asks this module for the outputs to save.
 
+The round itself -- observe, act, notify within a budget, then plan -- is
+``notifying_team.NotifyingTeamBrain``, shared with the board ablation exactly
+as DIG-TAG shares ``notify.py`` between its two spaces. This file is the graph
+half: the six seams, the manual, the two schemas and the closing lines.
+
 **One TAG agent is one team brain** (user, 2026-09-13). DIG-TAG has no team
 layer: one LLM per agent observes the graph and answers with actions, agents
 to notify, and one plan. Here the unit is the team, so the brain observes
@@ -33,19 +38,21 @@ the team's task is stated in section 6 as for every mode.
 
 from __future__ import annotations
 
-import itertools
 import json
 import os
-import threading
 from typing import Any, Dict, List, Optional
 
 from coop2.cognitive.agent.llm_client import (
-    InterruptDecision,
     LLMTagInterruptResponse,
     LLMTagPlanResponse,
     TagToolCall,
 )
-from coop2.comm_topology.llm_team import TeamBrain
+from coop2.comm_topology.notifying_team import (
+    DEFAULT_NOTIFY_BUDGET,
+    NOTIFY_MESSAGE_TYPE,
+    NotifyingTeamBrain,
+    rounds_of,
+)
 from coop2.dig_tag.tag import TAG_TOOLS, TAGParallelInterface, observation_with_history, observed
 
 __all__ = [
@@ -62,17 +69,11 @@ __all__ = [
     "tag_rounds_of",
 ]
 
-#: The message type a notification travels under. The broker interrupts on
-#: ``interrupts_execution``; the type is what the record and the prompt
-#: heading key on.
-NOTIFY_MESSAGE_TYPE = "notify"
+# NOTIFY_MESSAGE_TYPE and DEFAULT_NOTIFY_BUDGET belong to the shared round and
+# are re-exported here, this being where they were first defined.
 
 #: How many of a task's history steps the prompt shows (DIG-TAG's value).
 HISTORY_SHOWN = 8
-
-#: Notifications a team may send between two environment steps (DIG-TAG's
-#: default). The runner resets every team's budget after each step.
-DEFAULT_NOTIFY_BUDGET = 1
 
 #: Inches per call in the drawn graph (DIG-TAG's run_condition value).
 TAG_FIGURE_PITCH = 0.2
@@ -92,10 +93,6 @@ tag_actions, applied in order:
 Open what nobody is doing, update the state of what your robots do, attach what you learned, close what is done, in the task's own ids (cargo, support, room).
 Only a task's current version can be continued; acting on an older one starts a new task.
 A rejected action is reported back and the others still apply."""
-
-_round_sequence = itertools.count()
-_round_sequence_lock = threading.Lock()
-
 
 def new_shared_tag() -> TAGParallelInterface:
     """The team's graph, empty at the start of the episode. Every tool,
@@ -174,115 +171,44 @@ def format_tag_observation(tag_observation: Dict[str, Any], team_names: List[str
     return "\n".join(lines)
 
 
-class TagTeamBrain(TeamBrain):
+class TagTeamBrain(NotifyingTeamBrain):
     """One team on the shared task graph -- `tag`.
 
-    Nothing here waits for another team: ``wait_for`` and ``send_to`` stay
-    empty, as in `individual`. What a team may do is act on the graph and
-    notify, in every planning and every interrupt call; see the module
-    docstring for the order.
+    The round is the base's; what is here is the graph: how it is observed,
+    shown, acted on and summarised. See the module docstring for the order.
     """
 
     COOPERATION_MODE = "tag"
+    SPACE_NAME = "task graph"
+    MANUAL = TAG_MANUAL
+    NOTIFY_TEXT = "read the shared task graph"
+    PLAN_RESPONSE = LLMTagPlanResponse
+    INTERRUPT_RESPONSE = LLMTagInterruptResponse
 
-    def __init__(self, *args, tag: Optional[TAGParallelInterface] = None,
-                 notify_budget: int = DEFAULT_NOTIFY_BUDGET, **kwargs):
+    def __init__(self, *args, tag: Optional[TAGParallelInterface] = None, **kwargs):
         super().__init__(*args, **kwargs)
         #: Shared with every other brain in the run by the factory; a brain
         #: built alone gets a graph of its own so it still works.
         self.tag = tag if tag is not None else new_shared_tag()
-        self.notify_budget = int(notify_budget)
-        self.notify_left = self.notify_budget
-        self.reserved_system_prompt = TAG_MANUAL
-        #: One record per output of this team: what it saw, did, sent, dropped.
-        self.tag_rounds: List[Dict[str, Any]] = []
-        # The version ids the prompt being built shows, for the round's record.
-        self._observed_now: List[str] = []
-        # Keys of the messages the planning prompt quoted, so a notification
-        # that arrived during the call can be told from one it already saw.
-        self._quoted_in_plan: set = set()
-        self._late_round = False
 
-    # -- the budget --------------------------------------------------------
+    # -- the graph, in the six seams ---------------------------------------
 
-    def reset_notify_budget(self) -> None:
-        """Called by the runner after every environment step."""
-        self.notify_left = self.notify_budget
+    def _observe_space(self) -> Dict[str, Any]:
+        return self.tag.observe()
 
-    # -- the graph in the prompt (section 6's reserved slot) ---------------
+    def _space_section(self, observation: Dict[str, Any]) -> str:
+        return format_tag_observation(observation, self._team_names(), self.notify_left)
 
-    def _team_names(self) -> List[str]:
-        return list(self.all_teams) if self.all_teams else [self.team_name]
+    def _observed(self, observation: Dict[str, Any]) -> List[str]:
+        return [version.id for version in observed(observation)]
 
-    def _refresh_task_observation(self) -> None:
-        observation = self.tag.observe()
-        self._observed_now = [version.id for version in observed(observation)]
-        self.reserved_task_observation = format_tag_observation(
-            observation, self._team_names(), self.notify_left
-        )
+    def _record_fields(self) -> Dict[str, Any]:
+        return {"tag_actions": []}
 
-    def _build_team_prompt(self, members):
-        self._refresh_task_observation()
-        self._quoted_in_plan = {self._message_key(m) for m in self._heard}
-        return super()._build_team_prompt(members)
-
-    def _build_interrupt_prompt(self, members, messages):
-        self._refresh_task_observation()
-        return super()._build_interrupt_prompt(members, messages)
-
-    def _plan_closing(self, members) -> str:
-        return (super()._plan_closing(members)
-                + " `tag_actions`: changes the shared graph needs (empty if none); "
-                  "`notify`: teams that must read it now (usually empty).")
-
-    def _interrupt_closing(self) -> str:
-        return (super()._interrupt_closing()
-                + " Also `tag_actions` (empty if none) and `notify` (usually empty).")
-
-    # -- the calls ---------------------------------------------------------
-
-    def _call_plan_model(self, prompt):
-        return self.llm_client.generate(prompt, response_format=LLMTagPlanResponse, temperature=self.temperature)
-
-    def _call_interrupt_model(self, prompt):
-        return self.llm_client.generate(prompt, response_format=LLMTagInterruptResponse, temperature=self.temperature)
-
-    def _on_plan_response(self, response: Any) -> None:
-        self._round(response, stage="planning")
-
-    def _on_interrupt_response(self, response: Any) -> None:
-        self._round(response, stage="late_notify" if self._late_round else "interrupted")
-
-    # -- the round: actions land, then notifications go out -----------------
-
-    def _round(self, response: Any, stage: str) -> None:
-        with _round_sequence_lock:
-            sequence = next(_round_sequence)
-        record: Dict[str, Any] = {
-            "seq": sequence,
-            "team": self.team_name,
-            "env_step": self._env_step(),
-            "stage": stage,
-            "observed": list(self._observed_now),
-            "reasoning": getattr(response, "reasoning", ""),
-            "tag_actions": [],
-            "notify": {"requested": [], "sent": [], "dropped": False},
-        }
-        self.tag_rounds.append(record)
-        self._apply(getattr(response, "tag_actions", None) or [], record)
-        self._notify(getattr(response, "notify", None) or [], record)
-        if self.verbose:
-            applied = sum(1 for a in record["tag_actions"] if a["result"] == "applied")
-            rejected = len(record["tag_actions"]) - applied
-            print(f"  [{self.team_name}] task graph ({stage}): {applied} action(s) applied"
-                  + (f", {rejected} rejected" if rejected else "")
-                  + f", notify {record['notify']['sent'] or '-'}"
-                  + (" (dropped: budget spent)" if record["notify"]["dropped"] else ""))
-
-    def _apply(self, calls: List[TagToolCall], record: Dict[str, Any]) -> None:
+    def _apply(self, response: Any, record: Dict[str, Any]) -> None:
         """Each action on the shared graph, in order; a rejected one is noted
         with the graph's reason and the round goes on (DIG-TAG's rule)."""
-        for call in calls:
+        for call in getattr(response, "tag_actions", None) or []:
             try:
                 args = tag_call_args(call, self.team_name)
                 self.tag.step(self.team_name, call.tool, args)
@@ -292,51 +218,21 @@ class TagTeamBrain(TeamBrain):
                 result = f"rejected: {error}"
             record["tag_actions"].append({"tool": call.tool, "args": args, "result": result})
 
-    def _notify(self, requested: List[str], record: Dict[str, Any]) -> None:
-        """Wake the named teams, within the budget: one message that interrupts
-        each of them; over the budget it is dropped and recorded as dropped."""
-        known = set(self._team_names())
-        teams = [t for t in dict.fromkeys(requested) if t in known and t != self.team_name]
-        record["notify"]["requested"] = teams
-        if not teams:
-            return
-        if self.notify_left <= 0:
-            record["notify"]["dropped"] = True
-            return
-        self.notify_left -= 1
-        self._say(f"notification from {self.team_name}: read the shared task graph",
-                  NOTIFY_MESSAGE_TYPE, interrupts=True, recipients=teams)
-        record["notify"]["sent"] = teams
+    def _summary(self, record: Dict[str, Any]) -> str:
+        applied = sum(1 for a in record["tag_actions"] if a["result"] == "applied")
+        rejected = len(record["tag_actions"]) - applied
+        return f"{applied} action(s) applied" + (f", {rejected} rejected" if rejected else "")
 
-    # -- a notification during the planning call is answered before ready ---
+    # -- the closing lines -------------------------------------------------
 
-    def after_plan(self) -> None:
-        """DIG-TAG's ``_rounds`` loop: notifications that arrived while this
-        team was inside its planning call are answered now, before the plans
-        go out, rather than at its next barrier.
+    def _plan_closing(self, members) -> str:
+        return (super()._plan_closing(members)
+                + " `tag_actions`: changes the shared graph needs (empty if none); "
+                  "`notify`: teams that must read it now (usually empty).")
 
-        The broker does not interrupt a team in R, so such a message only
-        landed in the members' inboxes; drained here, it is decided on as an
-        interrupt -- the same round, resume-or-replan per robot plus the
-        graph part -- and a replanned robot takes the new plan.
-        """
-        self._collect_heard()
-        late = [m for m in self._heard
-                if self._message_key(m) not in self._quoted_in_plan
-                and (m.get("metadata") or {}).get("type") == NOTIFY_MESSAGE_TYPE]
-        if not late:
-            return
-        if self.verbose:
-            print(f"  [{self.team_name}] {len(late)} notification(s) arrived during planning; "
-                  "deciding on them before the plans go out")
-        self._late_round = True
-        try:
-            decisions = self._decide_interrupts(late)
-        finally:
-            self._late_round = False
-        for name, (choice, plan) in decisions.items():
-            if choice == InterruptDecision.REPLAN and plan is not None:
-                self._pending_plans[name] = plan
+    def _interrupt_closing(self) -> str:
+        return (super()._interrupt_closing()
+                + " Also `tag_actions` (empty if none) and `notify` (usually empty).")
 
 
 # -- what a run saves ------------------------------------------------------
@@ -352,10 +248,7 @@ def shared_tag(agents: Dict[str, Any]) -> TAGParallelInterface:
 
 def tag_rounds_of(agents: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Every team's rounds, in the order they happened."""
-    brains = {id(a.brain): a.brain for a in agents.values()
-              if isinstance(getattr(a, "brain", None), TagTeamBrain)}
-    rounds = [record for brain in brains.values() for record in brain.tag_rounds]
-    return sorted(rounds, key=lambda record: record["seq"])
+    return rounds_of(agents)
 
 
 def draw_tag(tag: TAGParallelInterface, output_dir: str) -> Dict[str, str]:
