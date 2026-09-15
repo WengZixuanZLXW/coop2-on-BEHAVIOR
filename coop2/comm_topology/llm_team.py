@@ -61,7 +61,6 @@ from __future__ import annotations
 import threading
 import os
 import re
-import textwrap
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -1455,22 +1454,22 @@ class ChainTeamBrain(TeamBrain):
         ahead, behind = self._chain_position()
         lines = []
         if ahead:
-            lines.append(f"UPSTREAM (plan before you): {', '.join(ahead)}. Their "
-                         "commitments are in section 7: fit your plan around them, take "
-                         "what they left, never the leg or cargo they claimed.")
+            lines.append(f"UPSTREAM (plan before you): {', '.join(ahead)}.")
+            lines.append("Their commitments are in section 7: fit your plan around them, "
+                         "take what they left, never the leg or cargo they claimed.")
         else:
-            lines.append("UPSTREAM: none -- you are the head of the chain. Nobody "
-                         "constrains you, and section 7 is empty every round; choose the "
-                         "first leg and say so.")
+            lines.append("UPSTREAM: none -- you are the head of the chain.")
+            lines.append("Nobody constrains you, and section 7 is empty every round; "
+                         "choose the first leg and say so.")
         if behind:
-            lines.append(f"DOWNSTREAM (plan after you, on what you say): "
-                         f"{', '.join(behind)}. Your `broadcast` is all they get from "
-                         "you: name which robot of yours holds or goes for which cargo, "
-                         "which leg you take, and what you leave to them.")
+            lines.append(f"DOWNSTREAM (plan after you, on what you say): {', '.join(behind)}.")
+            lines.append("Your `broadcast` is all they get from you: name which robot of "
+                         "yours holds or goes for which cargo, which leg you take, and "
+                         "what you leave to them.")
         else:
-            lines.append("DOWNSTREAM: none -- you are the tail. Nobody plans around "
-                         "you, so take what the teams ahead left.")
-        return "\n".join(textwrap.fill(line, width=78) for line in lines)
+            lines.append("DOWNSTREAM: none -- you are the tail.")
+            lines.append("Nobody plans around you, so take what the teams ahead left.")
+        return "\n".join(lines)
 
     # -- the response --------------------------------------------------------
 

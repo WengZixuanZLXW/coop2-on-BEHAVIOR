@@ -51,6 +51,93 @@ def _room_of(env, xy):
         return f"(unknown: {type(error).__name__})"
 
 
+def _standable(env, xy):
+    """Is @xy free on the floor map the navigation stack actually reads?
+
+    The rebuilt one, not the dataset's baked map: `CooperativeEnv` repaints it
+    from the shell plus the objects really in the instance, and a point that
+    looks free in the viewer but blocked here is a point no robot can stand on.
+    """
+    try:
+        import torch as th  # noqa: PLC0415
+
+        trav = env.env.scene.trav_map
+        row, col = (int(v) for v in trav.world_to_map(th.tensor(list(xy[:2]), dtype=th.float32)))
+        cell = trav.floor_map[0][row, col]
+        return bool(float(cell) > 0)
+    except Exception as error:  # noqa: BLE001 - a scene may have no trav map
+        return f"(unknown: {type(error).__name__})"
+
+
+def _nearest_obstacle(boxes, xy):
+    """(name, metres) of the closest blocking footprint; 0.0 when inside one."""
+    x, y = float(xy[0]), float(xy[1])
+    best = (None, float("inf"))
+    for name, x_lo, x_hi, y_lo, y_hi in boxes:
+        dx = max(x_lo - x, 0.0, x - x_hi)
+        dy = max(y_lo - y, 0.0, y - y_hi)
+        distance = (dx * dx + dy * dy) ** 0.5
+        if distance < best[1]:
+            best = (name, distance)
+    return best
+
+
+def _report_point(env, boxes, xy, label="point"):
+    """One line about one spot on the floor: everything that decides whether
+    something can be put there."""
+    name, gap = _nearest_obstacle(boxes, xy)
+    free = _standable(env, xy)
+    mark = "free" if free is True else ("BLOCKED" if free is False else free)
+    print(f"[{label}] ({xy[0]:+.3f}, {xy[1]:+.3f})  {_room_of(env, xy):<16} "
+          f"{mark:<8} nearest {name} {gap:.2f} m", flush=True)
+
+
+def _print_task_objects(env, movable, header=True, speeds=None):
+    """The BDDL objects, one line each, flushed as it goes.
+
+    Flushed because this is watched live: Python block-buffers a pipe, so a
+    table printed into `tee` or a log sits unseen until the process exits --
+    which under --watch is never.
+
+    With the footprint, not just the centre: choosing where something can stand
+    is a question about the box it occupies and the height of the surface it
+    offers, and a centre alone answers neither. @speeds, when given, is the
+    previous positions, and each line then carries how far that object moved
+    since -- which is how a table still sliding after the settle shows itself.
+    """
+    if header:
+        print("\n=== TASK OBJECTS ===", flush=True)
+        print(f"{'bddl instance':<28} {'scene name':<24} {'position':<26} "
+              f"{'x range':<16} {'y range':<16} {'top':>6}  {'WxDxH':<17} "
+              + ("moved  " if speeds is not None else "") + "room", flush=True)
+    now = {}
+    for name, entity in sorted(movable.items()):
+        obj = getattr(entity, "wrapped_obj", entity)
+        position = _xyz(obj)
+        now[name] = position
+        try:
+            lo, hi = obj.aabb
+            lo = [float(v) for v in lo]
+            hi = [float(v) for v in hi]
+            x_range = f"{lo[0]:+.2f}..{hi[0]:+.2f}"
+            y_range = f"{lo[1]:+.2f}..{hi[1]:+.2f}"
+            top = f"{hi[2]:.2f}"
+            size = f"{hi[0]-lo[0]:.2f}x{hi[1]-lo[1]:.2f}x{hi[2]-lo[2]:.2f}"
+        except Exception:  # noqa: BLE001 - an object without a live AABB
+            x_range = y_range = size = "?"
+            top = "?"
+        drift = ""
+        if speeds is not None:
+            was = speeds.get(name)
+            moved = 0.0 if was is None else sum((a - b) ** 2 for a, b in zip(position, was)) ** 0.5
+            drift = f"{moved:5.3f}  "
+        print(f"{name:<28} {getattr(obj, 'name', '?'):<24} "
+              f"({position[0]:+.3f}, {position[1]:+.3f}, {position[2]:+.3f})  "
+              f"{x_range:<16} {y_range:<16} {top:>6}  {size:<17} {drift}"
+              f"{_room_of(env, position)}", flush=True)
+    return now
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--scene", type=str, default=None, help="Scene model")
@@ -82,6 +169,16 @@ def main() -> int:
                         help="Frame --shot tightly on one robot instead of the "
                              "whole group. A 7 cm drone is invisible in a shot "
                              "wide enough to hold a Ridgeback.")
+    parser.add_argument("--watch", type=float, default=None, metavar="SECONDS",
+                        help="Keep stepping and reprint the BDDL objects every "
+                             "SECONDS, with how far each moved since the last "
+                             "report, until Ctrl-C. Headless: nothing here needs "
+                             "a window. This is how to watch something settle, "
+                             "or drift.")
+    parser.add_argument("--probe-at", type=float, nargs=2, default=None, metavar=("X", "Y"),
+                        help="Report one named point and stop, no window needed. "
+                             "Its room, whether the rebuilt floor map calls it "
+                             "standable, and the nearest blocking footprint.")
     parser.add_argument("--shot", type=str, default=None, metavar="PATH",
                         help="Save a PNG of the scene, framed on the robots and "
                              "the task's objects")
@@ -152,19 +249,15 @@ def main() -> int:
               f"{size:<18} {_room_of(env, actual)}")
 
     scope = getattr(getattr(env.env, "task", None), "object_scope", None) or {}
+    # Every BDDL object except the robots, floors included: HL's goal is a set
+    # of floors, and a route node can be one, so leaving them out hides a
+    # destination the agents are asked to reach.
     movable = {
         name: entity for name, entity in scope.items()
-        if entity is not None and not name.startswith(("agent.n.01", "floor.n.01"))
+        if entity is not None and not name.startswith("agent.n.01")
     }
     if movable:
-        print(f"\n=== TASK OBJECTS ===")
-        print(f"{'bddl instance':<28} {'scene name':<22} {'position':<28} room")
-        for name, entity in sorted(movable.items()):
-            obj = getattr(entity, "wrapped_obj", entity)
-            position = _xyz(obj)
-            print(f"{name:<28} {getattr(obj, 'name', '?'):<22} "
-                  f"({position[0]:+.3f}, {position[1]:+.3f}, {position[2]:+.3f})    "
-                  f"{_room_of(env, position)}")
+        _print_task_objects(env, movable)
 
     if args.view:
         info = getattr(env, "_last_info", None) or {}
@@ -186,6 +279,28 @@ def main() -> int:
 
     if args.shot:
         _save_shot(env, args.shot, args.focus)
+
+    if args.probe_at:
+        from coop2.behavior_env.trav_map_rebuild import obstacle_boxes  # noqa: PLC0415
+
+        boxes = obstacle_boxes(env.env.scene)
+        print(f"\n=== PROBE === {len(boxes)} blocking footprints in the scene")
+        _report_point(env, boxes, tuple(args.probe_at), label="at")
+
+    if args.watch and movable:
+        import time as _time  # noqa: PLC0415
+
+        print(f"\nwatching every {args.watch:g} s; Ctrl-C to quit", flush=True)
+        previous = {name: _xyz(getattr(e, "wrapped_obj", e)) for name, e in movable.items()}
+        try:
+            while True:
+                deadline = _time.time() + args.watch
+                while _time.time() < deadline:
+                    og.sim.step()
+                print(f"\n--- t+{_time.strftime('%H:%M:%S')} ---", flush=True)
+                previous = _print_task_objects(env, movable, header=True, speeds=previous)
+        except KeyboardInterrupt:
+            print("\nclosing", flush=True)
 
     if args.hold:
         print("\nholding the viewer open; Ctrl-C to quit")

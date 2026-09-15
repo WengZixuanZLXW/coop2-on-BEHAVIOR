@@ -1,0 +1,183 @@
+{
+  "_comment": [
+    "sets_3 regrouped: each team is one kind of robot (user, 2026-09-15).",
+    "team_1 is the three Ridgeback+UR5 arms, team_2 the three Jackal carriers,",
+    "team_3 the three Crazyflies. Nine robots, Merom_1_int, all spawned together.",
+    "",
+    "Every robot is the one of the same name in sets_3 -- same model, same spawn",
+    "position, same scale, same _v4_prim -- and only its 'team' differs, so the",
+    "pair is a clean A/B on grouping alone: V4's trios (arm + carrier + drone)",
+    "against three single-kind teams.",
+    "",
+    "What that changes, on the S1 routes: no team can move cargo by itself.",
+    "An arm marked base_locked_while_holding cannot drive while loaded, and",
+    "team_1 has no carrier to load onto; team_2 has no arm to lift with at all,",
+    "and neither does team_3 (the lift table gives notebook.n.01 to arm only, so",
+    "on v4_s1_v4_lh the drones cannot carry the cargo even though they fly).",
+    "So every leg of a route needs a cross-team handoff: a team_1 arm grasps,",
+    "load_onto a team_2 jackal, the jackal drives, a team_1 arm unload_from it",
+    "at the far end. That is expressible and permitted -- neither the room",
+    "listing nor load_onto/unload_from's reach gate knows about teams -- but it",
+    "is a coordination problem sets_3 does not pose, which is the point.",
+    "",
+    "Positions are sets_3's and keep its geometry: everyone packed around the",
+    "centroid of living_room_0's largest free region, ground vehicles placed",
+    "nearest-to-centroid first, each Crazyflie hovering at z = 1.2 m directly",
+    "above the Jackal it shared a V4 station with. The drone is no longer that",
+    "Jackal's teammate, which costs nothing: a hovering drone and a ground robot",
+    "are different layers to the separation check.",
+    "",
+    "Robots are listed team by team here. In sets_3 the name's ordinal is the",
+    "team number; here it indexes within the kind, since a team holds three of",
+    "one kind. Names, and therefore every id in a prompt, are unchanged.",
+    "",
+    "Scales: ridgeback 0.5 and jackal 0.7 are the values v4_s1_v4_ll was verified",
+    "with (the staging USD says 1.0 / 0.5, unresolved); crazyflie 2.0 by decision."
+  ],
+  "robots": [
+    {
+      "name": "ridgeback_1",
+      "model": "v4_ridgeback_ur5",
+      "position": [
+        2.44,
+        7.98
+      ],
+      "team": "team_1",
+      "_v4_prim": "ridgeback_franka_s1_m5",
+      "_v4_staged_position": [
+        -1.1703,
+        0.4624
+      ],
+      "scale": 0.5,
+      "base_locked_while_holding": true
+    },
+    {
+      "name": "ridgeback_2",
+      "model": "v4_ridgeback_ur5",
+      "position": [
+        2.44,
+        8.63
+      ],
+      "team": "team_1",
+      "_v4_prim": "ridgeback_franka_s1_m3",
+      "_v4_staged_position": [
+        -2.2202,
+        5.5688
+      ],
+      "scale": 0.5,
+      "base_locked_while_holding": true
+    },
+    {
+      "name": "ridgeback_3",
+      "model": "v4_ridgeback_ur5",
+      "position": [
+        1.69,
+        7.34
+      ],
+      "team": "team_1",
+      "_v4_prim": "ridgeback_franka_s1_m2",
+      "_v4_staged_position": [
+        -0.3223,
+        7.4371
+      ],
+      "scale": 0.5,
+      "base_locked_while_holding": true
+    },
+    {
+      "name": "jackal_1",
+      "model": "v4_jackal",
+      "position": [
+        2.44,
+        7.23
+      ],
+      "team": "team_2",
+      "_v4_prim": "jackal_s1_m5",
+      "_v4_staged_position": [
+        -0.8904,
+        -0.035
+      ],
+      "scale": 0.7
+    },
+    {
+      "name": "jackal_2",
+      "model": "v4_jackal",
+      "position": [
+        1.69,
+        8.09
+      ],
+      "team": "team_2",
+      "_v4_prim": "jackal_s1_m3",
+      "_v4_staged_position": [
+        -1.9403,
+        5.0714
+      ],
+      "scale": 0.7
+    },
+    {
+      "name": "jackal_3",
+      "model": "v4_jackal",
+      "position": [
+        3.19,
+        8.79
+      ],
+      "team": "team_2",
+      "_v4_prim": "jackal_s1_m2",
+      "_v4_staged_position": [
+        -0.0424,
+        6.9397
+      ],
+      "scale": 0.7
+    },
+    {
+      "name": "drone_1",
+      "model": "v4_crazyflie_cf2x",
+      "position": [
+        2.44,
+        7.23,
+        1.2
+      ],
+      "team": "team_3",
+      "_v4_prim": "crazyflie_s1_m5",
+      "_v4_staged_position": [
+        -1.2314,
+        0.0176
+      ],
+      "scale": 2.0,
+      "drone": true
+    },
+    {
+      "name": "drone_2",
+      "model": "v4_crazyflie_cf2x",
+      "position": [
+        1.69,
+        8.09,
+        1.2
+      ],
+      "team": "team_3",
+      "_v4_prim": "crazyflie_s1_m3",
+      "_v4_staged_position": [
+        -2.2813,
+        5.124
+      ],
+      "scale": 2.0,
+      "drone": true
+    },
+    {
+      "name": "drone_3",
+      "model": "v4_crazyflie_cf2x",
+      "position": [
+        3.19,
+        8.79,
+        1.2
+      ],
+      "team": "team_3",
+      "_v4_prim": "crazyflie_s1_m2",
+      "_v4_staged_position": [
+        -0.3834,
+        6.9923
+      ],
+      "scale": 2.0,
+      "drone": true
+    }
+  ]
+}

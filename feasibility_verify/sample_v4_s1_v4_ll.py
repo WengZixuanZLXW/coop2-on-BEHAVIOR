@@ -74,7 +74,7 @@ SAMPLING_WHITELIST = {
     "bookcase.n.01": {"bookcase": {"owvfik": None}},      # COOHAVIOR's shelf_owvfik_0
     "electric_refrigerator.n.01": {"fridge": {"xyejdx": None}},
     "armchair.n.01": {"armchair": {"qplklw": None}},
-    "breakfast_table.n.01": {"breakfast_table": {"skczfi": None}},
+    "breakfast_table.n.01": {"breakfast_table": {"rjgmmy": None}},
     "coffee_table.n.01": {"coffee_table": {"fqluyq": None}},
     "bed.n.01": {"bed": {"zrumze": None}},
 }
