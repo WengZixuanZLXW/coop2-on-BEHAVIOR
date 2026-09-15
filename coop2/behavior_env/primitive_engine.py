@@ -64,6 +64,7 @@ faithfully.
 
 from __future__ import annotations
 
+import re
 import time
 import traceback
 from dataclasses import dataclass, field
@@ -88,11 +89,64 @@ __all__ = [
     "ReasonCode",
     "PrimitiveOutcome",
     "MultiAgentPrimitiveEngine",
+    "readable_failure",
     "WAIT",
     "LOAD_ONTO",
     "UNLOAD_FROM",
     "LOCAL_PRIMITIVES",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Failure text an agent can read
+# ---------------------------------------------------------------------------
+
+#: ``ActionPrimitiveError.__init__`` appends ``. Additional info: {metadata}``
+#: to every message. The same dict is kept structurally on the outcome, so in
+#: the prose it is a duplicate -- and an expensive one: measured over the 48
+#: cells of `S1_full_fast`, it is 34% of the text (median failure 24 chars,
+#: longest 595 -> 394 without it), and it is the half the prompt's truncation
+#: was eating, leaving a dangling ``{'target object': 'jackal_3', 'distance':``.
+_METADATA_TAIL = re.compile(r"\.?\s*Additional info: .*$", re.S)
+
+#: ``ActionPrimitiveErrorGroup`` wraps even a single attempt in a header plus
+#: an ``Attempt 0:`` label -- 52 characters that say nothing when there was one
+#: attempt. Kept verbatim as soon as there are two, where which attempt failed
+#: how is the whole point.
+_ONE_ATTEMPT = re.compile(
+    r"^An error occurred during each attempt of this action\.\s*Attempt 0:\s*", re.S
+)
+
+#: A scene name as OmniGibson writes it: ``notebook_154``,
+#: ``breakfast_table_skczfi_0``, ``agent_2``.
+_SCENE_NAME = re.compile(r"\b[a-z][a-z0-9_]*_[a-z0-9]+\b")
+
+
+def readable_failure(text: str, resolve=None) -> str:
+    """A primitive's failure as the agent should read it.
+
+    Two edits, both about the same thing -- the text goes into the prompt
+    verbatim and every character of it competes with the room listing it is
+    meant to inform:
+
+    * the duplicated metadata dict and the single-attempt wrapper come off;
+    * scene names become the ids the agent was shown. A primitive raises with
+      ``notebook_154`` because that is all the controller has, while every id
+      in the listing and in the goal reads ``notebook.n.01_1``. The agent is
+      told to use only the ids it was shown and never to invent one, so an
+      outcome naming ``notebook_154`` is one it cannot act on -- it cannot
+      tell which of its targets failed. @resolve is
+      ``BehaviorWorldState.entity_id_of_name``; a name it does not know is
+      left alone, and a robot maps to itself.
+    """
+    text = _METADATA_TAIL.sub("", str(text) or "").strip()
+    if "Attempt 1:" not in text:
+        text = _ONE_ATTEMPT.sub("", " ".join(text.split()))
+    if resolve is None:
+        return text
+    def swap(match):
+        return resolve(match.group(0)) or match.group(0)
+    return _SCENE_NAME.sub(swap, text)
 
 
 # ---------------------------------------------------------------------------
@@ -427,6 +481,11 @@ class MultiAgentPrimitiveEngine:
         self.progress_every = progress_every
         self.verbose = verbose
         self.on_tick = on_tick
+        #: ``scene name -> the id the agent was shown``, for failure text.
+        #: Set by the owner once the world model exists, like ``on_tick``; the
+        #: engine is built before it, and a failure without it is still
+        #: readable, only in scene names.
+        self.entity_id_of_name: Optional[Callable[[str], Optional[str]]] = None
 
         if enable_head_tracking:
             models = {robot.model for robot in self.robots}
@@ -948,8 +1007,10 @@ class MultiAgentPrimitiveEngine:
             status="failed",
             reason_code=ReasonCode.from_primitive_error(error),
             # ActionPrimitiveError messages are already written as LLM-facing
-            # natural language and several suggest a recovery; pass verbatim.
-            failure_reason=str(error),
+            # natural language and several suggest a recovery, so the prose is
+            # kept; readable_failure only drops what duplicates `metadata`
+            # below and renames scene objects to the ids the agent was shown.
+            failure_reason=readable_failure(str(error), self.entity_id_of_name),
             ticks=run.ticks,
             started_env_step=run.started_env_step,
             started_at=run.started_at,

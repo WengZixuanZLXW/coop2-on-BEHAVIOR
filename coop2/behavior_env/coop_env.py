@@ -374,6 +374,10 @@ class CooperativeBehaviorEnv:
         if getattr(task, "object_scope", None):
             adopted = self.world.adopt_task_scope(task)
             print(f"[setup] adopted {adopted} entity ids from the BDDL object scope")
+        # Set after the scope, never before: a failure naming `notebook_154`
+        # is one the agent cannot act on, and resolving it against ids minted
+        # before the activity's bindings would name the wrong instance.
+        self.engine.entity_id_of_name = self.world.entity_id_of_name
         self._keep_task_objects_awake()
         # After the scope is known, so the shot can contain the task's objects.
         self._frame_viewport()

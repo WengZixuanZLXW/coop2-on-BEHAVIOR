@@ -506,6 +506,45 @@ def main() -> int:
     assert bad is not None and bad.reason_code == "INVALID_TARGET" and "is a robot" in bad.failure_reason, bad
     print("  ok: navigate_to(robot) accepted; grasp(robot) refused")
 
+    print("\ntest: a failure an agent can read -- whole, and in the ids it was shown")
+    readable = engine_module.readable_failure
+    ids = {"notebook_154": "notebook.n.01_1", "armchair_qplklw_2": "armchair.n.01_1"}
+
+    # The metadata dict duplicates what the outcome already carries, and it
+    # was the half the prompt's 200-char cut was eating, leaving lines ending
+    # on "{'target object': 'jackal_3', 'distance':" (user, 2026-09-14).
+    got = readable(
+        "PRE_CONDITION_ERROR: You are 2.77 m from jackal_3, too far to load onto it "
+        "(you must be within 1.74 m). Navigate to it first.. Additional info: "
+        "{'target object': 'jackal_3', 'distance': 2.77, 'reason_code': 'TOO_FAR'}")
+    assert got.endswith("Navigate to it first."), got
+    assert "Additional info" not in got, got
+    assert "Additional info: None" not in readable("PLANNING_ERROR: x.. Additional info: None")
+
+    # One attempt: the group wrapper is 52 characters that say nothing.
+    one = readable("An error occurred during each attempt of this action.\n\n"
+                   "Attempt 0: PRE_CONDITION_ERROR: You have no arm.")
+    assert one == "PRE_CONDITION_ERROR: You have no arm.", one
+    # Two: which attempt failed how is the whole point, so it is kept.
+    two = readable("An error occurred during each attempt of this action.\n\n"
+                   "Attempt 0: A.\n\nAttempt 1: B.")
+    assert "Attempt 0" in two and "Attempt 1" in two, two
+
+    # A primitive raises with the scene name because that is all it has; the
+    # agent is told to use only the ids in its listing and never invent one,
+    # so "Cannot reach armchair_qplklw_2" is a failure it cannot act on.
+    named = readable(
+        "PLANNING_ERROR: Cannot reach armchair_qplklw_2: notebook_154 rests on it.. "
+        "Additional info: {'object': 'armchair_qplklw_2'}", ids.get)
+    assert named == "PLANNING_ERROR: Cannot reach armchair.n.01_1: notebook.n.01_1 rests on it.", named
+    # A name the world does not know is left alone, and so is a robot (a robot
+    # is its own id, so the map returns it unchanged).
+    assert "jackal_3" in readable("PRE_CONDITION_ERROR: 2.8 m from jackal_3.", ids.get)
+    assert "widget_7" in readable("PRE_CONDITION_ERROR: widget_7 is stuck.", ids.get)
+    # No resolver -- the engine before its world exists -- still cleans up.
+    assert readable("A.. Additional info: {}", None) == "A."
+    print("  ok: dict and single-attempt wrapper dropped, scene names resolved, unknowns kept")
+
     print("\nALL TESTS PASSED")
     return 0
 

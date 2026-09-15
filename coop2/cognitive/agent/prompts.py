@@ -531,6 +531,9 @@ _TEAM_HOLD_PREFIX = "wait_for_team"
 
 _OUTCOME_MARKS = {"done": "DONE", "failed": "FAILED", "replaced": "REPLACED"}
 
+#: How much of one failure the prompt carries. See the note at the cut.
+_REASON_CHARS = 400
+
 
 def format_plan_history(history: List[Dict[str, Any]], limit: int = 3) -> str:
     """The agent's own last plans: what it tried, why, and how each ended.
@@ -571,12 +574,16 @@ def format_plan_history(history: List[Dict[str, Any]], limit: int = 3) -> str:
             lines.append(f"      you chose it because: {reasoning}")
         reason = (entry.get("reason") or "").strip()
         if reason and status != "done":
-            # One line. A primitive's failure text runs to several sentences
-            # with a dict of diagnostics appended, and five of those would be
-            # longer than the room listing they are meant to inform.
+            # One line, and a whole one. The diagnostics dict and the
+            # single-attempt wrapper are already off (`readable_failure`), so
+            # the longest real failure measured over the 48 cells of
+            # `S1_full_fast` is 342 characters and nothing is cut; the cap is
+            # a guard against a message from somewhere else, and it cuts at a
+            # word so the tail is not a half-written name. At 200 it was
+            # cutting live text, ending lines on `{'target object': `.
             reason = " ".join(reason.split())
-            if len(reason) > 200:
-                reason = reason[:197] + "..."
+            if len(reason) > _REASON_CHARS:
+                reason = reason[:_REASON_CHARS].rsplit(" ", 1)[0] + " ..."
             label = "it was abandoned because" if status == "replaced" else "it failed because"
             lines.append(f"      {label}: {reason}")
     return "\n".join(lines)

@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from coop2.cognitive.agent.agent import SimpleAgent
 from coop2.cognitive.agent.cognitive_agent import parse_plan_response
 from coop2.cognitive.agent.llm_client import (
-    LLMPlanResponse, NavigateToAction, Task, TaskSpecification,
+    LLMPlanResponse, NavigateToAction, Task,
 )
 from coop2.cognitive.agent.prompts import build_observation_prompt, format_plan_history
 from coop2.cognitive.action.action import SymbolicAction
@@ -38,8 +38,7 @@ def ok(message: str) -> None:
 def main() -> int:
     print("test 1: the model's reasoning survives the parse")
     response = LLMPlanResponse(
-        task=TaskSpecification(task=Task.ONTOP, object_type="apple.n.01_1",
-                               reference="coffee_table.n.01_1"),
+        task="ontop(apple.n.01_1, coffee_table.n.01_1)",
         actions=[NavigateToAction(target="apple.n.01_1")],
         reasoning="agent_0 is nearest this apple and nobody has claimed it",
     )
@@ -81,24 +80,35 @@ def main() -> int:
     assert "you chose it because" in block, block
     ok("both outcomes render, the failure with its cause")
 
-    print("test 4: a long primitive error is cut down, not pasted whole")
-    agent.record_plan_outcome(
-        failed, False,
-        "An error occurred during each attempt of this action.\n\nAttempt 0: "
-        "PLANNING_ERROR: Cannot reach picture_zsirgc_0: there is no free floor "
-        "space around it to stand on (need a spot 1.3-1.9 m away, clear of "
-        "walls, furniture and other agents). Another agent may already be "
-        "standing there. Additional info: {'object': 'picture_zsirgc_0', "
-        "'sampling_range': [1.34, 1.94], 'rejected_by': {'room': 80}}",
-        env_step=90,
-    )
+    print("test 4: a real primitive error arrives whole; only an outsized one is cut")
+    # What reaches here has been through `primitive_engine.readable_failure`:
+    # the duplicated metadata dict and the single-attempt wrapper are off and
+    # the names are the agent's own ids. The longest such failure measured over
+    # the 48 cells of `S1_full_fast` is 342 chars, so it must survive intact --
+    # at the old 200-char cut this line ended mid-dict, on "{'target object':"
+    # (user, 2026-09-14).
+    real = ("PLANNING_ERROR: Cannot reach picture.n.01_1: there is no free floor "
+            "space around it to stand on (need a spot 1.3-1.9 m away, clear of "
+            "walls, furniture and other agents). Blocking it now: jackal_1, "
+            "drone_2. Try a different target, or wait for them to move.")
+    agent.record_plan_outcome(failed, False, real, env_step=90)
     line = [l for l in format_plan_history(agent.plan_history).splitlines()
             if "it failed because" in l][-1]
-    # Five of these at full length would outweigh the room listing they exist
-    # to inform, and they are newline-ridden besides.
-    assert len(line) < 240, len(line)
-    assert "\n" not in line and line.endswith("...")
-    ok(f"folded to one line of {len(line)} chars")
+    assert real in line, line
+    assert "\n" not in line and not line.endswith("...")
+    ok(f"a {len(real)}-char failure survives whole")
+
+    # The cap is a guard against a message from somewhere else, and it cuts at
+    # a word so the tail is never a half-written name an agent might copy. Its
+    # own one-entry history: appending to this agent's would push plan #1 out
+    # of the window test 7 reads.
+    outsized = [{"plan_id": 9, "status": "failed", "specification": "spec",
+                 "reason": "PLANNING_ERROR: " + "blah " * 200}]
+    line = [l for l in format_plan_history(outsized).splitlines()
+            if "it failed because" in l][-1]
+    assert line.endswith(" ...") and len(line) < 440, len(line)
+    assert "blah blah" in line
+    ok(f"an outsized one folds to one line of {len(line)} chars, cut at a word")
 
     print("test 5: the block reaches the prompt, after the world and before memory")
     prompt = build_observation_prompt(
