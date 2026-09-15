@@ -37,7 +37,8 @@ symbolic-mode agent to satisfy it, and the spatial metric degenerates.
 from __future__ import annotations
 
 import math
-from typing import Optional, Sequence, Tuple
+from collections import Counter
+from typing import Mapping, Optional, Sequence, Tuple
 
 import torch as th
 
@@ -48,10 +49,63 @@ from omnigibson.action_primitives.symbolic_semantic_action_primitives import (
 )
 
 __all__ = [
+    "DEFAULT_SAMPLING_ATTEMPTS",
     "DestinationRegistry",
     "NavigableSymbolicActionPrimitives",
     "invalidate_aabb_cache",
 ]
+
+#: Candidates tried before a target is called unreachable. **800 since
+#: 2026-09-14** (user); 200 before that.
+#:
+#: The number matters only where the valid fraction of the annulus is tiny, and
+#: on `v4_s1_v4_lh` it is: enumerating every cell of the ring on Merom_1_int
+#: (2026-09-14) the Ridgeback has **1 standable cell of 608** at the breakfast
+#: table and the Jackal **0 of 648**, against 236/520 and 210/568 at the coffee
+#: table. At p = 1/608 a target that *is* reachable is found 28% of the time in
+#: 200 draws and 73% in 800 -- so C5 of that route was failing on the sampler's
+#: budget, not on the scene. Zero stays zero: no budget finds a spot that does
+#: not exist, which is why the failure text now says so (`_why_no_space`).
+#:
+#: It is not a cost on the success path: the sampler returns on its first valid
+#: candidate, which at the coffee table is the third or fourth draw. The whole
+#: budget is spent only on a failure, which was already paying for a replan.
+DEFAULT_SAMPLING_ATTEMPTS = 800
+
+def _named(blockers: Mapping[str, int]) -> str:
+    """``jackal_1, drone_2, ridgeback_4`` -- the one costing most candidates first.
+
+    Every one of them, never "and N other robot(s)" (user, 2026-09-14): the
+    point of the name is that the agent can address that robot, and a robot it
+    is not told about is one it cannot ask to move. Fifteen is the most any
+    layout has, so the whole list is a line.
+    """
+    return ", ".join(blockers)
+
+
+def _why_no_space(rejected: Optional[Mapping[str, int]],
+                  blockers: Optional[Mapping[str, int]]) -> str:
+    """What is on the spots, as one clause the agent can act on.
+
+    One shape for every target, object or teammate (user, 2026-09-14): name the
+    robots standing on the annulus, then the two moves that exist -- ask them
+    to leave, or go somewhere else. It replaces a fixed sentence that blamed
+    "another agent" whatever had actually rejected the poses, and then a
+    three-way branch on the filter breakdown.
+
+    The no-robot case is the common one and still has to be honest about it:
+    over the 189 navigation failures of the `S1_full_fast` sweep the filter
+    that rejected the most candidates was the room in 53%, traversability in
+    33% and a robot in only 14%, and 26 had no robot rejection at all. There
+    is nobody to message then, and no amount of waiting frees a wall, so that
+    branch says so in one line instead of naming an empty list.
+    """
+    blockers = dict(blockers or {})
+    if blockers:
+        return (f" Robots occupying the space now: {_named(blockers)}. "
+                "Message them to leave, or take a different target.")
+    return (" No robot is in the way -- walls or the room itself take the space, "
+            "so waiting will not free it. Take a different target.")
 
 
 class DestinationRegistry:
@@ -85,8 +139,13 @@ class DestinationRegistry:
     def release(self, agent_id: str) -> None:
         self._by_agent.pop(agent_id, None)
 
+    def others_named(self, agent_id: str):
+        """``(agent_id, xy)`` for every reservation but @agent_id's own, so a
+        sampler can say *which* agent took the spot, not only that one did."""
+        return [(name, xy) for name, xy in self._by_agent.items() if name != agent_id]
+
     def others(self, agent_id: str):
-        return [xy for name, xy in self._by_agent.items() if name != agent_id]
+        return [xy for _, xy in self.others_named(agent_id)]
 
     def __len__(self) -> int:
         return len(self._by_agent)
@@ -156,7 +215,8 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
             separation is checked only against where robots currently stand,
             which under concurrency is where they were *before* they all
             teleported to the same place.
-        sampling_attempts: how many candidates to try before giving up.
+        sampling_attempts: how many candidates to try before giving up; see
+            :data:`DEFAULT_SAMPLING_ATTEMPTS` for why it is 800.
         require_same_room: reject candidates outside the target's room. Set
             False for scenes without a segmentation map (a plain ``Scene``
             rather than an ``InteractiveTraversableScene``).
@@ -207,7 +267,7 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
         robot_separation: Optional[float] = None,
         require_traversable: bool = True,
         destinations: Optional["DestinationRegistry"] = None,
-        sampling_attempts: int = 200,
+        sampling_attempts: int = DEFAULT_SAMPLING_ATTEMPTS,
         require_same_room: bool = True,
         distance_range: Optional[Tuple[float, float]] = None,
         **kwargs,
@@ -255,6 +315,35 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
             self._nav_robot_separation = 2.0 * self.robot_radius
         return self._nav_robot_separation
 
+    def body_offset(self) -> float:
+        """How far the robot's own body needs, approaching a target.
+
+        Its chassis **half-width**, not the circumscribed radius the rest of
+        this class uses. The radius is the 45-degree worst case; a base pose
+        here is yawed to face its target (`_facing_yaw_offset`), so what points
+        at the object is a face, and the face is the half-width. On the
+        Ridgeback (0.5 x 0.5 chassis) that is 0.25 m against a 0.354 m radius,
+        on the Jackal (0.7 x 0.7) 0.35 against 0.495.
+
+        The 0.10 m and 0.15 m this returns are not cosmetic. Merom_1_int's
+        dining room, 2026-09-14: every standable cell around
+        `breakfast_table_skczfi_0` lies 0.2-0.6 m from its footprint and there
+        is **none at all past 0.6 m**, so a minimum offset of 0.40 m (radius +
+        margin) left the Ridgeback one cell and the Jackal none. At half-width
+        the floor is reachable and the poses are still clear: measured minimum
+        clearance over 400 accepted poses per target is 0.30 m for the
+        Ridgeback and 0.40 m for the Jackal, both above their half-width.
+
+        Separation *between robots* keeps the circumscribed radius
+        (`robot_separation`): two robots have no agreed facing, so there the
+        45-degree case is the real one.
+        """
+        try:
+            extent = self.robot.reset_joint_pos_aabb_extent[:2]
+            return max(float(extent[0]), float(extent[1])) / 2.0
+        except Exception:  # noqa: BLE001 - robots without a chassis extent
+            return self.robot_radius
+
     def clearance_for(self, obj) -> float:
         """Smallest centre distance at which the robot does not overlap @obj."""
         try:
@@ -262,7 +351,7 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
             half_diagonal = float(th.norm(extent)) / 2.0
         except Exception:  # noqa: BLE001 - objects without an aabb
             half_diagonal = 0.0
-        return half_diagonal + self.robot_radius + self._nav_clearance_margin
+        return half_diagonal + self.body_offset() + self._nav_clearance_margin
 
     @staticmethod
     def is_walkable_surface(obj) -> bool:
@@ -329,6 +418,17 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
 
     def _clear_of_other_robots(self, xy) -> bool:
         """Is @xy clear of every other robot's body **and** its destination?"""
+        return self._blocking_robot(xy) is None
+
+    def _blocking_robot(self, xy) -> Optional[str]:
+        """The name of the robot occupying @xy, or ``None`` if it is clear.
+
+        The name, not a count: "200/200 rejected by robots" tells an agent to
+        wait without telling it *who* it is waiting for, and with fifteen
+        robots in a house that is the difference between "wait" and "ask
+        jackal_1 to move". The first blocker found wins; the sampler tallies
+        names across its attempts.
+        """
         separation = self.robot_separation
         scene = getattr(self.robot, "scene", None)
         robots = getattr(scene, "robots", None)
@@ -348,16 +448,18 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
             # z are different layers; the same-layer rule is unchanged.
             if abs(float(other_position[2]) - my_z) > self.LAYER_SEPARATION_Z:
                 continue
-            occupied.append((float(other_position[0]), float(other_position[1])))
+            occupied.append((getattr(other, "name", None) or str(other),
+                             float(other_position[0]), float(other_position[1])))
         if self._nav_destinations is not None:
             # The bodies are where everyone *was*; the reservations are where
             # everyone is *going*. Under concurrency only the second set is
             # current, because nobody has teleported yet when the samplers run.
-            occupied.extend(self._nav_destinations.others(self.robot.name))
-        for other_x, other_y in occupied:
+            occupied.extend((name, xy_other[0], xy_other[1])
+                            for name, xy_other in self._nav_destinations.others_named(self.robot.name))
+        for name, other_x, other_y in occupied:
             if math.hypot(float(xy[0]) - other_x, float(xy[1]) - other_y) < separation:
-                return False
-        return True
+                return name
+        return None
 
     # -- helpers ----------------------------------------------------------
 
@@ -464,14 +566,38 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
         # reproduced by hand. Reporting the breakdown at the moment of failure
         # is cheaper than guessing which state the episode was in.
         rejected = {"room": 0, "trav": 0, "robots": 0}
-        # Wide furniture is approached at its edge, not on a ring round its
-        # centre (see _edge_candidate). With a preferred point -- the object
-        # resting on it -- the first several valid spots are collected and the
-        # one nearest that point wins, so the robot stands where the die is.
-        edge_band = eef_pose is None and not self.is_walkable_surface(obj) and not self.reach_across(obj)
+        # And, when it was a robot, which one. A count says "wait"; a name says
+        # who to wait for, or ask to move.
+        blockers: Counter = Counter()
+        # Two shapes, alternating, half the budget each -- not one chosen up
+        # front. A band round the footprint (`_edge_candidate`) and a ring round
+        # the centre find different floor, and which of them finds any depends
+        # on the target's own proportions, measured 2026-09-14 over every route
+        # support of S1 (Merom_1_int) and S2 (Beechwood_0_int):
+        #
+        #   coffee_table 1.03 x 2.05   ring 16%  band 52%   <- long: the band
+        #   bookcase     1.83 x 0.47   ring 19%  band  1%
+        #   chair        0.47 x 0.44   ring 13%  band  0%   <- small: the ring
+        #   footstool    0.72 x 0.69   ring  1%  band  0%
+        #
+        # (Jackal.) The band hugs the object in a thin shell, which is the
+        # whole point for something long and the wrong move for something
+        # small, where the ring's wider annulus is likelier to hold free floor.
+        # Choosing per shape-heuristic was tried and is not good enough --
+        # bookcase is long and still loses. Alternating costs nothing: the
+        # sampler returns on its first valid candidate, so only a failure ever
+        # spends the budget, and then it has tried both.
+        #
+        # With a preferred point -- the object resting on the support -- the
+        # first several valid spots of EITHER shape are collected and the one
+        # nearest that point wins, so the robot stands where the die is. It
+        # used to pool only band spots, which alternation would have broken: a
+        # ring spot returns on the spot and the side preference never applies.
+        edge_band = eef_pose is None and not self.is_walkable_surface(obj)
         pool = []
-        for _ in range(attempts):
-            if edge_band:
+        for index in range(attempts):
+            from_band = edge_band and index % 2 == 0
+            if from_band:
                 candidate = self._edge_candidate(obj, prefer_xy)
             else:
                 distance = th.rand(1).item() * (distance_hi - distance_lo) + distance_lo
@@ -495,10 +621,12 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
             if not self._is_traversable(candidate[:2]):
                 rejected["trav"] += 1
                 continue
-            if not self._clear_of_other_robots(candidate[:2]):
+            blocker = self._blocking_robot(candidate[:2])
+            if blocker is not None:
                 rejected["robots"] += 1
+                blockers[blocker] += 1
                 continue
-            if edge_band and prefer_xy is not None:
+            if prefer_xy is not None:
                 pool.append((math.hypot(float(candidate[0]) - float(prefer_xy[0]),
                                         float(candidate[1]) - float(prefer_xy[1])), candidate))
                 if len(pool) < 8:
@@ -514,6 +642,7 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
             return candidate
 
         self._nav_last_rejections = dict(rejected)
+        self._nav_last_blockers = dict(blockers.most_common())
         # No candidate satisfied all of the filters. Returning None makes
         # _navigate_to_obj raise PLANNING_ERROR -- the honest signal that this
         # target has no standable pose around it. Measured on Rs_int that is
@@ -689,11 +818,28 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
     def _edge_candidate(self, obj, prefer_xy=None):
         """One (x, y, yaw) just outside @obj's footprint, facing it.
 
-        A ring around the centre is the wrong shape for a wide object: for a
-        2.1 m bed the ring is 1.9-2.5 m out and lands in the walls of any
-        bedroom that fits the bed. What a person does is walk up to the side of
-        the bed. So: a point on the footprint's perimeter, pushed out by the
-        robot's own radius plus up to one arm's reach. With @prefer_xy (the
+        A ring around the centre is the wrong shape for anything that is not a
+        point: its inner radius is the object's half-DIAGONAL, so for a 2.1 m
+        bed it is 1.9-2.5 m out and lands in the walls of any bedroom that fits
+        the bed, and for a 1.53 x 0.94 table it is 1.30 m from the centre, out
+        past the ends. What a person does is walk up to the side. So: a point
+        on the footprint's perimeter, pushed out by the robot's own half-width
+        plus up to one arm's reach.
+
+        This is now the only path for a target that is not walked on. It used
+        to be reserved for supports too wide to reach across (`reach_across`),
+        and measured 2026-09-14 on Merom_1_int that reservation was costing
+        real floor: with the band and `body_offset` together, the standable
+        fraction goes 0 -> 5% at the breakfast table and 4 -> 16% at the
+        armchair for the Ridgeback, 34 -> 44% at the bookcase and 30 -> 41% at
+        the bed, with no pose closer than the chassis half-width. Either change
+        alone measured nothing -- the band still started at the circumscribed
+        radius, and the half-width was still on a ring.
+
+        The band is always inside what the reach gate allows, whatever the
+        shape: edge distance never exceeds the half-diagonal, so a pose at
+        ``edge + body + margin + reach`` is within
+        ``interaction_radius_for``'s ``half_diagonal + body + margin + reach``. With @prefer_xy (the
         thing resting on it) the perimeter point is mirrored onto the object's
         half of the footprint three times in four, so the robot ends up on the
         side the object is on when that side is standable, and elsewhere
@@ -716,9 +862,16 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
                 bx, nx = 2 * cx - bx, -nx
             if ny != 0.0 and (by - cy) * (float(prefer_xy[1]) - cy) < 0:
                 by, ny = 2 * cy - by, -ny
-        out = self.robot_radius + self._nav_clearance_margin + th.rand(1).item() * self._nav_reach
+        out = self.body_offset() + self._nav_clearance_margin + th.rand(1).item() * self._nav_reach
         x, y = bx + nx * out, by + ny * out
-        yaw = math.atan2(by - y, bx - x) + self._facing_yaw_offset()
+        # Same convention as the ring: the angle from the TARGET to the robot,
+        # which `_facing_yaw_offset` (pi - mean workspace) then turns to face
+        # back at it. Written the other way round -- atan2(by - y, bx - x), the
+        # angle from the robot to the target -- this is pi out and the robot
+        # stands with its back to the thing it came for. It was wrong here from
+        # the start and only the bed reached this path, so nothing caught it
+        # until the band became the only path (2026-09-14).
+        yaw = math.atan2(y - by, x - bx) + self._facing_yaw_offset()
         return th.tensor([x, y, yaw], dtype=th.float32)
 
     @staticmethod
@@ -760,8 +913,9 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
             )
         import random  # noqa: PLC0415
 
-        attempts = self._nav_sampling_attempts or 200
+        attempts = self._nav_sampling_attempts or DEFAULT_SAMPLING_ATTEMPTS
         rejected = {"room": 0, "trav": 0, "robots": 0}
+        blockers: Counter = Counter()
         for _ in range(attempts):
             xy = self._random_point_in_room(seg_map, room, names[room])
             if xy is None:
@@ -772,8 +926,10 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
             if not self._is_traversable(xy):
                 rejected["trav"] += 1
                 continue
-            if not self._clear_of_other_robots(xy):
+            blocker = self._blocking_robot(xy)
+            if blocker is not None:
                 rejected["robots"] += 1
+                blockers[blocker] += 1
                 continue
             if self._nav_destinations is not None:
                 self._nav_destinations.reserve(self.robot.name, xy)
@@ -781,11 +937,14 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
             yield from self._navigate_to_pose(pose)
             return
         self._nav_last_rejections = dict(rejected)
+        self._nav_last_blockers = dict(blockers.most_common())
         raise ActionPrimitiveError(
             ActionPrimitiveError.Reason.PLANNING_ERROR,
-            f"Cannot find a free spot to stand in {room}: every sampled point was blocked by "
-            "furniture, walls or other robots. Wait for them to move, or go elsewhere.",
-            {"room": room, "rejected_by": dict(rejected), "reason_code": "NO_SPACE_IN_ROOM"},
+            f"Cannot find a free spot to stand in {room}: there is no free floor space in it "
+            "to stand on."
+            + _why_no_space(rejected, self._nav_last_blockers),
+            {"room": room, "rejected_by": dict(rejected),
+             "blocked_by": dict(self._nav_last_blockers), "reason_code": "NO_SPACE_IN_ROOM"},
         )
 
     @staticmethod
@@ -843,16 +1002,20 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
             # agent can act on. "Could not find a valid base pose" describes the
             # sampler's internals; what the agent needs to know is that the
             # space around the target is taken -- by furniture, by walls, or by
-            # teammates who reserved it first -- and that waiting or retargeting
-            # is the move, not retrying.
+            # teammates who reserved it first -- and what to do instead, which
+            # `_why_no_space` says and which depends on which of the three it
+            # was. The annulus itself is not in the text: the agent cannot act
+            # on "0.9-1.5 m away" (it does not choose where it stands, the
+            # sampler does), and it stays in `sampling_range` for the logs.
+            blocked = getattr(self, "_nav_last_blockers", None) or {}
+            counts = getattr(self, "_nav_last_rejections", None)
             raise ActionPrimitiveError(
                 ActionPrimitiveError.Reason.PLANNING_ERROR,
-                f"Cannot reach {obj_label}: there is no free floor space around it to stand on "
-                f"(need a spot {lo:.1f}-{hi:.1f} m away, clear of walls, furniture and other agents). "
-                "Another agent may already be standing there. Try a different target, or wait for "
-                "them to move.",
+                f"Cannot reach {obj_label}: there is no free floor space around it to stand on."
+                + _why_no_space(counts, blocked),
                 {"object": obj.name, "sampling_range": [round(lo, 2), round(hi, 2)],
-                 "rejected_by": getattr(self, "_nav_last_rejections", None),
+                 "rejected_by": counts,
+                 "blocked_by": dict(blocked),
                  "target_xy": [round(float(v), 2) for v in obj.get_position_orientation()[0][:2]],
                  "reason_code": "NO_SPACE_AROUND_TARGET"},
             )

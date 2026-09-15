@@ -270,21 +270,32 @@ def main() -> int:
     controller = Navigable(None, robot, require_traversable=False)
     apple = FakeObject("apple_0", [1.0, 0.5, 0.4])  # no in_rooms -> point query
 
-    print("test 1: samples inside the target's room, within the object-relative range")
+    print("test 1: samples inside the target's room, in the band around its footprint")
+    # Measured from the footprint, not from the centre: a target that is not
+    # walked on is approached at its edge (2026-09-14), so the bound that holds
+    # is the offset out of `_edge_candidate`. The ring's `hi` still bounds it
+    # from the centre, because edge distance never exceeds the half-diagonal --
+    # which is what keeps every band pose inside the reach gate.
     lo, hi = controller.sampling_range_for(apple)
+    band_lo = controller.body_offset() + controller._nav_clearance_margin
+    band_hi = band_lo + controller._nav_reach
     for _ in range(200):
         pose = controller._sample_pose_near_object(apple)
         assert pose is not None
-        distance = math.hypot(float(pose[0]) - 1.0, float(pose[1]) - 0.5)
-        assert lo - 1e-6 <= distance <= hi + 1e-6, (distance, lo, hi)
+        edge = controller.edge_distance_to(apple, pose[:2])
+        assert band_lo - 1e-6 <= edge <= band_hi + 1e-6, (edge, band_lo, band_hi)
+        assert math.hypot(float(pose[0]) - 1.0, float(pose[1]) - 0.5) <= hi + 1e-6
         assert scene.seg_map.get_room_instance_by_point(pose[:2]) == "kitchen_0"
-    ok(f"200 samples in kitchen_0, all within [{lo:.2f}, {hi:.2f}] m")
+    ok(f"200 samples in kitchen_0, all {band_lo:.2f}-{band_hi:.2f} m off the footprint")
 
     print("test 1b: the lower bound keeps the robot off the target")
     # The old range started at 0.0, so the robot could stand ON a floor object.
     # Measured consequence: symbolic grasp then teleported the apple into a
     # robot standing on it and the settle shook it loose (POST_CONDITION).
-    assert lo >= controller.robot_radius, (lo, controller.robot_radius)
+    # The offset is the chassis half-width -- a base pose faces its target, so
+    # what points at the object is a face, not the 45-degree diagonal.
+    assert band_lo >= controller.body_offset(), (band_lo, controller.body_offset())
+    assert lo >= controller.body_offset(), (lo, controller.body_offset())
     table = FakeObject("table_0", [1.0, 0.5, 0.4], aabb_extent=(1.6, 0.9, 0.7))
     table_lo, table_hi = controller.sampling_range_for(table)
     assert table_lo > lo, (table_lo, lo)
@@ -292,11 +303,18 @@ def main() -> int:
     ok(f"apple lo={lo:.2f} m, table lo={table_lo:.2f} m -- clearance scales with the object")
 
     print("test 2: yaw faces the target (upstream formula: yaw + pi - mean(workspace))")
-    pose = controller._sample_pose_near_object(apple)
-    sampling_yaw = math.atan2(float(pose[1]) - 0.5, float(pose[0]) - 1.0)
-    expected = sampling_yaw + math.pi - 0.75
-    delta = ((float(pose[2]) - expected + math.pi) % (2 * math.pi)) - math.pi
-    assert abs(delta) < 1e-4, (float(pose[2]), expected)
+    # The band aims at the footprint point it was pushed out from, not at the
+    # centre, so the two differ by however much the object subtends from there
+    # -- 4 degrees for a 5 cm apple half a metre away. What must hold is that
+    # the robot is facing the object at all.
+    for _ in range(50):
+        pose = controller._sample_pose_near_object(apple)
+        dx, dy = float(pose[0]) - 1.0, float(pose[1]) - 0.5
+        expected = math.atan2(dy, dx) + math.pi - 0.75
+        delta = ((float(pose[2]) - expected + math.pi) % (2 * math.pi)) - math.pi
+        subtends = math.atan2(controller.clearance_for(apple) - controller.body_offset()
+                              - controller._nav_clearance_margin, math.hypot(dx, dy))
+        assert abs(delta) <= subtends + 1e-4, (float(pose[2]), expected, subtends)
     ok("yaw == sampling_yaw + pi - mean(arm_workspace_range)")
 
     print("test 3: a FIXED object's in_rooms wins over the live point query")
@@ -541,12 +559,22 @@ def main() -> int:
     shelf_scene.objects += [die_under]
     assert shelf_ctrl.support_of(hover) is None
     assert shelf_ctrl.support_of(die_under) is None, "the die's footprint holds nothing bigger than itself"
-    # The sampled spot is in the bookcase's annulus, not the die's.
-    b_lo, b_hi = shelf_ctrl.sampling_range_for(bookcase)
+    # The sampled spot is around the bookcase, not around the die sitting on
+    # it. The bound that holds for BOTH shapes the sampler alternates between
+    # is the ring's top, which is also what the interaction gate allows -- a
+    # band pose is never further than that, since edge distance never exceeds
+    # the half-diagonal. Pinning the band bound instead makes this flaky: a
+    # ring draw is legitimately further from the footprint.
+    _, b_hi = shelf_ctrl.sampling_range_for(bookcase)
+    _, die_hi = shelf_ctrl.sampling_range_for(die)
+    assert die_hi < b_hi, (die_hi, b_hi)
+    seen_far = False
     for _ in range(50):
         pose = shelf_ctrl._sample_pose_near_object(bookcase)
-        d = math.hypot(float(pose[0]) - 2.0, float(pose[1]))
-        assert b_lo - 1e-6 <= d <= b_hi + 1e-6
+        centre = math.hypot(float(pose[0]) - 2.0, float(pose[1]))
+        assert centre <= b_hi + 1e-6, list(pose)
+        seen_far = seen_far or centre > die_hi
+    assert seen_far, "sampled only within the die's range, so not around the bookcase"
     # The fake _navigate_to_pose does not move the robot, so watch what the
     # sampler is asked for: navigate_to(die) must sample around the bookcase.
     asked = []
@@ -606,6 +634,87 @@ def main() -> int:
         assert len(ticks) == expected, (robot.name, len(ticks), expected)
     assert Navigable.MAX_SETTLE_TICKS == 10
     ok("still robot: 0 ticks; a robot that never stops: 10, not 550")
+
+    print("test: a spot taken by a robot says which robot, in the failure an agent reads")
+    # "rejected_by {'robots': 146}" tells an agent to wait without telling it
+    # who it is waiting for. With fifteen robots in a house that is the
+    # difference between "wait" and "ask jackal_1 to move" (user, 2026-09-14).
+    blame_scene = FakeScene(FakeSegMap())
+    me = FakeRobot(blame_scene, name="ridgeback_3", position=(0.0, 0.0, 0.0))
+    FakeRobot(blame_scene, name="jackal_1", position=(1.0, 0.0, 0.0))
+    blamer = Navigable(None, me, require_traversable=False)
+    assert blamer._blocking_robot((1.0, 0.0)) == "jackal_1", blamer._blocking_robot((1.0, 0.0))
+    assert blamer._blocking_robot((9.0, 9.0)) is None
+    # The bool wrapper the rest of the code uses still agrees with it.
+    assert not blamer._clear_of_other_robots((1.0, 0.0))
+    assert blamer._clear_of_other_robots((9.0, 9.0))
+    # A reservation blames its owner too -- a robot that has only decided to
+    # go there is as much in the way as one already standing there.
+    blamer._nav_destinations = module.DestinationRegistry()
+    blamer._nav_destinations.reserve("drone_2", (-2.0, 0.0))
+    assert blamer._blocking_robot((-2.0, 0.0)) == "drone_2"
+    assert blamer._nav_destinations.others("ridgeback_3") == [(-2.0, 0.0)], "the xy-only form still works"
+
+    # And the failure an agent actually reads names them, most costly first.
+    target = FakeObject("coffee_table_0", [0.0, 0.0, 0.4])
+    boxed = Navigable(None, me, require_traversable=False)
+    boxed._blocking_robot = lambda xy: "jackal_1" if float(xy[0]) > 0 else "drone_2"
+    assert boxed._sample_pose_near_object(target) is None, "every spot is taken"
+    assert boxed._nav_last_rejections["robots"] > 0, boxed._nav_last_rejections
+    assert set(boxed._nav_last_blockers) == {"jackal_1", "drone_2"}, boxed._nav_last_blockers
+    try:
+        next(boxed._navigate_to_obj(target))
+        raise AssertionError("a target with no free spot must raise")
+    except FakeActionPrimitiveError as error:
+        text, info = str(error), error.metadata
+    assert "Robots occupying the space now:" in text, text
+    assert "jackal_1" in text and "drone_2" in text, text
+    assert "Message them to leave, or take a different target." in text, text
+    # Every blocker by name, never "and N other robot(s)": a robot the agent is
+    # not told about is one it cannot ask to move (user, 2026-09-14).
+    assert "other robot" not in text, text
+    # The annulus is not in the prose: the agent does not choose where it
+    # stands, the sampler does, so "0.9-1.5 m away" is nothing it can act on
+    # (user, 2026-09-14). It stays in the metadata for the logs.
+    assert "m away" not in text and "need a spot" not in text, text
+    assert info["sampling_range"], info
+    assert set(info["blocked_by"]) == {"jackal_1", "drone_2"}, info
+    # Most costly first, so the first name is the one worth addressing.
+    assert list(info["blocked_by"]) == sorted(info["blocked_by"],
+                                              key=info["blocked_by"].get, reverse=True), info
+    ok("a blocked sample names every robot on the spots, and says what to do about them")
+
+    print("test: and when no robot is in the way, it does not say one is")
+    # The old text blamed "another agent" and advised waiting whatever had
+    # rejected the poses. Over the 189 navigation failures of `S1_full_fast`
+    # the dominant filter was the room in 53% and traversability in 33%, and
+    # 26 had no robot rejection at all -- five times in six the agent was told
+    # to wait for a teammate who was not there (user, 2026-09-14).
+    why = module._why_no_space
+    # The old text blamed "another agent" and advised waiting whatever had
+    # rejected the poses. Over the 189 navigation failures of `S1_full_fast`
+    # the dominant filter was the room in 53% and traversability in 33%, and
+    # 26 had no robot rejection at all -- five times in six the agent was told
+    # to wait for a teammate who was not there (user, 2026-09-14). There is
+    # nobody to message then, and an empty list is worse than saying so.
+    empty = why({"room": 151, "trav": 49, "robots": 0}, {})
+    assert "No robot is in the way" in empty, empty
+    assert "Robots occupying" not in empty and "Message" not in empty, empty
+    assert "waiting will not free it" in empty, empty
+    # One shape for every target and every breakdown: the names decide it, and
+    # nothing else does -- an object target and a teammate target read alike.
+    named = why({"room": 0, "trav": 78, "robots": 122}, {"jackal_1": 122})
+    assert named == why(None, {"jackal_1": 1}), (named, why(None, {"jackal_1": 1}))
+    assert named.startswith(" Robots occupying the space now: jackal_1."), named
+    # And the room-target failure says it the same way.
+    room_ctrl = Navigable(None, me, require_traversable=False)
+    room_ctrl._blocking_robot = lambda xy: "drone_7"
+    try:
+        list(room_ctrl.navigate_to_room("kitchen_0"))
+        raise AssertionError("expected PLANNING_ERROR")
+    except FakeActionPrimitiveError as error:
+        assert "Robots occupying the space now: drone_7." in str(error), str(error)
+    ok("one shape everywhere: the robots on the spots, then leave-or-retarget")
 
     print("\nALL TESTS PASSED")
     return 0
