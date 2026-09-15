@@ -25,7 +25,6 @@ from coop2.cognitive.agent.llm_client import (
     NavigateToAction,
     NotifyRequest,
     Task,
-    TaskSpecification,
     TeamAgentPlan,
 )
 from coop2.cognitive.agent.prompt_sections import (
@@ -74,7 +73,7 @@ class StubClient:
         plans = [
             TeamAgentPlan(
                 agent_id=name,
-                task=TaskSpecification(task=Task.ONTOP, object_type="die.n.01_1", reference="bed.n.01_1"),
+                task="ontop(die.n.01_1, bed.n.01_1)",
                 actions=[NavigateToAction(target="die.n.01_1")],
                 reasoning=f"{name} goes",
             )

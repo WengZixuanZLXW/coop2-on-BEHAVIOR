@@ -24,7 +24,6 @@ from coop2.cognitive.agent.llm_client import (
     LLMPlanResponse,
     NavigateToAction,
     Task,
-    TaskSpecification,
     WaitAction,
 )
 
@@ -120,7 +119,7 @@ class StubLLMClient:
         if not targets:
             self.plans_emitted.append(["wait"])
             return LLMPlanResponse(
-                task=TaskSpecification(task=Task.HOLDING, object_type="none"),
+                task="holding(none)",
                 actions=[WaitAction()],
                 reasoning="stub saw no reachable targets",
             )
@@ -128,7 +127,7 @@ class StubLLMClient:
         actions = [NavigateToAction(target=target), GraspAction(target=target)]
         self.plans_emitted.append([a.action_type for a in actions])
         return LLMPlanResponse(
-            task=TaskSpecification(task=Task.HOLDING, object_type=target),
+            task=f"holding(" + target + ")",
             actions=actions,
             reasoning=f"stub picked the first reachable target, {target}",
         )

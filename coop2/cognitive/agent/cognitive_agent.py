@@ -19,7 +19,7 @@ from .llm_client import (
     LLMInterruptResponse,
     InterruptDecision,
     LLMAction,
-    TaskSpecification,
+    parse_task,
 )
 
 
@@ -319,11 +319,10 @@ def parse_plan_response(
         )
         actions.append(action)
 
-    _attach_task_target_to_collect_actions(llm_response.task, actions)
     _ensure_task_terminal_action(llm_response.task, actions)
     
     return SymbolicPlan(
-        specification=str(llm_response.task),
+        specification=llm_response.task,
         actions=actions,
         plan_id=plan_id,
         agent_id=agent_id,
@@ -384,38 +383,7 @@ def apply_repair_plan_recommendation(
     return plan
 
 
-def _collect_task_args(task_spec: TaskSpecification) -> Dict[str, Any]:
-    """Ids to stamp onto the actions that serve @task_spec.
-
-    crafter parsed these out of the task *name* (``collect_wood`` ->
-    ``target="wood"``). A task specification here already names its entity
-    directly, so there is nothing to parse: the target is the id, and the
-    reference is the second predicate argument when there is one.
-    """
-    args: Dict[str, Any] = {"target": task_spec.object_type}
-    if getattr(task_spec, "reference", None):
-        args["reference"] = task_spec.reference
-    return args
-
-
-def _attach_task_target_to_collect_actions(
-    task_spec: TaskSpecification,
-    actions: List[SymbolicAction],
-) -> None:
-    """Fill in a target on any action that omitted one.
-
-    Kept under its original name because the process logger and the plan
-    wrapper call it; "collect" no longer exists as a verb, so it now fills the
-    gap for whichever action the plan aimed at the task.
-    """
-    task_args = _collect_task_args(task_spec)
-    for action in actions:
-        if action.action_type in ("wait", "share", "release"):
-            continue
-        action.args.setdefault("target", task_args["target"])
-
-
-def _ensure_task_terminal_action(task_spec: TaskSpecification, actions: List[SymbolicAction]) -> None:
+def _ensure_task_terminal_action(specification: str, actions: List[SymbolicAction]) -> None:
     """Make sure the plan actually contains an action that can achieve the task.
 
     An LLM that states a goal and then lists only navigation is a common
@@ -423,6 +391,12 @@ def _ensure_task_terminal_action(task_spec: TaskSpecification, actions: List[Sym
     BEHAVIOR equivalent is per predicate: ``ontop``/``inside`` need a place,
     ``open``/``closed``/``toggled_on`` need the matching toggle, ``holding``
     needs a grasp.
+
+    @specification is the plan's task, one free string since 2026-09-14, so the
+    predicate and its ids are read back out of it (`parse_task`). A task that
+    is not a predicate -- ``standby(jackal_1)``, ``transport die to bedroom``
+    -- gets nothing appended, which is right: this repairs a stated goal the
+    actions do not reach, and such a task states none.
 
     A plan that only waits is exempt, because there the missing action is the
     decision. Asked to plan for a team whose apples were all claimed, the model
@@ -432,15 +406,23 @@ def _ensure_task_terminal_action(task_spec: TaskSpecification, actions: List[Sym
     plans in centralized_agents12_..._045959 were logged failed that way. An
     empty action list is still the omission this guard is for and still gets
     its terminal action.
+
+    There used to be a second guard here, ``_attach_task_target_to_collect_actions``,
+    filling in a ``target`` on any action that omitted one. It was crafter's,
+    where the target was parsed out of the task *name*; here every action
+    schema declares ``target: str`` with no default, so structured output
+    cannot produce an action without one and the guard never fired. Removed
+    with the four-field task it read from.
     """
     if actions and all(
         action.action_type in ("wait", "share", "release") for action in actions
     ):
         return
 
-    token = str(getattr(task_spec.task, "value", task_spec.task) or "").lower()
-    target = task_spec.object_type
-    reference = getattr(task_spec, "reference", None)
+    parsed = parse_task(specification)
+    if parsed is None:
+        return
+    token, target, reference = parsed
 
     terminal_for = {
         "ontop": ("place_on_top", reference or target),

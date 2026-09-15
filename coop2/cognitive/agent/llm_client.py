@@ -10,6 +10,7 @@ import os
 import time
 from pathlib import Path
 from typing import Any, Optional, List, Dict, Union, Literal
+import re
 from enum import Enum
 
 from dotenv import load_dotenv
@@ -151,11 +152,24 @@ LLMAction = Union[
 
 
 class Task(str, Enum):
-    """Goal predicates a plan can aim at.
+    """The BDDL predicates the plan pipeline still understands structurally.
 
     Replaces crafter's achievement list (collect_wood, make_stone_pickaxe...).
-    These are BDDL predicate tokens, so a task specification is the same shape
+    These are BDDL predicate tokens, so a task named with one is the same shape
     as the goal condition L1d evaluates and M9's check_goal will compare.
+
+    **This is no longer the set a plan must choose from** (user, 2026-09-14).
+    ``TaskSpecification.task`` is a free string: a team that is deliberately
+    keeping a robot out of the way, or doing something these six do not name,
+    says so in its own words. The enum stays because one thing does read the
+    token -- ``_ensure_task_terminal_action`` appends the action that can
+    achieve it, ``place_on_top`` for ``ontop`` and so on -- and that mapping
+    only exists for these six. Anything else gets no appended action, which is
+    the right default: the guard is for a plan that states a goal and lists
+    only navigation, and a plan that names no predicate has no such omission.
+
+    Nothing else reads it. The route and goal checkers work from the activity's
+    own predicates, never from here.
     """
 
     ONTOP = "ontop"
@@ -166,29 +180,33 @@ class Task(str, Enum):
     HOLDING = "holding"
 
 
-class TaskSpecification(BaseModel):
-    """What the plan is trying to make true.
+#: ``ontop(notebook.n.01_1, bed.n.01_1)`` -> ``("ontop", "notebook.n.01_1",
+#: "bed.n.01_1")``. A plan's task is one free string (user, 2026-09-14); this
+#: reads a BDDL predicate back out of it when the team wrote one, and returns
+#: None for anything else -- ``standby(drone_3)``, ``transport die to bedroom``.
+_PREDICATE = re.compile(r"^\s*([a-z_][a-z_0-9]*)\s*\(\s*([^,()]+?)\s*(?:,\s*([^,()]+?)\s*)?\)\s*$")
 
-    ``object_type`` / ``object_id`` are kept as field names because
-    ``cognitive_agent._collect_task_args`` and the process logger read them by
-    name, and the point of the port is to leave those files untouched. Here
-    ``object_type`` carries the BDDL entity id and ``object_id`` is unused
-    (always 1) -- an id like ``apple.n.01_1`` already encodes the instance
-    index, so a separate integer would be a second, conflicting source of truth.
+
+def parse_task(specification: str):
+    """``(predicate, target, reference)`` for a predicate-shaped task, else None.
+
+    The plan's task used to be a four-field object -- ``task`` from a closed
+    enum, ``object_type``, an always-1 ``object_id``, ``reference`` -- and the
+    model filled it in whether or not the plan had a goal to state. It is one
+    string now, which is both what the prompt shows and what the log records,
+    so there is nothing to keep in step. The two ids are recovered here only
+    when the string is a predicate, because exactly one thing still needs them:
+    `_ensure_task_terminal_action`, which appends ``place_on_top(bed.n.01_1)``
+    to a plan that says ``ontop(notebook.n.01_1, bed.n.01_1)`` and then lists
+    only navigation. A free-form name has no such omission to repair.
     """
-
-    task: Task = Field(description="Predicate to make true")
-    object_type: str = Field(description=_TARGET)
-    object_id: int = Field(default=1, description="Unused; the entity id already carries the index")
-    reference: Optional[str] = Field(
-        default=None,
-        description="Second argument for binary predicates, e.g. the surface for 'ontop'. Same id format.",
-    )
-
-    def __str__(self) -> str:
-        if self.reference:
-            return f"{self.task.value}({self.object_type}, {self.reference})"
-        return f"{self.task.value}({self.object_type})"
+    if not isinstance(specification, str):
+        return None
+    match = _PREDICATE.match(specification)
+    if match is None:
+        return None
+    predicate, target, reference = match.group(1), match.group(2), match.group(3)
+    return predicate.lower(), target, reference
 
 
 class InterruptDecision(str, Enum):
@@ -209,7 +227,16 @@ class InterruptDecision(str, Enum):
 
 class LLMPlanResponse(BaseModel):
     """Structured response from LLM for plan generation."""
-    task: TaskSpecification = Field(description="The task specification with type and optional target object")
+    task: str = Field(
+        description="What this plan is for, in your own words. When it makes a "
+                    "BDDL predicate true write it as `predicate(target)` or "
+                    "`predicate(target, reference)` with ids from this robot's "
+                    "own listing -- ontop, inside, open, closed, toggled_on, "
+                    "holding -- so it matches the goal. Otherwise name it "
+                    "honestly, e.g. `standby(jackal_1)` for a robot you are "
+                    "deliberately keeping out of the way. Never name a goal the "
+                    "plan is not pursuing"
+    )
     actions: List[LLMAction] = Field(description="List of actions to execute")
     reasoning: str = Field(description="Brief explanation of why this plan was chosen")
 
@@ -648,7 +675,16 @@ class TeamAgentPlan(BaseModel):
     """
 
     agent_id: str = Field(description="Which robot this plan is for; must be one of the team's ids")
-    task: TaskSpecification = Field(description="The task specification with type and optional target object")
+    task: str = Field(
+        description="What this plan is for, in your own words. When it makes a "
+                    "BDDL predicate true write it as `predicate(target)` or "
+                    "`predicate(target, reference)` with ids from this robot's "
+                    "own listing -- ontop, inside, open, closed, toggled_on, "
+                    "holding -- so it matches the goal. Otherwise name it "
+                    "honestly, e.g. `standby(jackal_1)` for a robot you are "
+                    "deliberately keeping out of the way. Never name a goal the "
+                    "plan is not pursuing"
+    )
     actions: List[LLMAction] = Field(description="List of actions for this robot to execute")
     reasoning: str = Field(description="Brief explanation of why this robot is doing this")
 
@@ -830,7 +866,9 @@ class LLMTagPlanResponse(LLMTeamPlanResponse):
         description="Task-graph actions, applied to the shared graph in order; may be empty"
     )
     notify: List[str] = Field(
-        description="Team names to wake so they read the task graph now; may be empty"
+        description="Team names to wake so they read the task graph now; may be empty. "
+                    "Name every team that must read it: one notification wakes them all "
+                    "and costs one unit of the budget, however many are named"
     )
 
 
@@ -842,7 +880,9 @@ class LLMTagInterruptResponse(LLMTeamInterruptResponse):
         description="Task-graph actions, applied to the shared graph in order; may be empty"
     )
     notify: List[str] = Field(
-        description="Team names to wake so they read the task graph now; may be empty"
+        description="Team names to wake so they read the task graph now; may be empty. "
+                    "Name every team that must read it: one notification wakes them all "
+                    "and costs one unit of the budget, however many are named"
     )
 
 

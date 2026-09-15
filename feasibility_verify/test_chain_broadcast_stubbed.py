@@ -20,7 +20,7 @@ sys.path.insert(0, "/home/zixuanwe/Desktop/BEHAVIOR-1K")
 
 from coop2.cognitive.agent.llm_client import (
     InterruptDecision, LLMChainInterruptResponse, LLMChainPlanResponse, NavigateToAction,
-    Task, TaskSpecification, TeamAgentInterruptDecision, TeamAgentPlan,
+    Task, TeamAgentInterruptDecision, TeamAgentPlan,
 )
 from coop2.comm_topology.llm_team import ChainTeamBrain, create_llm_team_topology
 
@@ -62,8 +62,7 @@ class StubClient:
         plans = [
             TeamAgentPlan(
                 agent_id=name,
-                task=TaskSpecification(task=Task.ONTOP, object_type="notebook.n.01_1",
-                                       reference="bookcase.n.01_1"),
+                task="ontop(notebook.n.01_1, bookcase.n.01_1)",
                 actions=[NavigateToAction(target="notebook.n.01_1")],
                 reasoning=f"{name} goes",
             )

@@ -29,7 +29,6 @@ from coop2.cognitive.agent.llm_client import (
     LLMTeamPlanResponse,
     NavigateToAction,
     Task,
-    TaskSpecification,
     TeamAgentInterruptDecision,
     TeamAgentPlan,
 )
@@ -81,8 +80,7 @@ class StubClient:
         return [
             TeamAgentPlan(
                 agent_id=name,
-                task=TaskSpecification(task=Task.ONTOP, object_type="apple.n.01_1",
-                                       reference="coffee_table.n.01_1"),
+                task="ontop(apple.n.01_1, coffee_table.n.01_1)",
                 actions=[NavigateToAction(target="apple.n.01_1")],
                 reasoning=f"{name} goes for the apple",
             )
@@ -139,8 +137,7 @@ class StubClient:
             new_plan = None
             if choice is InterruptDecision.REPLAN:
                 new_plan = LLMPlanResponse(
-                    task=TaskSpecification(task=Task.ONTOP, object_type="apple.n.01_1",
-                                           reference="coffee_table.n.01_1"),
+                    task="ontop(apple.n.01_1, coffee_table.n.01_1)",
                     actions=[NavigateToAction(target="apple.n.01_1")],
                     reasoning=f"{name} was told to change",
                 )

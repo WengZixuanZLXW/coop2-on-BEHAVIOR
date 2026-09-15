@@ -25,7 +25,7 @@ from coop2.cognitive.action.behavior_action import (  # noqa: E402
     COMMUNICATION_ACTIONS,
 )
 from coop2.cognitive.agent.base_llm_agent import BaseLLMAgent  # noqa: E402
-from coop2.cognitive.agent.llm_client import LLMAction, Task, TaskSpecification  # noqa: E402
+from coop2.cognitive.agent.llm_client import LLMAction, Task, parse_task  # noqa: E402
 
 
 def main() -> int:
@@ -73,23 +73,28 @@ def main() -> int:
         assert needs_target == has_target, f"{verb}: schema says target={needs_target}, model says {has_target}"
     ok("target fields line up with the schema table")
 
-    print("test 5: task specifications are BDDL predicates over BDDL ids")
-    spec = TaskSpecification(task=Task.ONTOP, object_type="apple.n.01_1", reference="table.n.02_1")
-    assert str(spec) == "ontop(apple.n.01_1, table.n.02_1)", str(spec)
-    unary = TaskSpecification(task=Task.OPEN, object_type="electric_refrigerator.n.01_1")
-    assert str(unary) == "open(electric_refrigerator.n.01_1)", str(unary)
+    print("test 5: a task is one free string, and a predicate one parses back")
+    # It was four fields -- an enum, object_type, an always-1 object_id, a
+    # reference -- and the model filled them in whether or not the plan had a
+    # goal (user, 2026-09-14). One string now, read back only where the ids are
+    # actually needed.
+    assert parse_task("ontop(apple.n.01_1, table.n.02_1)") == ("ontop", "apple.n.01_1", "table.n.02_1")
+    assert parse_task("open(electric_refrigerator.n.01_1)") == ("open", "electric_refrigerator.n.01_1", None)
+    # A name that is not a predicate parses to nothing, and must not raise:
+    # that is the whole point of letting the team name its own tasks.
+    for free in ("standby(jackal_1)", "transport die to bedroom", "", "waiting"):
+        parsed = parse_task(free)
+        assert parsed is None or parsed[0] == "standby", (free, parsed)
     for token in (t.value for t in Task):
         assert token.islower() and " " not in token, token
-    ok(f"{str(spec)} / {str(unary)} -- same form an activity definition writes")
+    ok("ontop(a, b) and open(a) parse; free names parse to None without raising")
 
     print("test 6: every goal predicate has an action that can achieve it")
     from coop2.cognitive.agent.cognitive_agent import _ensure_task_terminal_action  # noqa: PLC0415
 
     for task in Task:
         actions = []
-        _ensure_task_terminal_action(
-            TaskSpecification(task=task, object_type="apple.n.01_1", reference="table.n.02_1"), actions
-        )
+        _ensure_task_terminal_action(f"{task.value}(apple.n.01_1, table.n.02_1)", actions)
         assert actions, f"no terminal action for goal {task.value!r}"
         assert actions[0].action_type in l2_verbs, actions[0].action_type
     ok("a plan that states a goal but omits the achieving action gets one appended")

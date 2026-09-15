@@ -18,11 +18,6 @@ from coop2.cognitive.plan.plan import (
 from coop2.cognitive.plan.plan_env_wrapper import PlanningEnvWrapper
 
 
-class FakeTask:
-    def __init__(self, task, object_type, reference=None):
-        self.task, self.object_type, self.reference = task, object_type, reference
-
-
 class FakeEngine:
     def __init__(self, active): self.active, self.aborted = active, []
     def has_active(self, agent_id): return agent_id in self.active
@@ -130,20 +125,20 @@ def main() -> int:
 
     print("\ntest: a wait-only plan keeps its shape")
     actions = [SymbolicAction(action_type="wait", args={"ticks": 600})]
-    _ensure_task_terminal_action(FakeTask("ontop", "apple.n.01_2", "coffee_table.n.01_1"), actions)
+    _ensure_task_terminal_action("ontop(apple.n.01_2, coffee_table.n.01_1)", actions)
     assert [a.action_type for a in actions] == ["wait"], actions
     print("  ok: a deliberate wait is no longer turned into a failed place")
 
     print("\ntest: the omission this guard is for is still caught")
     actions = [SymbolicAction(action_type="navigate_to", args={"target": "coffee_table.n.01_1"})]
-    _ensure_task_terminal_action(FakeTask("ontop", "apple.n.01_2", "coffee_table.n.01_1"), actions)
+    _ensure_task_terminal_action("ontop(apple.n.01_2, coffee_table.n.01_1)", actions)
     assert [a.action_type for a in actions] == ["navigate_to", "place_on_top"], actions
     empty = []
-    _ensure_task_terminal_action(FakeTask("holding", "apple.n.01_2"), empty)
+    _ensure_task_terminal_action("holding(apple.n.01_2)", empty)
     assert [a.action_type for a in empty] == ["grasp"], empty
     mixed = [SymbolicAction(action_type="wait", args={"ticks": 100}),
              SymbolicAction(action_type="navigate_to", args={"target": "apple.n.01_2"})]
-    _ensure_task_terminal_action(FakeTask("holding", "apple.n.01_2"), mixed)
+    _ensure_task_terminal_action("holding(apple.n.01_2)", mixed)
     assert [a.action_type for a in mixed] == ["wait", "navigate_to", "grasp"], mixed
     print("  ok: navigation-only, empty and wait-then-act plans all get theirs")
 
