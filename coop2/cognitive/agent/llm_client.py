@@ -701,24 +701,6 @@ class LLMTeamPlanResponse(BaseModel):
     reasoning: str = Field(description="Why the work is divided between the robots this way")
 
 
-class LLMMessageboardPlanResponse(LLMTeamPlanResponse):
-    """The team plan plus one post to the shared board -- `decentralized_messageboard`.
-
-    The post travels in the same call as the plans on purpose: it is the team's
-    public commitment for *this* round, so it has to be written by the same
-    reasoning that produced the plans, not by a second call that could drift
-    from them. Other teams read it when they next plan; nobody is interrupted.
-    """
-
-    board_post: str = Field(
-        description=(
-            "One or two sentences for the shared board, in the task's ids: which robot "
-            "of yours goes for which cargo or task leg this round, and what you are "
-            "leaving to other teams. Other teams read it before they plan."
-        )
-    )
-
-
 class LLMChainPlanResponse(LLMTeamPlanResponse):
     """The team plan plus what to tell the teams behind -- `broadcast_chain`.
 
@@ -740,28 +722,6 @@ class LLMChainPlanResponse(LLMTeamPlanResponse):
             "are taking this round, and what you are leaving to them. They act on this, "
             "so say what you are committing to, not what you might do."
         )
-    )
-
-
-class NotifyRequest(BaseModel):
-    """Reserved: a team's request to interrupt named teams -- the notify tool.
-
-    Not offered to the model until ``MessageboardTeamBrain.NOTIFY_TOOL_ENABLED``
-    is set. Its shape is fixed now so the board, the brain and the tests agree
-    on it before anything is delivered.
-    """
-
-    teams: List[str] = Field(description="Which other teams to interrupt, by team name")
-    content: str = Field(description="What they must know now, in one or two sentences")
-    reasoning: str = Field(description="Why this cannot wait for them to read the board")
-
-
-class LLMMessageboardNotifyPlanResponse(LLMMessageboardPlanResponse):
-    """Reserved: the board response with the notify tool available."""
-
-    notify: Optional[NotifyRequest] = Field(
-        default=None,
-        description="Leave null unless another team must be interrupted before it next plans",
     )
 
 
@@ -884,6 +844,41 @@ class LLMTagInterruptResponse(LLMTeamInterruptResponse):
                     "Name every team that must read it: one notification wakes them all "
                     "and costs one unit of the budget, however many are named"
     )
+
+
+# ----------------------------------------------------------------------------
+# The message-board ablation (`board`): the same round with one tool instead of
+# eight. `write` sits exactly where `tag_actions` sits, and `notify` is word for
+# word the same, so the two schemas differ only in the shared space.
+# ----------------------------------------------------------------------------
+
+_BOARD_WRITE = ("The board's one tool: the message to write, or null to write nothing. "
+                "Every team reads it, so say what you are doing, what you found, or what "
+                "you need from others")
+_BOARD_NOTIFY = ("Team names to wake so they read the message board now; may be empty. "
+                 "Name every team that must read it: one notification wakes them all "
+                 "and costs one unit of the budget, however many are named")
+
+
+class LLMBoardPlanResponse(LLMTeamPlanResponse):
+    """The team plan plus the message-board part of the round -- `board`.
+
+    Applied in this order: `write` on the shared board, then `notify` (each
+    named team is interrupted and reads the board), then the plans go to the
+    robots -- the order `tag` uses, because the ablation is the space and not
+    the protocol.
+    """
+
+    write: Optional[str] = Field(default=None, description=_BOARD_WRITE)
+    notify: List[str] = Field(description=_BOARD_NOTIFY)
+
+
+class LLMBoardInterruptResponse(LLMTeamInterruptResponse):
+    """The interrupt decision plus the message-board part -- the same round: a
+    notified team reads the board and answers the same way."""
+
+    write: Optional[str] = Field(default=None, description=_BOARD_WRITE)
+    notify: List[str] = Field(description=_BOARD_NOTIFY)
 
 
 # ============================================================================

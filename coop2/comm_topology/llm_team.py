@@ -7,7 +7,7 @@ each other's intentions.
 
 This is not a topology of its own. It is the **unit** the topologies are
 expressed in: individual / broadcast_chain / centralized /
-decentralized_messageboard describe how teams talk to *each other*, while
+tag / board describe how teams talk to *each other*, while
 inside every team it is always one LLM driving four robots. Set the team size to 1 and each topology collapses to its old
 one-LLM-per-robot behaviour, which is what makes this a generalisation rather
 than a replacement.
@@ -69,10 +69,8 @@ from coop2.cognitive.agent.base_llm_agent import BaseLLMAgent
 from coop2.cognitive.agent.cognitive_agent import parse_plan_response
 from coop2.cognitive.agent.llm_client import (
     InterruptDecision,
-    LLMMessageboardNotifyPlanResponse,
     LLMChainInterruptResponse,
     LLMChainPlanResponse,
-    LLMMessageboardPlanResponse,
 )
 from coop2.cognitive.agent.memory import AgentMemory
 from coop2.cognitive.agent.prompt_sections import (  # noqa: E402
@@ -88,14 +86,12 @@ from coop2.cognitive.agent.prompts import (
 from coop2.cognitive.action.action import SymbolicAction
 from coop2.cognitive.agent.agent import AgentState
 from coop2.cognitive.plan import SymbolicPlan
-from coop2.comm_topology.message_board import MessageBoard, render_board
 
 __all__ = [
     "ChainTeamBrain",
     "FollowerTeamBrain",
     "LLMTeamAgent",
     "LeaderTeamBrain",
-    "MessageboardTeamBrain",
     "TEAM_BRAIN_ROLES",
     "TeamBrain",
     "create_llm_team_topology",
@@ -1282,128 +1278,6 @@ class TeamBrain:
 
 
 
-class MessageboardTeamBrain(TeamBrain):
-    """Individual planning around one shared board -- `decentralized_messageboard`.
-
-    Nothing here waits, sends or interrupts: ``wait_for`` and ``send_to`` stay
-    empty and the plain TeamBrain barrier is the only synchronisation. The
-    difference from `individual` is the board (``coop2.comm_topology.
-    message_board``), one instance shared by every brain in the run: it is
-    rendered as section 7 of every planning prompt, and the plan response is
-    ``LLMMessageboardPlanResponse``, whose ``board_post`` is appended to the
-    board the moment the plans are parsed -- so the post is written by the same
-    reasoning that produced the plans, and a team that plans a moment later
-    reads it.
-
-    **The notify tool is built and off by default.** One flag,
-    ``NOTIFY_TOOL_ENABLED``, turns all of it: the response schema gains
-    ``notify`` (which teams to interrupt, with what), section 4 gains the rule
-    for using it (``MESSAGEBOARD_NOTIFY_RULES``), and ``_on_plan_response``
-    hands the request to ``board.notify``, which records it and delivers it
-    through the board's ``deliverer``. The factory installs that deliverer:
-    it is the sending brain's :meth:`_deliver_notify`, which spends one unit
-    of the team's notify budget (``notify_budget`` per environment step, the
-    runner resetting it after each step, as DIG-TAG's runner does) and sends
-    through the broker with ``interrupts_execution`` to the named teams --
-    ``_say`` with per-call recipients -- so their interrupt rounds answer
-    resume/replan as they do for a chain message. With the flag on, this mode
-    is DIG-TAG's shared-message-board ablation; with it off, the board alone.
-    """
-
-    COOPERATION_MODE = "decentralized_messageboard"
-    #: False: the model is never offered `notify`, and no post can interrupt
-    #: anyone. Turned on per run by the caller that wants the ablation.
-    NOTIFY_TOOL_ENABLED = False
-
-    def __init__(self, *args, board: Optional[MessageBoard] = None, notify_budget: int = 1, **kwargs):
-        super().__init__(*args, **kwargs)
-        #: Shared with every other brain in the run by the factory; a brain
-        #: built alone gets a board of its own so it still works.
-        self.board = board if board is not None else MessageBoard()
-        #: The board's sequence number when this team last built a planning
-        #: prompt: posts after it are (new) next time.
-        self._board_seen = 0
-        #: Notifications this team may still send before the next environment
-        #: step. Bounds the interrupt cascade; the runner resets it.
-        self.notify_budget = int(notify_budget)
-        self.notify_left = self.notify_budget
-
-    def reset_notify_budget(self) -> None:
-        """Called by the runner after every environment step."""
-        self.notify_left = self.notify_budget
-
-    def _deliver_notify(self, record) -> List[str]:
-        """The board's deliverer, for a request this team made: interrupt the
-        named teams, within the budget. Returns the teams actually addressed;
-        an empty list means the request was dropped (budget spent) or there
-        was nobody to send through."""
-        if self.notify_left <= 0:
-            if self.verbose:
-                print(f"  [{self.team_name}] notify -> {record.targets} dropped: budget spent")
-            return []
-        targets = [t for t in record.targets if t in (self.all_teams or {}) and t != self.team_name]
-        if not targets or self._broker() is None:
-            return []
-        self.notify_left -= 1
-        self._say(record.content, "notify", interrupts=True, recipients=targets)
-        return targets
-
-    # -- the board in the prompt --------------------------------------------
-
-    def _board_block(self) -> str:
-        return render_board(self.board.posts(), reader=self.team_name, new_after=self._board_seen)
-
-    def _current_messages_block(self, messages: List[Dict]) -> str:
-        """Section 7: the board, then any direct message (reserved: notify)."""
-        direct = current_messages_section(self.COOPERATION_MODE, messages, self._render_message)
-        return "\n\n".join(part for part in (self._board_block(), direct) if part)
-
-    def _build_team_prompt(self, members: List["LLMTeamAgent"]) -> List[Dict[str, str]]:
-        built = super()._build_team_prompt(members)
-        # Marked after rendering: what this prompt showed as (new) is old the
-        # next time round.
-        self._board_seen = self.board.last_seq
-        return built
-
-    def _plan_closing(self, members: List["LLMTeamAgent"]) -> str:
-        return (super()._plan_closing(members)
-                + " `board_post`: which robot takes which cargo or leg this round and "
-                  "what you leave to others, in the task's ids, one or two sentences.")
-
-    def _cooperation_extra(self) -> str:
-        from coop2.cognitive.agent.prompt_sections import MESSAGEBOARD_NOTIFY_RULES  # noqa: PLC0415
-
-        return MESSAGEBOARD_NOTIFY_RULES if self.NOTIFY_TOOL_ENABLED else ""
-
-    # -- the response --------------------------------------------------------
-
-    @property
-    def plan_response_format(self):
-        return LLMMessageboardNotifyPlanResponse if self.NOTIFY_TOOL_ENABLED else LLMMessageboardPlanResponse
-
-    def _call_plan_model(self, prompt: List[Dict[str, str]]):
-        return self.llm_client.generate(
-            prompt, response_format=self.plan_response_format, temperature=self.temperature
-        )
-
-    def _on_plan_response(self, response: Any) -> None:
-        """Post the round's `board_post`; record a `notify` if the tool is on."""
-        post = getattr(response, "board_post", "")
-        entry = self.board.post(self.team_name, post, env_step=self._env_step(), round=self.rounds + 1)
-        if entry is not None and self.verbose:
-            print(f"  [{self.team_name}] board: {entry.content[:80]}")
-        elif entry is None and self.verbose:
-            print(f"  [{self.team_name}] board: (no post this round)")
-        request = getattr(response, "notify", None) if self.NOTIFY_TOOL_ENABLED else None
-        if request is not None and getattr(request, "teams", None):
-            record = self.board.notify(
-                self.team_name, list(request.teams), request.content, env_step=self._env_step()
-            )
-            if self.verbose:
-                print(f"  [{self.team_name}] notify -> {record.targets} "
-                      f"({'delivered to ' + str(record.delivered) if record.delivered else 'recorded only'})")
-
-
 class ChainTeamBrain(TeamBrain):
     """Teams speak in order; each broadcasts what it committed to the later ones.
 
@@ -1930,8 +1804,8 @@ TEAM_BRAIN_ROLES = {
     "individual": "no team talks to any other",
     "broadcast_chain": "teams speak in order, each broadcasting to the later ones",
     "centralized": "the first team leads; the rest report to it",
-    "decentralized_messageboard": "no team talks to any other, but every team reads and writes one shared board",
     "tag": "every team reads and writes one shared task graph, and may notify others to read it",
+    "board": "the same, with an unstructured shared message board in place of the graph -- DIG-TAG's ablation",
 }
 
 
@@ -2109,24 +1983,27 @@ def create_llm_team_topology(
 
     names = list(teams)
     brains: Dict[str, TeamBrain] = {}
-    # One board for the whole run: the mode is the sharing, so it is built
-    # here, where every brain is, and not by any one of them.
-    board = MessageBoard() if topology == "decentralized_messageboard" else None
-    # Likewise one task graph. Imported here and nowhere else in this module:
-    # `llm_tag` is the one runtime file that knows dig_tag (its own rule).
-    tag_graph = None
+    # One shared space for the whole run, whichever kind: the mode *is* the
+    # sharing, so it is built here, where every brain is, and not by any one of
+    # them. `llm_tag` is the one runtime file that knows dig_tag (its own
+    # rule), and `llm_board` is its ablation, so both are imported here.
+    tag_graph = board = None
     if topology == "tag":
         from coop2.comm_topology.llm_tag import TagTeamBrain, new_shared_tag  # noqa: PLC0415
 
         tag_graph = new_shared_tag()
+    elif topology == "board":
+        from coop2.comm_topology.llm_board import BoardTeamBrain, new_shared_board  # noqa: PLC0415
+
+        board = new_shared_board()
     for index, team_name in enumerate(names):
         extra: Dict[str, Any] = {}
         if topology == "broadcast_chain":
             factory = ChainTeamBrain
         elif topology == "centralized":
             factory = LeaderTeamBrain if index == 0 else FollowerTeamBrain
-        elif topology == "decentralized_messageboard":
-            factory = MessageboardTeamBrain
+        elif topology == "board":
+            factory = BoardTeamBrain
             extra["board"] = board
             extra["notify_budget"] = notify_budget
         elif topology == "tag":

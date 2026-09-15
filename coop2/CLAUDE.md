@@ -15,7 +15,7 @@ This file is only the operational summary.
 | layer | package | status |
 |---|---|---|
 | L6 experiment (runners, grid, metrics) | `coop2/experiment/` | **all three runners GPU-verified against a real LLM**; `inspect_scene.py` loads a scene without an episode |
-| L5 comm_topology (individual/chain/centralized/messageboard/tag) | `coop2/comm_topology/` | **the first three exercised at 9 and 12 robots**; `llm_team.py` makes a *team* the unit of every topology; `tag` (DIG-TAG's shared task graph, `llm_tag.py` over the vendored `coop2/dig_tag/`) is CPU-tested, no GPU run yet |
+| L5 comm_topology (individual/chain/centralized/tag/board) | `coop2/comm_topology/` | **the first three exercised at 9 and 12 robots**; `llm_team.py` makes a *team* the unit of every topology; `tag` (DIG-TAG's shared task graph, `llm_tag.py` over the vendored `coop2/dig_tag/`) is CPU-tested, no GPU run yet |
 | L4 cognitive/agent (FSM, memory, broker, prompts, LLM) | `coop2/cognitive/agent/` | **BDDL vocabulary aligned, FSM GPU-verified**; prompt scoped to the activity's objects, with plan history |
 | L3 cognitive/plan (plan lifecycle, PlanningEnvWrapper) | `coop2/cognitive/plan/` | **GPU-verified driving the facade** (2026-09-06) |
 | L2 cognitive/action (symbolic action → primitive) | `coop2/cognitive/action/behavior_action.py` | **rewritten, GPU-verified** (M5) |
@@ -2021,52 +2021,30 @@ clock before it is sent (`_say`), so sent and received interleave as they
 happened. Absolute wall time would not have worked: the broker stamps every
 message relative to the agents' start.
 
-## A fourth mode: decentralized_messageboard (2026-09-13)
+## The fourth mode was ours, and it is gone (2026-09-13, deleted 2026-09-15)
 
-Individual planning around one shared board (user). Nothing waits, nothing
-is sent, nothing interrupts: `MessageboardTeamBrain` (`llm_team.py`) keeps
-`wait_for`/`send_to` empty and the plain team barrier. What it adds is one
-`MessageBoard` (`coop2/comm_topology/message_board.py`) per run, handed to
-every brain by `create_llm_team_topology`. Each time a team plans, the board
-is section 7 of its prompt -- every post, oldest first, its own labelled
-`You (team_k)`, the others' posts since it last planned marked `(new)`, an
-empty board shown as empty so the model knows it exists -- and the planning
-call asks for `LLMMessageboardPlanResponse`, which is the team plan plus one
-`board_post`. The post is appended the moment the plans parse
-(`_on_plan_response`), so it is written by the same reasoning as the plans
-and the next team to reach its barrier reads it. Section 4 says all of this
-in the model's terms (`COOPERATION_RULES["decentralized_messageboard"]`). A
-post is not a message: it reaches no inbox, the broker never sees it, and a
-team already executing learns of it only when it next plans. The board is
-saved as `message_board.json` in the run directory.
+`decentralized_messageboard` was individual planning around one shared board
+of our own design: a `MessageBoard` in section 7, a `board_post` written in
+the planning call, and a notify tool reserved behind a flag that was never
+delivered. It ran no GPU episode.
 
-Three seams were added to `TeamBrain` for it, all with do-nothing defaults:
-`_call_plan_model` (which response schema the planning call uses),
-`_on_plan_response` (what to do with the parsed response before the plans
-go out), `_current_messages_block` / `_plan_closing` / `_cooperation_extra`
-(section 7, the closing line, and text appended to section 4).
+The user asked instead for **DIG-TAG's own board ablation**, and the reason
+is that ours could not have served as one. A board mode exists to answer
+"what does the *graph* buy?", which requires the two modes to differ in the
+shared space and in nothing else. Ours differed in four ways at once:
 
-**The notify tool is reserved, not built.** The user wants a team to be able
-to choose which other teams to interrupt. Its whole seam is behind
-`MessageboardTeamBrain.NOTIFY_TOOL_ENABLED` (False): when set, the schema
-becomes `LLMMessageboardNotifyPlanResponse` (adds `notify: NotifyRequest` --
-teams, content, reasoning), section 4 gains `MESSAGEBOARD_NOTIFY_RULES`, and
-`_on_plan_response` hands the request to `MessageBoard.notify`, which
-records it (`to_records()["notifies"]`) and delivers it only through an
-installed `MessageBoard.deliverer`, of which there is none. What building
-it means: a deliverer that sends through the broker with
-`interrupts_execution` to the named teams' members (what `_say` does for a
-fixed `send_to`, but choosing recipients per call), `interrupt_on_message`
-turned on in the runner, and those teams' interrupt rounds answering
-resume/replan as they do for a chain message; the mode already has its
-section 7 heading for such a message ("a team interrupted you with notify").
+* no notify without editing the source, so `tag` could interrupt and it could not;
+* no write and no notify from an interrupt round -- only from planning;
+* the board truncated to its last 12 posts, where the graph is shown whole;
+* the board *after* the robots' observations, where the graph is before them.
 
-Runner: `run_decentralized_messageboard.py` is `run_individual.main(
-topology="decentralized_messageboard")` -- `run_individual` took a
-`topology` parameter and grew `build_parser`/`main`; the run folder is
-`decentralized_messageboard_agents<N>_...`; `run_grid` and
-`build_results_table` know the name. `test_messageboard_stubbed.py` pins
-the mode (nine tests). No GPU episode has been run in this mode yet.
+Any `tag` vs board number would have measured those as much as the space.
+The three `TeamBrain` seams it introduced were kept and are what the port
+uses (`_call_plan_model`, `_on_plan_response`, `_plan_closing`); the rest --
+`message_board.py`, `MessageboardTeamBrain`, `run_decentralized_messageboard.py`,
+`LLMMessageboardPlanResponse`, `NotifyRequest`, `test_messageboard_stubbed.py`
+-- is deleted rather than kept beside `board`, so nothing can be run by the
+old name and reported under the new one.
 
 ## A fifth mode: tag -- DIG-TAG's shared task graph (2026-09-13)
 
@@ -2103,8 +2081,10 @@ interrupt, within a per-step budget; over it, dropped and recorded) and a
 plan or null. Reasoning and interrupt handling are the same round. The graph
 starts empty.
 
-**How it lands here** (`llm_tag.TagTeamBrain`, a `TeamBrain` subclass like
-the board's):
+**How it lands here** (`llm_tag.TagTeamBrain`; since 2026-09-15 a subclass of
+`NotifyingTeamBrain`, which holds the round -- see "The round is shared with
+the ablation" below. The bullets describe the behaviour, which did not
+change; where the code lives did):
 
 * Sections 5 and 6 of the prompt were reserved for exactly this and are
   filled: 5 is the manual (`TAG_MANUAL`, their `TAG_ROLE` said to a team
@@ -2125,10 +2105,7 @@ the board's):
   type `notify`, so the broker interrupts the named team and its interrupt
   barrier runs the same round. Budget per team per environment step
   (`--notify-budget`, default 1), reset by the runner after every `env.step`
-  (`reset_notify_budgets`). The board's reserved seam is filled by the same
-  machinery: the factory installs `MessageboardTeamBrain._deliver_notify` as
-  the board's deliverer, so with `NOTIFY_TOOL_ENABLED` the board mode is
-  their ablation exactly; the flag stays off by default.
+  (`reset_notify_budgets`).
 * **A notification that arrives during a team's planning call is answered
   before its plans go out** -- their `_rounds` loop. The broker skips a team
   in R, so such a message only lands in the inboxes; `after_plan` drains
@@ -2198,6 +2175,58 @@ opaque; the environment writes nothing into it); and the graph is empty at
 t=0, the task being stated in section 6 as for every mode. Seeding the graph
 with the route, or attaching the tracker's events as evidence, would be an
 experiment variable, not part of the port.
+
+## The board ablation, and the round it shares with tag (2026-09-15)
+
+DIG-TAG's second mode, ported as decided with the user: **the graph replaced
+by an unstructured shared board, and nothing else different.** Our own
+`decentralized_messageboard` is deleted rather than kept beside it (section
+"The fourth mode was ours, and it is gone" above says why it could not have
+served as the ablation). Done in the worktree `board-ablation` while a sweep
+ran in this checkout.
+
+**The round is shared with tag, because upstream shares it.**
+`ma_crafter/comm_topology/notify.py` defines a `NotifyingAgent` that both
+their TAG agent and their board agent subclass; the round, the budget and the
+late-notify path live there, and each mode fills six seams. The first draft
+here was `llm_tag.py` copied and edited -- about 120 identical lines -- and
+the user turned that down ("大致结构应该和tag很像，可以考虑复用"). That copy is
+the ablation's own failure mode arriving before the second mode has run: fix
+a round defect in one file and the comparison silently stops being a
+comparison. `coop2/comm_topology/notifying_team.py` is our `notify.py`, and
+`test_board_stubbed.py` test 8 asserts structurally that neither subclass
+overrides any part of the round -- only:
+
+    _observe_space()          what the space looks like right now
+    _space_section(obs)       how the prompt shows it (section 6.1)
+    _observed(obs)            ids of what it showed, for the record
+    _record_fields()          the record's space-specific keys, empty
+    _apply(response, record)  the space's part of the answer lands
+    _summary(record)          one line for the log
+
+plus `SPACE_NAME`, `MANUAL`, `NOTIFY_TEXT` and the two schemas. `llm_tag.py`
+lost 120 lines to the move and behaves identically: all eight of its tests
+pass unchanged but for the record list's name.
+
+**A name collision the test caught, not the reading.** `TeamBrain.rounds` is
+already an int -- how many planning rounds this team has done -- so the base's
+record list shadowing it raised `TypeError: 'int' object is not iterable`
+inside `request_plan` on the first stubbed run. The records are
+`round_records`; the per-mode files stay `tag_rounds.json` / `board_rounds.json`.
+
+**What the board is.** `SharedBoard` is upstream's `SharedMessageBoard` to
+the letter: posts in order, each with author and env_step, a lock around the
+writes (teams plan on threads) and copies out of `history()`. Its one tool is
+`write(text)` against the graph's eight, and **that asymmetry is the ablation,
+not an omission**. `_apply` cannot reject anything -- the board takes any text,
+where the graph refuses an action against a stale version. The prompt shows
+**the complete history**, not a window: truncating would hand `tag` an
+advantage the ablation is not supposed to be testing.
+
+Runner: `run_board.py` is `run_individual.main(topology="board")`, with the
+same `--notify-budget`; `sweep_grid`, `run_grid`, `run_s1_grid` and
+`build_results_table` know the name. No GPU episode has been run in this mode
+yet.
 
 ## Two answers to "which room is it in", and the one the sampler gave (2026-09-13)
 
@@ -2473,12 +2502,12 @@ python -u -m coop2.experiment.run_individual --agents 2 --steps 4000 --seed 0 \
   --bddl-activity coop_two_apples_pomaria \
   --goal "Put both apples on coffee_table.n.01_1." \
   --model gpt-5.6-luna --llm-quiet
-# run_centralized / run_broadcast_chain / run_decentralized_messageboard /
-# run_tag take the same flags. Output lands in
-# coop2/runs/<topology>_agents<N>_..._<timestamp>/; the board mode also writes
-# message_board.json there, and the tag mode tag.json, tag_rounds.json and
-# tag.pdf. run_tag also takes --notify-budget N (default 1: how many times a
-# team may interrupt other teams between two environment steps).
+# run_centralized / run_broadcast_chain / run_tag / run_board take the same
+# flags. Output lands in coop2/runs/<topology>_agents<N>_..._<timestamp>/; the
+# tag mode also writes tag.json, tag_rounds.json and tag.pdf there, and the
+# board mode board.json and board_rounds.json. run_tag and run_board also take
+# --notify-budget N (default 1: how many times a team may interrupt other
+# teams between two environment steps).
 
 # Twelve robots as three teams of four on the nine-apple hall -- the 2026-09-11
 # sweep, about 17 minutes a topology. --time-limit-seconds 0 is required or the

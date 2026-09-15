@@ -135,7 +135,7 @@ def main() -> int:
     assert with_digtag.rstrip().endswith("## 5.1 DIGTAG MANUAL\ndigtag manual goes here"), with_digtag[-120:]
     brain.reserved_system_prompt = ""
     for mode in ("individual", "broadcast_chain", "centralized_leader", "centralized_follower",
-                 "decentralized_messageboard", "tag"):
+                 "board", "tag"):
         assert f"## 4. COOPERATION MODE" in ps.cooperation_section(mode)
     # User side: observations, then messages now, then history, then action history.
     brain.memory.record_message_out(sender="team_0", recipients=["team_1"], content="we take C1", env_step=3)
@@ -171,7 +171,7 @@ def main() -> int:
     assert len(handoff) == 1, BEST_PRACTICES
     handoff = handoff[0]
     for mode in ("individual", "broadcast_chain", "centralized_leader",
-                 "centralized_follower", "decentralized_messageboard", "tag"):
+                 "centralized_follower", "board", "tag"):
         text = build_sys("team_0", ["ridgeback_1", "jackal_1"], cooperation_mode=mode,
                          reserved=("MANUAL" if mode == "tag" else ""))
         assert "## 5. BEST PRACTICE" in text, mode
