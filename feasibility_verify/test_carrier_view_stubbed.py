@@ -235,6 +235,34 @@ def main() -> int:
     assert world.held_objects() == {}, "a cleared load must free the object"
     print("  ok: held_objects covers cargo, and the carrier says what it carries")
 
+    print("\ntest 10: a carrier can see where its stranded arm is, and how far")
+    # The handoff BEST PRACTICE asks for is "navigate the carrier to the arm",
+    # and until 2026-09-14 the carrier's own listing showed the arm as a bare
+    # name: no verb, no distance, because navigate_to shared a gate with
+    # load_onto (arm required, carrier required). Measured on tag/sets_5/LH:
+    # ridgeback_3 froze holding the cargo and jackal_3 spent 2400 steps being
+    # sent to the destination instead of to it.
+    far = scene("agent_1", box_held_by="agent_0", jackal_at=(2.8, 0.0))
+    got = verbs(far)
+    assert ("navigate_to", "agent_0") in got, sorted(got)
+    # Driving is all it gains: the cargo verbs still need a hand.
+    assert {v[0] for v in got} <= {"navigate_to", "unreachable"}, sorted(got)
+    line = next(l for l in sv.render_symbolic_view(far, interaction_radius=1.5).splitlines()
+                if "agent_0" in l and "->" in l)
+    assert "navigate_to" in line and "m away" in line, line
+    # An arm sees a non-carrier teammate the same way, and still cannot load
+    # cargo onto it.
+    arm_side = scene("agent_0", box_held_by=None, jackal_at=(2.8, 0.0), ridgeback_locked=True)
+    arm_side.entities["agent_2"] = EntityObservation(
+        "agent_2", "agent_2", "agent", [ROOM], position=(2.0, 0, 0), is_robot=True)
+    got = verbs(arm_side)
+    assert ("navigate_to", "agent_2") in got, sorted(got)
+    assert ("load_onto", "agent_2") not in got, "only a carrier takes cargo"
+    # A locked base is still offered no navigate_to, to anything.
+    locked = verbs(scene("agent_0", box_held_by="agent_0", jackal_at=(2.8, 0.0)))
+    assert not [v for v in locked if v[0] == "navigate_to"], sorted(locked)
+    print("  ok: navigate_to reaches any teammate; load_onto still needs an arm and a carrier")
+
     print("\nALL TESTS PASSED")
     return 0
 

@@ -413,19 +413,29 @@ def target_hints(
             # about to drive off. Its verbs live on the carrier's line.
             continue
         if entity.is_robot:
-            # A teammate is not a target -- except a carrier, which is the one
-            # place cargo can go. Both verbs are gated on reach, like every
-            # other manipulation: the engine gates them on GATE_CARRY and the
-            # two have to agree or the prompt promises what the engine refuses.
-            if (armless or not entity.is_carrier
-                    or (me is not None and entity.entity_id == me.entity_id)):
+            if me is not None and entity.entity_id == me.entity_id:
                 continue
             distance, in_range, _far = _reach(entity)
+            # Driving to a teammate is not manipulation, so it is not gated on
+            # having an arm or on the teammate being a carrier. It used to be,
+            # and the pairing that gate excluded is the one the handoff needs:
+            # a carrier could not see where its own base-locked arm was
+            # stranded, which is exactly the move BEST PRACTICE asks it to make
+            # ("navigate the carrier to the arm"). Measured 2026-09-14 on
+            # tag/sets_5/LH: ridgeback_3 froze holding the cargo and jackal_3,
+            # two metres away in the same room, was shown the teammate's name
+            # with no verb and no distance for 2400 steps.
             if not grounded:
                 hints.append(ActionHint(
                     "navigate_to", entity.entity_id, entity.name,
                     "" if in_range else f"{distance:.1f} m away",
                 ))
+            # The cargo verbs are manipulation -- an arm, and a carrier to put
+            # it on. Both are gated on reach, like every other manipulation:
+            # the engine gates them on GATE_CARRY and the two have to agree or
+            # the prompt promises what the engine refuses.
+            if armless or not entity.is_carrier:
+                continue
             if not in_range:
                 hints.append(ActionHint(
                     "unreachable", entity.entity_id, entity.name,

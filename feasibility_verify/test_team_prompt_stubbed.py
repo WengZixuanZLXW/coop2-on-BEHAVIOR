@@ -132,7 +132,7 @@ def main() -> int:
     assert "## 5. DIGTAG" not in system, "the reserved slot adds nothing while empty"
     brain.reserved_system_prompt = "digtag manual goes here"
     with_digtag = brain._system_prompt(brain.members[members[0]])
-    assert with_digtag.rstrip().endswith("DIGTAG:\ndigtag manual goes here"), with_digtag[-120:]
+    assert with_digtag.rstrip().endswith("## 5.1 DIGTAG MANUAL\ndigtag manual goes here"), with_digtag[-120:]
     brain.reserved_system_prompt = ""
     for mode in ("individual", "broadcast_chain", "centralized_leader", "centralized_follower",
                  "decentralized_messageboard", "tag"):
@@ -152,7 +152,7 @@ def main() -> int:
     assert "TOO_FAR" not in user2.split("## 7.")[0], "and no longer under the robot's observation"
     brain.reserved_task_observation = "digtag task view"
     user3 = brain._build_team_prompt([brain.members[n] for n in members])[1]["content"]
-    assert "DIGTAG TASK OBSERVATION:\ndigtag task view" in user3.split("=== ROBOT")[0]
+    assert "## 6.1 DIGTAG TASK OBSERVATION\ndigtag task view" in user3.split("=== ROBOT")[0]
     ok("1-5 in order in the system prompt, 6-9 in the user prompt, both digtag slots wired")
 
     print("test: section 5 is the best practice list in every mode, handoff order first, digtag after it")
@@ -161,12 +161,15 @@ def main() -> int:
     # moment the cargo is in its hand. The rule is standing, not mode-specific
     # -- a base-locked arm and a carrier are in every S1 layout.
     from coop2.cognitive.agent.prompt_sections import (
-        BEST_PRACTICES, HANDOFF_ORDER, build_team_system_prompt as build_sys,
+        BEST_PRACTICES, build_team_system_prompt as build_sys,
     )
-    # Membership, not position: the list is edited by hand and the order in it
-    # is the author's call (HANDOFF_ORDER moved to last on 2026-09-14). What
-    # must hold is that every practice reaches section 5 in every mode.
-    assert HANDOFF_ORDER in BEST_PRACTICES
+    # By content, not by name: the handoff order is written inline in the
+    # tuple (user, 2026-09-14), and the order within the tuple is the author's
+    # call. What must hold is that it is there and that every practice reaches
+    # section 5 in every mode.
+    handoff = [p for p in BEST_PRACTICES if "carrier to the arm" in p]
+    assert len(handoff) == 1, BEST_PRACTICES
+    handoff = handoff[0]
     for mode in ("individual", "broadcast_chain", "centralized_leader",
                  "centralized_follower", "decentralized_messageboard", "tag"):
         text = build_sys("team_0", ["ridgeback_1", "jackal_1"], cooperation_mode=mode,
@@ -175,14 +178,16 @@ def main() -> int:
         section5 = text.split("## 5. BEST PRACTICE", 1)[1]
         for practice in BEST_PRACTICES:
             assert practice in section5, (mode, practice)
-        assert ("DIGTAG:\nMANUAL" in text) == (mode == "tag"), mode
+        assert ("## 5.1 DIGTAG MANUAL\nMANUAL" in text) == (mode == "tag"), mode
         # A practice is stated once: not also as a rule in sections 1-4.
         before = text.split("## 5. BEST PRACTICE", 1)[0]
         for token in ("fails again", "similar length", "size a wait", "One robot per object"):
             assert token.lower() not in before.lower(), (mode, token)
     # The order must be the one measured to work: arm to the target, then
     # carrier to the arm. Stated the other way round it is the failing plan.
-    assert HANDOFF_ORDER.index("arm to the target") < HANDOFF_ORDER.index("carrier"), HANDOFF_ORDER
+    # Between the two navigate clauses, not the first mention of the word: the
+    # sentence opens "To transfer an object with carrier", so "carrier" leads.
+    assert handoff.index("navigate the arm") < handoff.index("navigate the carrier"), handoff
     ok("section 5 lists the practices once, arm-to-target then carrier-to-arm first, in all six modes; digtag follows under tag")
 
     print("\nALL TESTS PASSED")

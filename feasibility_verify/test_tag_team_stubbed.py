@@ -34,13 +34,12 @@ from coop2.cognitive.agent.llm_client import (
     NavigateToAction,
     TagToolCall,
     Task,
-    TaskSpecification,
     TeamAgentInterruptDecision,
     TeamAgentPlan,
 )
 from coop2.cognitive.agent.prompt_sections import cooperation_section, current_messages_section
 from coop2.cognitive.messages import MessageBroker
-from coop2.cognitive.agent.prompt_sections import HANDOFF_ORDER
+from coop2.cognitive.agent.prompt_sections import BEST_PRACTICES
 from coop2.comm_topology.llm_tag import (
     NOTIFY_MESSAGE_TYPE,
     TAG_MANUAL,
@@ -113,7 +112,7 @@ class StubClient:
             plans = [
                 TeamAgentPlan(
                     agent_id=name,
-                    task=TaskSpecification(task=Task.ONTOP, object_type="die.n.01_1", reference="cabinet.n.01_5"),
+                    task="ontop(die.n.01_1, cabinet.n.01_5)",
                     actions=[NavigateToAction(target="die.n.01_1")],
                     reasoning=f"{name} goes",
                 )
@@ -179,8 +178,10 @@ def main() -> int:
     system = brains["team_1"]._system_prompt(agents["drone_1"])
     assert "## 4. COOPERATION MODE: SHARED TASK GRAPH" in system
     # Section 5 is the best practice list (handoff order first), the manual after it.
-    assert system.rstrip().endswith("DIGTAG:\n" + TAG_MANUAL.strip()), system[-200:]
-    assert "## 5. BEST PRACTICE" in system and HANDOFF_ORDER in system
+    assert system.rstrip().endswith("## 5.1 DIGTAG MANUAL\n" + TAG_MANUAL.strip()), system[-200:]
+    assert "## 5. BEST PRACTICE" in system
+    for practice in BEST_PRACTICES:
+        assert practice in system, practice
     for tool in ("open(goal, rule, state)", "update(task, state)", "close(identity)", "attach(task, payload)"):
         assert tool in system, tool
     ok("three TagTeamBrains, one graph, empty wiring, sections 4 and 5 in place")
@@ -188,10 +189,15 @@ def main() -> int:
     print("test 2: the empty graph is section 6, above the robots, with the budget")
     b1 = brains["team_1"]
     user = b1._build_team_prompt(members(b1))[1]["content"]
-    assert "DIGTAG TASK OBSERVATION:" in user, user[:400]
-    slot = user.index("DIGTAG TASK OBSERVATION:")
+    assert "## 6.1 DIGTAG TASK OBSERVATION" in user, user[:400]
+    slot = user.index("## 6.1 DIGTAG TASK OBSERVATION")
     assert user.index("## 6. OBSERVATIONS") < slot < user.index("=== ROBOT drone_1 ===")
-    assert "(none yet" in user and "Notify budget left until the next environment step: 1" in user
+    assert "(none yet" in user, user[:400]
+    # The budget counts notifications, and one may name several teams -- the
+    # line says both, because with the old wording the model read the budget
+    # as "one team" and never notified more than one (2026-09-14).
+    assert "Notifications left until the next environment step: 1" in user, user[-400:]
+    assert "one notification may name several teams" in user, user[-400:]
     closing = user.rsplit("\n\n", 1)[1]
     assert "`tag_actions`" in closing and "`notify`" in closing, closing
     assert "## 7." not in user, "nothing was received"
@@ -229,7 +235,9 @@ def main() -> int:
     prompt = client.prompts[-1][1]["content"]
     assert "## 7. MESSAGES RECEIVED NOW -- a team notified you" in prompt
     assert "notification from team_1" in prompt
-    assert "q1 [task k1] goal: carry die.n.01_1 to C1" in prompt, "the open had landed before team_2 was woken"
+    # goal / rule / state are a line each now, so the id line ends at the id.
+    assert "q1 [task k1]" in prompt, "the open had landed before team_2 was woken"
+    assert "goal: carry die.n.01_1 to C1" in prompt
     assert "history: open by team_1 -> q1" in prompt
     assert "evidence phi1 by team_1: the die is 2 m from drone_1" in prompt
     assert list(graph.tasks) == ["q1", "q2"] and graph.tasks["q2"].identity == "k1"

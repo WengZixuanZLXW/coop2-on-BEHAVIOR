@@ -79,24 +79,19 @@ TAG_FIGURE_PITCH = 0.2
 
 #: Section 5. DIG-TAG's TAG_ROLE, said to a team controller rather than to a
 #: robot: the vocabulary and the three-part answer are unchanged.
-TAG_MANUAL = """A task has a persistent identity (k1, k2, ...) and a current version (q1,
-q2, ...) with a goal, a rule for judging it, and a reported state; the graph
-shows each open task's current version, history (which team did what),
-relations, and evidence.
+TAG_MANUAL = """A task has a persistent identity (k1, k2, ...) and a current version (q1, q2, ...) with a goal, a rule for judging it, and a reported state; the graph shows each open task's current version, history (which team did what), relations, and evidence.
 tag_actions, applied in order:
 - open(goal, rule, state): a new task, fresh identity.
 - edit(task, goal, rule): a new version with a new goal or rule.
 - update(task, state): a new version with a new reported state.
-- split(task, parts): two or more parts, each with goal, rule, state; identity
-  null for a fresh one.
+- split(task, parts): two or more parts, each with goal, rule, state; identity null for a fresh one.
 - join(tasks, goal, rule, state): versions of distinct tasks into one.
 - close(identity): no further work on that task.
 - attach(task, payload): evidence or a note on an exact version.
-Open what nobody is doing, update the state of what your robots do, attach
-what you learned, close what is done, in the task's own ids (cargo, support,
-room). Only a task's current version can be continued; acting on an older one
-starts a new task. A rejected action is reported back and the others still
-apply."""
+
+Open what nobody is doing, update the state of what your robots do, attach what you learned, close what is done, in the task's own ids (cargo, support, room).
+Only a task's current version can be continued; acting on an older one starts a new task.
+A rejected action is reported back and the others still apply."""
 
 _round_sequence = itertools.count()
 _round_sequence_lock = threading.Lock()
@@ -141,10 +136,14 @@ def format_tag_observation(tag_observation: Dict[str, Any], team_names: List[str
     lines = [f"Open tasks (graph shared by {', '.join(team_names)}):"]
     if versions:
         for version in versions:
-            lines.append(
-                f"  {version.id} [task {version.identity}] goal: {version.spec.goal}; "
-                f"rule: {version.spec.rule}; state: {version.state}"
-            )
+            # One line each. They were joined with "; " into a single line
+            # that ran past 300 characters, three sentences deep, and the graph
+            # is the one part of the prompt a team reads to decide whether a
+            # task is taken.
+            lines.append(f"  {version.id} [task {version.identity}]")
+            lines.append(f"    goal: {version.spec.goal}")
+            lines.append(f"    rule: {version.spec.rule}")
+            lines.append(f"    state: {version.state}")
             steps = histories.get(version.identity, [])
             if steps:
                 shown = steps[-HISTORY_SHOWN:]
@@ -170,7 +169,8 @@ def format_tag_observation(tag_observation: Dict[str, Any], team_names: List[str
             if all(v.identity != identity for v in versions)]
     if idle:
         lines.append(f"Open tasks without a current version: {', '.join(idle)}")
-    lines.append(f"Notify budget left until the next environment step: {budget_left}")
+    lines.append(f"Notifications left until the next environment step: {budget_left} "
+                 "(one notification may name several teams)")
     return "\n".join(lines)
 
 
