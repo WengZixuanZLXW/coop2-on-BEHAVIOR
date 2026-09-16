@@ -80,6 +80,14 @@ TAG_FIGURE_PITCH = 0.2
 
 #: Section 5. DIG-TAG's TAG_ROLE, said to a team controller rather than to a
 #: robot: the vocabulary and the three-part answer are unchanged.
+#:
+#: One line is ours (user, 2026-09-15): a state must name the exact robots
+#: needed to advance the version. The `sets_3_uniform` runs are why -- with
+#: one robot kind per team, every one of the 239 carry actions in 12 episodes
+#: was cross-team (against 2 of 450 in the mixed layout), so no team can move
+#: the cargo without a named robot from another team, and free-text `state` is
+#: the only place that request can travel. Without it a state said "team_1 is
+#: on it", which tells the team holding the carrier nothing it can act on.
 TAG_MANUAL = """A task has a persistent identity (k1, k2, ...) and a current version (q1, q2, ...) with a goal, a rule for judging it, and a reported state; the graph shows each open task's current version, history (which team did what), relations, and evidence.
 tag_actions, applied in order:
 - open(goal, rule, state): a new task, fresh identity.
@@ -91,6 +99,7 @@ tag_actions, applied in order:
 - attach(task, payload): evidence or a note on an exact version.
 
 Open what nobody is doing, update the state of what your robots do, attach what you learned, close what is done, in the task's own ids (cargo, support, room).
+A state must name the exact robots needed to advance that version -- not the team, the robots: who holds the cargo now, and which specific robot must act next for it to move ("ridgeback_1 holds it, base locked; needs jackal_2 to come and be loaded"). A robot you need may belong to another team, and the state is where that team reads it.
 Only a task's current version can be continued; acting on an older one starts a new task.
 A rejected action is reported back and the others still apply."""
 

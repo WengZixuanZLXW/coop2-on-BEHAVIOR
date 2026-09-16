@@ -135,18 +135,26 @@ def _spans(
     return spans
 
 
-def _step_label(first: int, last: int) -> str:
+def _step_label(first: int, last: int, mode: str = "range") -> str:
     """``"280"`` when the world did not move, ``"0-280"`` when it did.
 
     A degenerate range is the point, not a defect: R, W and I all freeze the
     env, so a single number *is* the reading, and seeing the same number on
     three consecutive bars is how the barrier shows up in the figure.
+
+    ``mode="end"`` prints only the step the span ended on. Half the ink for a
+    figure read at a glance, at the cost of the range -- and the range is the
+    part that says how much simulation the span bought, so keep "range" when
+    that is the question.
     """
+    if mode == "end":
+        return str(max(first, last))
     return str(first) if last <= first else f"{first}-{last}"
 
 
 
-def _draw_messages(axes, messages, lane_of, end_time) -> int:
+def _draw_messages(axes, messages, lane_of, end_time, linewidth: float = 1.0,
+                   arrow_scale: float = 10.0, solid: bool = False) -> int:
     """Overlay sender -> recipient arrows. Returns how many were drawn.
 
     One arrow per (message, recipient). ``lane_of`` holds whatever can be
@@ -179,7 +187,9 @@ def _draw_messages(axes, messages, lane_of, end_time) -> int:
         # round trip, the second is free -- so they must not be the same stroke.
         # `interrupts_execution` is the field the broker itself reads.
         interrupting = bool((message.get("metadata") or {}).get("interrupts_execution", True))
-        style = "-" if interrupting else (0, (2, 2))
+        # `solid` gives up that distinction on purpose, for a figure where
+        # the strokes are meant to read as one thing.
+        style = "-" if (interrupting or solid) else (0, (2, 2))
         axes.plot(
             [when], [lane_of[sender]], marker="o", markersize=3.5,
             color=MESSAGE_COLOUR, zorder=5,
@@ -190,7 +200,8 @@ def _draw_messages(axes, messages, lane_of, end_time) -> int:
                 xy=(when, lane_of[recipient]), xytext=(when, lane_of[sender]),
                 arrowprops={
                     "arrowstyle": "-|>", "color": MESSAGE_COLOUR,
-                    "linewidth": 1.0, "shrinkA": 1.5, "shrinkB": 1.5,
+                    "linewidth": linewidth, "shrinkA": 1.5, "shrinkB": 1.5,
+                    "mutation_scale": arrow_scale,
                     "connectionstyle": "arc3,rad=0.12",
                     "linestyle": style, "alpha": 1.0 if interrupting else 0.55,
                 },
@@ -209,6 +220,18 @@ def plot_agent_state_timeline(
     teams: Optional[Dict[str, Any]] = None,
     holds: Optional[Dict[str, List[Any]]] = None,
     legend: bool = True,
+    title_fontsize: Optional[float] = None,
+    step_label: str = "range",
+    step_fontsize: float = 7.0,
+    message_linewidth: float = 1.0,
+    note_absorbed: bool = True,
+    tick_fontsize: Optional[float] = None,
+    lane_fontsize: Optional[float] = None,
+    xlabel_pad: Optional[float] = None,
+    title_fontweight: Optional[str] = None,
+    show_lane_labels: bool = True,
+    message_arrow_scale: float = 10.0,
+    message_solid: bool = False,
 ) -> Optional[str]:
     """Write a Gantt-style figure of agent states. Returns the path, or None.
 
@@ -338,17 +361,20 @@ def plot_agent_state_timeline(
             # The env_step range inside the span, where it fits: it is how a
             # reader ties this figure back to plan_logs.json, and the width of
             # the range is how much simulation the span actually bought.
-            if stop - start > end_time * 0.05:
+            if step_label != "none" and stop - start > end_time * 0.05:
                 axes.text(
-                    (start + stop) / 2, lane, _step_label(first_step, last_step),
-                    ha="center", va="center", fontsize=7, color="white",
+                    (start + stop) / 2, lane,
+                    _step_label(first_step, last_step, step_label),
+                    ha="center", va="center", fontsize=step_fontsize, color="white",
                 )
 
     # Teams and robots share one address space on the figure, because they do
     # in the log: a message record names its sender, and that is a team name
     # when a team sent it and an agent id when a robot did.
     drawn_messages = _draw_messages(
-        axes, messages or [], {**lane_of_agent, **lane_of_team}, end_time
+        axes, messages or [], {**lane_of_agent, **lane_of_team}, end_time,
+        linewidth=message_linewidth, arrow_scale=message_arrow_scale,
+        solid=message_solid,
     )
     message_count = sum(drawn_messages.values())
 
@@ -357,8 +383,13 @@ def plot_agent_state_timeline(
             axes.axhline(lane - 0.5, color="#adb5bd", linewidth=0.6, zorder=0)
 
     axes.set_yticks(range(len(rows)))
+    # Off for every panel but the first when several are stitched together:
+    # the lanes are the same robots in the same order, so repeating the
+    # column costs width and says nothing.
     axes.set_yticklabels(
         [name if kind == "team" else f"   {name}" for kind, name in rows]
+        if show_lane_labels else [""] * len(rows),
+        fontsize=lane_fontsize if lane_fontsize is not None else tick_fontsize,
     )
     for label, (kind, _name) in zip(axes.get_yticklabels(), rows):
         if kind == "team":
@@ -368,11 +399,27 @@ def plot_agent_state_timeline(
     # A sliver of left margin: a leader's opening broadcast is sent at t~0, and
     # against xlim=(0, ...) its marker and arrowhead sit on the spine.
     axes.set_xlim(-end_time * 0.012, end_time)
-    xlabel = "wall clock (s) -- labels inside the bars are the env_step range"
-    if absorbed_total:
+    xlabel = "time (s)"
+    if step_label != "none":
+        xlabel += ("  --  labels inside the bars are the env_step "
+                   + ("the span ended on" if step_label == "end" else "range"))
+    if absorbed_total and note_absorbed:
+        # Kept by default: it is a disclosure, not decoration -- spans too
+        # narrow to draw were folded away, and a reader counting bars is
+        # otherwise not told. Turn it off only for a figure that has said
+        # it elsewhere.
         xlabel += f"  |  {absorbed_total} sub-pixel spans folded into their neighbour"
     axes.set_xlabel(xlabel)
-    axes.set_title(title or os.path.basename(os.path.dirname(os.path.abspath(output_path))))
+    if tick_fontsize is not None:
+        # One size for both axes and the axis name. The y labels take it
+        # through set_yticklabels; the x numbers and the axis name each need
+        # saying separately or they stay at the rcParam default.
+        axes.tick_params(axis="x", labelsize=tick_fontsize)
+        axes.xaxis.label.set_fontsize(tick_fontsize)
+    if xlabel_pad is not None:
+        axes.xaxis.labelpad = xlabel_pad
+    axes.set_title(title or os.path.basename(os.path.dirname(os.path.abspath(output_path))),
+                   fontsize=title_fontsize, fontweight=title_fontweight)
     axes.grid(axis="x", alpha=0.3, linestyle=":")
 
     order = [s for s in ("reasoning", "interrupted", "waiting", "executing", "holding")

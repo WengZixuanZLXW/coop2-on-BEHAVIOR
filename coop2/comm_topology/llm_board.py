@@ -60,11 +60,13 @@ from coop2.comm_topology.notifying_team import (
 )
 
 __all__ = [
+    "CLEAR_BOARD_EACH_STEP",
     "DEFAULT_NOTIFY_BUDGET",
     "NOTIFY_MESSAGE_TYPE",
     "BOARD_MANUAL",
     "BoardTeamBrain",
     "SharedBoard",
+    "clear_boards",
     "board_rounds_of",
     "format_board_observation",
     "new_shared_board",
@@ -75,14 +77,36 @@ __all__ = [
 # NOTIFY_MESSAGE_TYPE and DEFAULT_NOTIFY_BUDGET are the shared round's, so a
 # notification from either mode is the same message under the same budget.
 
+#: Whether the board is wiped after every environment step (user, 2026-09-15).
+#:
+#: **This is not upstream's board and not DIG-TAG's ablation.** Theirs persists
+#: for the episode, which is what the graph does and what makes the pair differ
+#: only in the space's *shape*. Clearing removes persistence as well, so a
+#: `tag` vs `board` number measured with this on answers "what do structure AND
+#: memory together buy?", not "what does structure buy?".
+#:
+#: What it leaves is a scratchpad for one decision point: the env does not step
+#: while any team is planning, so posts written in a planning window survive
+#: until the world next moves, and a team that plans after executing finds the
+#: board empty. Nothing is deleted -- `clear` only moves the visible start, so
+#: `board.json` still holds the whole episode.
+CLEAR_BOARD_EACH_STEP = True
+
 #: Section 5, from upstream's MESSAGE_BOARD_ROLE, said to a team controller
 #: rather than to a robot. One tool against the graph's eight: that asymmetry
 #: is the ablation, not an omission.
+#:
+#: The closing paragraph is gone (user, 2026-09-15). It held two of upstream's
+#: own sentences -- "Say what you are doing, what you found, or what you need
+#: from others; every team reads it" and "Keep it short and useful" -- plus one
+#: of ours about the board having no structure and retracting nothing. What is
+#: left is what the space *is* and the one tool that acts on it, with no advice
+#: on what to put in a post. `TAG_MANUAL` still advises (it says what a state
+#: must name), so the two manuals are no longer symmetric in how much they
+#: coach; any tag-vs-board number from here reads partly as that.
 BOARD_MANUAL = """The teams coordinate through one shared message board: every post, in the order it was made, with its author and the environment step. You are shown its complete history each time you plan or are notified.
 write, the board's one tool:
-- write(text): a message for the board, or null to write nothing.
-
-Say what you are doing, what you found, or what you need from others; every team reads it. Keep it short and useful. The board has no structure and nothing is retracted: a post stays as written, and a claim someone made earlier is only as true as it was then."""
+- write(text): a message for the board, or null to write nothing."""
 
 class SharedBoard:
     """An unstructured shared board: posts in order, each with its author and
@@ -96,6 +120,10 @@ class SharedBoard:
     def __init__(self) -> None:
         self._posts: List[Dict[str, Any]] = []
         self._lock = threading.Lock()
+        # Where the visible window starts. `clear` moves it; nothing is ever
+        # deleted, so `to_dict` still saves the whole episode -- a prompt
+        # window that shrinks must not cost the run its record.
+        self._visible_from = 0
 
     def write(self, author: str, text: str, env_step: int) -> Dict[str, Any]:
         """The board's one tool: a message, posted with its author and step."""
@@ -106,12 +134,36 @@ class SharedBoard:
             return dict(entry)
 
     def history(self) -> List[Dict[str, Any]]:
-        """Every post so far, in order; copies."""
+        """The visible posts, in order; copies.
+
+        Everything since the last `clear`, which with per-step clearing is
+        everything said inside the current planning window. Without clearing
+        this is the whole episode, which is upstream's board.
+        """
+        with self._lock:
+            return [dict(entry) for entry in self._posts[self._visible_from:]]
+
+    def clear(self) -> int:
+        """Hide what is on the board; return how many posts this hid.
+
+        Called after every environment step when `board_clears_each_step` is
+        on (user, 2026-09-15). Indices stay monotonic across a clear, so a
+        post's id is still unique over the episode and `board_rounds.json`'s
+        `observed` can be matched against `board.json`.
+        """
+        with self._lock:
+            hidden = len(self._posts) - self._visible_from
+            self._visible_from = len(self._posts)
+            return hidden
+
+    def all_posts(self) -> List[Dict[str, Any]]:
+        """Every post of the episode, cleared or not -- what the run saves."""
         with self._lock:
             return [dict(entry) for entry in self._posts]
 
     def to_dict(self) -> Dict[str, Any]:
-        return {"schema": "message_board.v1", "posts": self.history()}
+        # all_posts, not history: the record is the episode, not the window.
+        return {"schema": "message_board.v1", "posts": self.all_posts()}
 
     def save_json(self, path: "str | Path") -> Path:
         path = Path(path).expanduser()
@@ -200,6 +252,20 @@ class BoardTeamBrain(NotifyingTeamBrain):
     def _interrupt_closing(self) -> str:
         return (super()._interrupt_closing()
                 + " Also `write` (null if none) and `notify` (usually empty).")
+
+
+def clear_boards(agents: Dict[str, Any]) -> int:
+    """Wipe the run's board after an environment step; return posts hidden.
+
+    Mirrors `reset_notify_budgets`, is called from the same place, and is a
+    no-op for every mode without a board and while `CLEAR_BOARD_EACH_STEP` is
+    off.
+    """
+    if not CLEAR_BOARD_EACH_STEP:
+        return 0
+    boards = {id(a.brain.board): a.brain.board for a in agents.values()
+              if isinstance(getattr(a, "brain", None), BoardTeamBrain)}
+    return sum(board.clear() for board in boards.values())
 
 
 # -- what a run saves ------------------------------------------------------

@@ -297,6 +297,13 @@ def run_individual_experiment(
             # After a step every team may notify again (DIG-TAG's rule: the
             # budget is per agent between two environment steps).
             reset_notify_budgets(agents)
+            # ...and the board mode wipes its board, so what a team reads is
+            # what was said inside the current planning window rather than the
+            # whole episode (user, 2026-09-15; see CLEAR_BOARD_EACH_STEP).
+            if topology == "board":
+                from coop2.comm_topology.llm_board import clear_boards  # noqa: PLC0415
+
+                clear_boards(agents)
 
             if env.current_step % 10 == 0:
                 print(f"\n--- Step {env.current_step}/{max_steps} ---")

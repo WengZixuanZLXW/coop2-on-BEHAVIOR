@@ -45,6 +45,7 @@ from coop2.comm_topology.llm_board import (
     NOTIFY_MESSAGE_TYPE,
     BoardTeamBrain,
     board_rounds_of,
+    clear_boards,
     save_board_outputs,
     shared_board,
 )
@@ -306,6 +307,31 @@ def main() -> int:
     assert rounds == board_rounds_of(agents)
     assert set(rounds[0]) >= {"seq", "team", "env_step", "stage", "observed", "reasoning", "write", "notify"}
     ok("board.json holds every post in order; rounds ordered and complete")
+
+    print("test 7b: the board is wiped after an environment step, and the record is not")
+    client, agents, brains, broker = make_run({"team_1": ["drone_1"], "team_2": ["drone_2"]})
+    b1, b2 = brains["team_1"], brains["team_2"]
+    board = b1.board
+    client.script[("team_1", "plan")] = [(CLAIM, [])]
+    b1._generate_team_plans()
+    # Inside one planning window the board persists: team_2 reads team_1's post.
+    assert [p["text"] for p in board.history()] == [CLAIM]
+    user = b2._build_team_prompt(members(b2))[1]["content"]
+    assert CLAIM in user, "a post is visible to a team that plans in the same window"
+    # The environment steps -- the runner wipes the board here.
+    assert clear_boards(agents) == 1
+    assert board.history() == [], "the window is empty after a step"
+    user = b2._build_team_prompt(members(b2))[1]["content"]
+    assert CLAIM not in user and "(nothing posted yet)" in user
+    # A post written after the wipe keeps a fresh index, and the record kept both.
+    client.script[("team_2", "plan")] = [(SEEN, [])]
+    b2._generate_team_plans()
+    assert [p["text"] for p in board.history()] == [SEEN]
+    assert [p["index"] for p in board.history()] == [1], "indices stay monotonic across a wipe"
+    assert [p["text"] for p in board.all_posts()] == [CLAIM, SEEN]
+    assert [p["text"] for p in board.to_dict()["posts"]] == [CLAIM, SEEN], "board.json is the episode"
+    assert clear_boards({}) == 0 and clear_boards(agents) == 1
+    ok("a step wipes the window; board.json still holds every post, indices monotonic")
 
     print("test 8: the board is `tag` minus the graph, and the other modes are untouched")
     # The ablation, structurally: both brains are the same round, and neither
