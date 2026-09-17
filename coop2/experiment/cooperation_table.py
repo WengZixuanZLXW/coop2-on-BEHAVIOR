@@ -15,9 +15,17 @@ e.g. ``experiment_log/S1_all`` -- and prints one row per cell:
         then over teams.
     IT  interrupt time: seconds each team spent in its `interrupted` stage,
         summed per team and then over teams.
-    ML  message load: how many messages agents received -- every message
-        counted once per recipient it was delivered to, so one notification
-        naming two teams of three is six.
+    ML  message load: how many messages **teams** received -- every message
+        counted once per recipient team, so one notification naming two teams
+        is two, whatever each team's size.
+
+        Counted per team rather than per robot (user, 2026-09-16). A message
+        is addressed to a team and answered by a team: the brain reads it
+        once and replies once, so expanding it to each robot it was delivered
+        to multiplies by a number that has nothing to do with how much
+        communication happened. It also made the mean look artificially
+        exact -- with three robots a team and three seeds, the factor three
+        cancelled the division and every average landed on a whole number.
     IC  interrupt count: how many times each team was interrupted, summed.
     RT  reasoning time: seconds each team spent in its `planning` stage,
         summed per team and then over teams.
@@ -177,7 +185,9 @@ def read_run(run_dir: Path) -> Optional[Dict[str, Any]]:
              or (int(events[-1]["env_step"]) if events else None))
     finish_step = int(events[-1]["env_step"]) if (complete and events) else None
 
-    received = sum(len(m.get("delivered_to") or []) for m in messages) if isinstance(messages, list) else 0
+    # `recipients` is in team names, `delivered_to` in robot names; the first
+    # is the unit a message is addressed and answered in.
+    received = sum(len(m.get("recipients") or []) for m in messages) if isinstance(messages, list) else 0
 
     # Whether the episode ended on the wall clock rather than on the route or
     # the step budget. Carried as 0/1 so averaging seeds gives the rate.
@@ -356,7 +366,11 @@ def _cell(row: Dict[str, Any], column: str) -> str:
         return f"{100 * value:.0f}%"
     if column in ("FZ", "TO"):
         return f"{100 * value:.0f}%"
-    if column in ("WT", "IT", "RT", "TT", "ES", "ML", "IC"):
+    if column == "ML":
+        # One decimal: a team-level load is single digits for the quieter
+        # modes, where rounding to units hides most of the difference.
+        return f"{value:.1f}"
+    if column in ("WT", "IT", "RT", "TT", "ES", "IC"):
         return f"{value:.0f}"
     return str(value)
 
