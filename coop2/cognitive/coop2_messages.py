@@ -54,22 +54,3 @@ def summarize_coop2_repair_content(content: Dict[str, Any]) -> str:
         f"COOP2 repair request at step {content.get('env_step', '?')} "
         f"({len(failures)} predicted failure(s), {len(statements)} repair statement(s))."
     )
-
-
-def summarize_coop2_repair_for_panel(content: Dict[str, Any]) -> str:
-    """Return compact text suitable for realtime visualization panels."""
-    failures = content.get("failures") or []
-    counts: Dict[str, int] = {}
-    for failure in failures:
-        key = str(failure.get("constraint_type", "unknown"))
-        counts[key] = counts.get(key, 0) + 1
-    count_text = ", ".join(f"{key}:{value}" for key, value in sorted(counts.items()))
-    channel = content.get("repair_channel") or {}
-    order = " -> ".join(str(agent_id) for agent_id in channel.get("order") or [])
-    parts = [f"COOP2 repair: {len(failures)} predicted failures"]
-    if count_text:
-        parts.append(f"constraints {count_text}")
-    if order:
-        parts.append(f"order {order}")
-    parts.append("revise before env step")
-    return "; ".join(parts)

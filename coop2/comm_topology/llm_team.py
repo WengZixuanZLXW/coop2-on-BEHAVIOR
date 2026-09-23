@@ -1757,9 +1757,6 @@ class FollowerTeamBrain(TeamBrain):
         # sentences before the fence are the reply.
         return " ".join(str(text).split("```")[0].split())
 
-    # The old name, for callers that still use it.
-    _compose_report = _compose_response
-
     def _status_report(self) -> str:
         """Answer the four things the leader asks, for each robot.
 

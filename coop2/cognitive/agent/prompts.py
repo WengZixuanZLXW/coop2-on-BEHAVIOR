@@ -7,7 +7,6 @@ that describe the environment, agent states, and observations.
 
 import json
 from typing import Dict, List, Any, Optional
-from enum import Enum
 
 from ..coop2_messages import (
     get_coop2_repair_context,
@@ -131,14 +130,6 @@ def get_env_description() -> str:
 # ============================================================================
 # Agent State Formatting
 # ============================================================================
-
-class AgentStateCode(str, Enum):
-    """Single-letter codes for agent states."""
-    REASONING = "R"      # Agent is thinking/planning
-    INTERRUPTED = "I"    # Agent was interrupted by message
-    EXECUTING = "X"      # Agent is executing a plan
-    WAITING = "W"        # Agent is waiting (ready for next step)
-
 
 def get_state_code(state_value: str) -> str:
     """Convert agent state to single-letter code."""
