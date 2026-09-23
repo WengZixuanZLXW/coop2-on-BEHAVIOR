@@ -1806,6 +1806,7 @@ TEAM_BRAIN_ROLES = {
     "centralized": "the first team leads; the rest report to it",
     "tag": "every team reads and writes one shared task graph, and may notify others to read it",
     "board": "the same, with an unstructured shared message board in place of the graph -- DIG-TAG's ablation",
+    "scripted": "no model at all: plans are read from a file, and a robot without one holds position",
 }
 
 
@@ -1962,6 +1963,7 @@ def create_llm_team_topology(
     verbose: bool = True,
     goal_instruction: str = "",
     notify_budget: int = 1,
+    script: Optional[Dict[str, List[Any]]] = None,
 ) -> Dict[str, LLMTeamAgent]:
     """One brain per team, one agent per robot, wired for @topology.
 
@@ -1977,6 +1979,9 @@ def create_llm_team_topology(
         notify_budget: how many times a team may notify others between two
             environment steps, in the modes that have the tool (`tag`, and the
             board with ``NOTIFY_TOOL_ENABLED``).
+        script: `scripted` only -- ``{robot id: [plan, ...]}`` for every team,
+            from ``scripted_team.load_script``. Each brain reads its own
+            members out of it; a robot it does not name holds position.
     """
     if topology not in TEAM_BRAIN_ROLES:
         raise ValueError(f"unknown topology {topology!r}; have {sorted(TEAM_BRAIN_ROLES)}")
@@ -2010,6 +2015,11 @@ def create_llm_team_topology(
             factory = TagTeamBrain
             extra["tag"] = tag_graph
             extra["notify_budget"] = notify_budget
+        elif topology == "scripted":
+            from coop2.comm_topology.scripted_team import ScriptedTeamBrain  # noqa: PLC0415
+
+            factory = ScriptedTeamBrain
+            extra["script"] = script or {}
         else:
             factory = TeamBrain
         brains[team_name] = factory(

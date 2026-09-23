@@ -87,6 +87,7 @@ def run_individual_experiment(
     run_name=None,
     topology="individual",
     notify_budget=1,
+    script_path=None,
 ):
     """
     Run experiment with individual LLM agents (no communication).
@@ -104,12 +105,13 @@ def run_individual_experiment(
         seed: Environment random seed.
         record_video: If True, record and save an episode GIF.
         output_root: Optional directory where this run directory should be created.
-        topology: "individual", "tag" or "board" -- the modes in which teams
-            never wait for each other; see the module docstring.
+        topology: "individual", "tag", "board" or "scripted" -- the modes in
+            which teams never wait for each other; see the module docstring.
         notify_budget: notifications a team may send between two environment
             steps (`tag` and `board`).
+        script_path: `scripted` only -- the JSON file of plans per robot.
     """
-    if topology not in ("individual", "tag", "board"):
+    if topology not in ("individual", "tag", "board", "scripted"):
         raise ValueError(f"this runner is for the modes without a speaking order, not {topology!r}")
     print("="*80)
     print(f"{topology.upper()} TOPOLOGY WITH LLM AGENTS")
@@ -132,16 +134,36 @@ def run_individual_experiment(
     os.makedirs(output_dir, exist_ok=True)
     print(f"\nResults will be saved to: {output_dir}\n")
     
+    # The script, first: a bad one must cost a second, not the ten minutes it
+    # takes to reach the first planning round with the simulator up.
+    script = None
+    if topology == "scripted":
+        from coop2.comm_topology.scripted_team import load_script  # noqa: PLC0415
+
+        if not script_path:
+            raise ValueError("the scripted mode needs --script")
+        script = load_script(script_path)
+        print(f"\n[script] {script_path}\n  "
+              + "\n  ".join(f"{robot}: {len(plans)} plan(s)" for robot, plans in script.items()))
+
     # Initialize LLM client
-    print("Initializing LLM client...")
-    llm_client = LLMClient.from_env(model=llm_model, verbose=llm_verbose)
-    # Every prompt and completion of the run, one JSON object per line, flushed
-    # as it goes. Attached to the client because all the agents share it; the
-    # agent supplies its own id and env_step when it records.
-    llm_client.io_recorder = LLMIORecorder(os.path.join(output_dir, "llm_calls.jsonl"))
-    print(f"  Model: {llm_client.model}")
-    if llm_verbose:
-        print("  LLM verbose mode: ON (showing API inputs/outputs)")
+    if topology == "scripted":
+        # Never called, so never built: a scripted run works with no
+        # credentials at all, which is most of why it exists.
+        from coop2.comm_topology.scripted_team import NoLLM  # noqa: PLC0415
+
+        llm_client = NoLLM()
+        print("\nNo LLM: plans come from the script.")
+    else:
+        print("Initializing LLM client...")
+        llm_client = LLMClient.from_env(model=llm_model, verbose=llm_verbose)
+        # Every prompt and completion of the run, one JSON object per line, flushed
+        # as it goes. Attached to the client because all the agents share it; the
+        # agent supplies its own id and env_step when it records.
+        llm_client.io_recorder = LLMIORecorder(os.path.join(output_dir, "llm_calls.jsonl"))
+        print(f"  Model: {llm_client.model}")
+        if llm_verbose:
+            print("  LLM verbose mode: ON (showing API inputs/outputs)")
     
     # Create environment. A team layout, when given, is the authority on who is
     # in the scene -- how many robots, what model each is, where it starts --
@@ -212,6 +234,8 @@ def run_individual_experiment(
     elif topology == "tag":
         print("  Teams plan independently around one shared task graph; a team may notify "
               f"others to read it, {notify_budget} time(s) per environment step")
+    elif topology == "scripted":
+        print("  Plans are read from the script; a robot the script does not name holds position")
     else:
         print(f"  All agents operate independently (no communication)")
     if coop2_precheck_enabled:
@@ -229,6 +253,7 @@ def run_individual_experiment(
         verbose=verbose,
         goal_instruction=goal_instruction,
         notify_budget=notify_budget,
+        script=script,
     )
 
     # Wrap with planning environment. Only the notify tool sends anything in
@@ -462,6 +487,15 @@ def build_parser(topology="individual"):
                         help="How many times a team may notify (interrupt) other teams between "
                              "two environment steps; reset after every step. Used by the tag "
                              "and board modes, which share the round.")
+    if topology == "scripted":
+        parser.add_argument("--script", type=str, default=None, metavar="PATH",
+                            help="JSON file of plans per robot; the n-th entry of a robot is "
+                                 "handed to it on its team's n-th round, and a robot the file "
+                                 "does not name holds position. See "
+                                 "coop2/comm_topology/scripted_team.py.")
+        parser.add_argument("--print-template", action="store_true",
+                            help="Print a skeleton script for --team-config and exit, without "
+                                 "launching the simulator.")
     parser.add_argument("--gui", action="store_true",
                         help="Open the Isaac Sim viewport. Needs a DISPLAY, and note that "
                              "--show is a no-op: the visualisation wrapper is a stub, and "
@@ -475,6 +509,17 @@ def build_parser(topology="individual"):
 
 def main(argv=None, topology="individual"):
     args = build_parser(topology).parse_args(argv)
+
+    if topology == "scripted" and getattr(args, "print_template", False):
+        # Before the simulator, and instead of it: this only needs the layout.
+        from coop2.behavior_env.team_config import homogeneous_layout, load_team_layout  # noqa: PLC0415
+        from coop2.comm_topology.scripted_team import script_template  # noqa: PLC0415
+
+        layout = (load_team_layout(args.team_config) if args.team_config
+                  else homogeneous_layout(args.agents, room=args.room,
+                                          team_size=args.team_size or 1))
+        print(script_template({name: list(members) for name, members in layout.teams.items()}))
+        return
 
     run_individual_experiment(
         n_agents=args.agents,
@@ -500,6 +545,7 @@ def main(argv=None, topology="individual"):
         run_name=args.run_name,
         topology=topology,
         notify_budget=args.notify_budget,
+        script_path=getattr(args, "script", None),
     )
 
 
