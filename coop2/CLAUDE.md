@@ -79,11 +79,11 @@ results table in this file that predates it has been removed for that reason;
 what was learned *from* those runs is kept in the sections that explain it.
 
 Still on the plan and not started: **M7 step 3** (>=3 seeds per topology for the
-metrics table) and **M8** (decentralized topology). Note
-`build_results_table.py` cannot read these runs: it skips any folder without
-`team_score.json`, which the runners do not write while `team_score.enabled` is
-False -- post-episode code that only runs after a full GPU episode, the same
-defect class as the rest of that file.
+metrics table) and **M8** (decentralized topology). The table itself is
+`experiment/cooperation_table.py`; the crafter-era `build_results_table.py` was
+deleted in 2026-09-23 -- it was built on constraint deficits this project does
+not measure, and it skipped every folder without a `team_score.json` the
+runners do not write.
 
 ## M9 is wired, and the scene it runs in
 

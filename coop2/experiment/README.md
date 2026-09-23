@@ -48,7 +48,6 @@ launch a sweep is a second place for the flags to drift.
 | **`agent_timeline.py`** | Each agent's FSM state over wall-clock time, one lane per agent and one per team, with messages drawn as arrows between team lanes and team holds shaded apart from real work. `python -m coop2.experiment.agent_timeline <run_dir>` redraws an existing run. |
 | **`annotate_video.py`** | Draws the plan record onto one robot's episode video: the whole plan with each action marked, the action running now, and the failure text from the tick it fails on. Alignment is arithmetic, not eyeballed — the recorder captures on `env_step % every == 0`, and every action carries its own start and end. Sized so two clips fit side by side on a slide. |
 | **`animate_tag.py`** | Films the task graph growing, a frame per recorded call, each labelled with its env_step, the team that issued it and that team's own reasoning. Frames are real replays into a fresh graph, so a rejected call is shown rejected and not applied. `--calls A-B`, `--seconds N`, `--size WxH`. |
-| **`build_results_table.py`** | The crafter-era table, built on constraint deficits (spatial / temporal / dependency) that this project does not measure. It also skips any folder without `team_score.json`, which the runners do not write, so **it cannot read current runs**. |
 
 ## Figures and setup
 
