@@ -2127,8 +2127,8 @@ change; where the code lives did):
   never opened a task still writes all four files).
 
 Runner: `run_tag.py` is `run_individual.main(topology="tag")`, with
-`interrupt_on_message=True` for this mode; `sweep_grid`, `run_s1_grid`,
-`run_grid` and `build_results_table` know the name. `test_tag_team_stubbed.py`
+`interrupt_on_message=True` for this mode; `sweep_grid` knows the name.
+`test_tag_team_stubbed.py`
 pins it (eight tests, DIG-TAG's runtime tests said to teams).
 
 **First GPU episode (2026-09-13 evening):** S1 LL, `sets_3.json` (three teams
@@ -2231,9 +2231,8 @@ where the graph refuses an action against a stale version. The prompt shows
 advantage the ablation is not supposed to be testing.
 
 Runner: `run_board.py` is `run_individual.main(topology="board")`, with the
-same `--notify-budget`; `sweep_grid`, `run_grid`, `run_s1_grid` and
-`build_results_table` know the name. No GPU episode has been run in this mode
-yet.
+same `--notify-budget`; `sweep_grid` knows the name. No GPU episode has been
+run in this mode yet.
 
 ## Two answers to "which room is it in", and the one the sampler gave (2026-09-13)
 

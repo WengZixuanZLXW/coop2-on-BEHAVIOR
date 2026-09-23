@@ -31,9 +31,13 @@ environment per process is not a style choice.
 
 | file | |
 |---|---|
-| **`sweep_grid.py`** | The one to use. Layouts × tasks × modes, globs allowed for layouts, `--parallel K` for K cells at once (it caps each child's torch threads, or K cells oversubscribe every core K times over and run slower in total than one). Records a cell that crashes or hangs and moves on. |
-| **`run_s1_grid.py`** | The narrower S1 driver: every (mode × task) of **one** layout, sequentially, each cell in its own folder with its full `stdout.log`, plus `grid_summary.json` beside them. |
-| **`run_grid.py`** | The original crafter-era grid: topology × agent count × repair × seed. Repair is not ported, so that axis does nothing; kept for the older result folders it produced. |
+| **`sweep_grid.py`** | Layouts × tasks × modes, globs allowed for layouts, `--parallel K` for K cells at once (it caps each child's torch threads, or K cells oversubscribe every core K times over and run slower in total than one). Records a cell that crashes or hangs and moves on. Writes each cell to its own folder with its full `stdout.log`, and `grid_summary.json` beside them. |
+
+It is the only one. `run_s1_grid.py` (one layout, every mode × task) and
+`run_grid.py` (the crafter-era topology × agent count × repair × seed, whose
+repair axis did nothing, repair never having been ported) were deleted: both
+were narrower spellings of what `sweep_grid` already does, and a second way to
+launch a sweep is a second place for the flags to drift.
 
 ## Reading a finished run
 
