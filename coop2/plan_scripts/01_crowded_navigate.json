@@ -1,0 +1,183 @@
+{
+  "_comment": [
+    "1. Many robots stand around the notebook, and the robot that arrives last",
+    "   cannot: NO_SPACE_AROUND_TARGET, naming the robots in the way.",
+    "",
+    "Round 1 sends twelve robots to notebook.n.01_1, which is four teams'",
+    "worth. Its standable ring holds about six -- bodies and",
+    "DestinationRegistry reservations alike, at 1.24 m separation (open defect",
+    "7) -- and the notebook is a small object on the floor of a small room, so",
+    "the ring is tighter than a piece of furniture's and fills sooner.",
+    "",
+    "The four drones do not compete for it: bodies more than LAYER_SEPARATION_Z",
+    "(0.6 m) apart in z are different layers, and a Crazyflie hovers at 1.2 m.",
+    "So the eight ground robots are the ones contending.",
+    "",
+    "ridgeback_5 is the designated victim and is the point of the file. It sets",
+    "off 240 ticks after the rest -- two seconds of playback, since the",
+    "recorder captures every 4th tick at 30 fps -- and that is enough twice",
+    "over: the twelve travel 6.8-8.7 m at 10 ticks/m, so they are all standing",
+    "(or refused) by about tick 150. Then it navigates, in round 2, and is",
+    "refused with the blockers named.",
+    "reserved, then navigates in round 2 and is refused with the blockers",
+    "named. jackal_5 and drone_5 are not scripted, so team_5's barrier is",
+    "ridgeback_5's alone and the two rounds are its own two plans.",
+    "",
+    "Run with coop2/team_layouts/s1/sets_5.json (15 robots) on v4_s1_v4_lh.",
+    "Expect on the victim's second plan:",
+    "  PLANNING_ERROR: Cannot reach notebook.n.01_1: there is no free floor",
+    "  space around it to stand on. Robots occupying the space now: ..."
+  ],
+  "ridgeback_1": [
+    {
+      "task": "crowd the notebook",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "notebook.n.01_1"
+        }
+      ]
+    }
+  ],
+  "jackal_1": [
+    {
+      "task": "crowd the notebook",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "notebook.n.01_1"
+        }
+      ]
+    }
+  ],
+  "drone_1": [
+    {
+      "task": "crowd the notebook",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "notebook.n.01_1"
+        }
+      ]
+    }
+  ],
+  "ridgeback_2": [
+    {
+      "task": "crowd the notebook",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "notebook.n.01_1"
+        }
+      ]
+    }
+  ],
+  "jackal_2": [
+    {
+      "task": "crowd the notebook",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "notebook.n.01_1"
+        }
+      ]
+    }
+  ],
+  "drone_2": [
+    {
+      "task": "crowd the notebook",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "notebook.n.01_1"
+        }
+      ]
+    }
+  ],
+  "ridgeback_3": [
+    {
+      "task": "crowd the notebook",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "notebook.n.01_1"
+        }
+      ]
+    }
+  ],
+  "jackal_3": [
+    {
+      "task": "crowd the notebook",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "notebook.n.01_1"
+        }
+      ]
+    }
+  ],
+  "drone_3": [
+    {
+      "task": "crowd the notebook",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "notebook.n.01_1"
+        }
+      ]
+    }
+  ],
+  "ridgeback_4": [
+    {
+      "task": "crowd the notebook",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "notebook.n.01_1"
+        }
+      ]
+    }
+  ],
+  "jackal_4": [
+    {
+      "task": "crowd the notebook",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "notebook.n.01_1"
+        }
+      ]
+    }
+  ],
+  "drone_4": [
+    {
+      "task": "crowd the notebook",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "notebook.n.01_1"
+        }
+      ]
+    }
+  ],
+  "ridgeback_5": [
+    {
+      "task": "standby -- set off two seconds after the rest",
+      "actions": [
+        {
+          "action_type": "wait",
+          "ticks": 240
+        }
+      ]
+    },
+    {
+      "task": "navigate to a surrounded notebook",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "notebook.n.01_1"
+        }
+      ]
+    }
+  ]
+}

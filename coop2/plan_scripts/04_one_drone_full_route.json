@@ -1,0 +1,232 @@
+{
+  "_comment": [
+    "The whole S1 LL route, by one drone, with no model in the loop.",
+    "",
+    "Ten plans, one per route node, each the same four actions: go to the",
+    "die, take it, go to the next support, put it down. The n-th plan is",
+    "handed out on the team's n-th round, so the route is walked in order",
+    "and RouteTracker credits the nodes as they land.",
+    "",
+    "It is one robot because it can be. The die is 8 g and the lift table",
+    "says arm OR drone, and a drone has no base lock -- so unlike the LH",
+    "notebook this cargo needs no carrier and no handoff, and a single",
+    "drone flying the whole route is the honest shape of this task. Every",
+    "tag/individual episode that solves LL converges on exactly this; the",
+    "script only removes the rounds the teams spend discovering it.",
+    "",
+    "Run with coop2/team_layouts/s1/sets_1.json (ridgeback_1, jackal_1,",
+    "drone_1). The other two are unscripted and hold position throughout."
+  ],
+  "drone_1": [
+    {
+      "task": "ontop(die.n.01_1, cabinet.n.01_1)  [C1]",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "die.n.01_1"
+        },
+        {
+          "action_type": "grasp",
+          "target": "die.n.01_1"
+        },
+        {
+          "action_type": "navigate_to",
+          "target": "cabinet.n.01_1"
+        },
+        {
+          "action_type": "place_on_top",
+          "target": "cabinet.n.01_1"
+        }
+      ]
+    },
+    {
+      "task": "ontop(die.n.01_1, bookcase.n.01_1)  [C2]",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "die.n.01_1"
+        },
+        {
+          "action_type": "grasp",
+          "target": "die.n.01_1"
+        },
+        {
+          "action_type": "navigate_to",
+          "target": "bookcase.n.01_1"
+        },
+        {
+          "action_type": "place_on_top",
+          "target": "bookcase.n.01_1"
+        }
+      ]
+    },
+    {
+      "task": "ontop(die.n.01_1, electric_refrigerator.n.01_1)  [C3]",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "die.n.01_1"
+        },
+        {
+          "action_type": "grasp",
+          "target": "die.n.01_1"
+        },
+        {
+          "action_type": "navigate_to",
+          "target": "electric_refrigerator.n.01_1"
+        },
+        {
+          "action_type": "place_on_top",
+          "target": "electric_refrigerator.n.01_1"
+        }
+      ]
+    },
+    {
+      "task": "ontop(die.n.01_1, armchair.n.01_1)  [C4]",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "die.n.01_1"
+        },
+        {
+          "action_type": "grasp",
+          "target": "die.n.01_1"
+        },
+        {
+          "action_type": "navigate_to",
+          "target": "armchair.n.01_1"
+        },
+        {
+          "action_type": "place_on_top",
+          "target": "armchair.n.01_1"
+        }
+      ]
+    },
+    {
+      "task": "ontop(die.n.01_1, breakfast_table.n.01_1)  [C5]",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "die.n.01_1"
+        },
+        {
+          "action_type": "grasp",
+          "target": "die.n.01_1"
+        },
+        {
+          "action_type": "navigate_to",
+          "target": "breakfast_table.n.01_1"
+        },
+        {
+          "action_type": "place_on_top",
+          "target": "breakfast_table.n.01_1"
+        }
+      ]
+    },
+    {
+      "task": "ontop(die.n.01_1, coffee_table.n.01_1)  [C6]",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "die.n.01_1"
+        },
+        {
+          "action_type": "grasp",
+          "target": "die.n.01_1"
+        },
+        {
+          "action_type": "navigate_to",
+          "target": "coffee_table.n.01_1"
+        },
+        {
+          "action_type": "place_on_top",
+          "target": "coffee_table.n.01_1"
+        }
+      ]
+    },
+    {
+      "task": "ontop(die.n.01_1, cabinet.n.01_2)  [C7]",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "die.n.01_1"
+        },
+        {
+          "action_type": "grasp",
+          "target": "die.n.01_1"
+        },
+        {
+          "action_type": "navigate_to",
+          "target": "cabinet.n.01_2"
+        },
+        {
+          "action_type": "place_on_top",
+          "target": "cabinet.n.01_2"
+        }
+      ]
+    },
+    {
+      "task": "ontop(die.n.01_1, cabinet.n.01_3)  [C8]",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "die.n.01_1"
+        },
+        {
+          "action_type": "grasp",
+          "target": "die.n.01_1"
+        },
+        {
+          "action_type": "navigate_to",
+          "target": "cabinet.n.01_3"
+        },
+        {
+          "action_type": "place_on_top",
+          "target": "cabinet.n.01_3"
+        }
+      ]
+    },
+    {
+      "task": "ontop(die.n.01_1, bed.n.01_2)  [C9]",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "die.n.01_1"
+        },
+        {
+          "action_type": "grasp",
+          "target": "die.n.01_1"
+        },
+        {
+          "action_type": "navigate_to",
+          "target": "bed.n.01_2"
+        },
+        {
+          "action_type": "place_on_top",
+          "target": "bed.n.01_2"
+        }
+      ]
+    },
+    {
+      "task": "ontop(die.n.01_1, bed.n.01_1)  [D]",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "die.n.01_1"
+        },
+        {
+          "action_type": "grasp",
+          "target": "die.n.01_1"
+        },
+        {
+          "action_type": "navigate_to",
+          "target": "bed.n.01_1"
+        },
+        {
+          "action_type": "place_on_top",
+          "target": "bed.n.01_1"
+        }
+      ]
+    }
+  ]
+}

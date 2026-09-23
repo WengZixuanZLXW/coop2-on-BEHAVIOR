@@ -1,0 +1,85 @@
+{
+  "_comment": [
+    "3. The handoff, undone: ridgeback_1 loads the notebook onto jackal_1,",
+    "   the jackal drives to the kitchen, and the ridgeback then tries to take",
+    "   the cargo back -- TOO_FAR, because unload_from is gated on reach like",
+    "   every other hand verb (_require_carrier -> _require_near, GATE_CARRY).",
+    "",
+    "The two robots are team_1, and the sequencing is by tick count because",
+    "that is the only tool there is (open defect 5). Sized from the measured",
+    "costs -- grasp ~11 ticks, navigate ~100 + 10 per metre:",
+    "",
+    "  t=0     ridgeback_1 navigates to the notebook and grasps it (~145)",
+    "          jackal_1 waits 300, so it does not arrive before there is",
+    "          anything to load",
+    "  t~300   jackal_1 navigates to ridgeback_1 (~130) and waits 300",
+    "  t~545   ridgeback_1 loads the notebook onto jackal_1 -- in reach,",
+    "          because the jackal came to it",
+    "  t~730   jackal_1 drives to the kitchen refrigerator, cargo aboard",
+    "  t~1145  ridgeback_1 asks for it back. The jackal is two rooms away.",
+    "",
+    "The ridgeback cannot follow: its base locks the moment its arm is loaded",
+    "and it unloads to a full hand, so there is no version of this it can",
+    "recover from by driving -- which is what makes the handoff a commitment",
+    "rather than a loan.",
+    "",
+    "Run with coop2/team_layouts/s1/sets_3.json (9 robots) on v4_s1_v4_lh.",
+    "Expect on ridgeback_1's last action:",
+    "  PRE_CONDITION_ERROR: You are N.NN m from jackal_1, too far to unload",
+    "  from it (you must be within N.NN m). Navigate to it first."
+  ],
+  "ridgeback_1": [
+    {
+      "task": "hand it over, then ask for it back",
+      "actions": [
+        {
+          "action_type": "navigate_to",
+          "target": "notebook.n.01_1"
+        },
+        {
+          "action_type": "grasp",
+          "target": "notebook.n.01_1"
+        },
+        {
+          "action_type": "wait",
+          "ticks": 400
+        },
+        {
+          "action_type": "load_onto",
+          "target": "jackal_1"
+        },
+        {
+          "action_type": "wait",
+          "ticks": 600
+        },
+        {
+          "action_type": "unload_from",
+          "target": "jackal_1"
+        }
+      ]
+    }
+  ],
+  "jackal_1": [
+    {
+      "task": "fetch the cargo and drive off with it",
+      "actions": [
+        {
+          "action_type": "wait",
+          "ticks": 300
+        },
+        {
+          "action_type": "navigate_to",
+          "target": "ridgeback_1"
+        },
+        {
+          "action_type": "wait",
+          "ticks": 300
+        },
+        {
+          "action_type": "navigate_to",
+          "target": "electric_refrigerator.n.01_1"
+        }
+      ]
+    }
+  ]
+}

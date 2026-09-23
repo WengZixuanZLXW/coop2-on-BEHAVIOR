@@ -1,0 +1,46 @@
+{
+  "_comment": [
+    "2. Two arms are given the same two actions against the same notebook, at",
+    "   the same moment. Nothing sequences them: the one with less ground to",
+    "   cover arrives first and takes it, and the other is refused",
+    "   OBJECT_CLAIMED and told who has it.",
+    "",
+    "The two plans are identical. The whole difference is the walk, measured on",
+    "this layout and seed:",
+    "",
+    "  ridgeback_1  spawn (2.44, 7.98)  ->  7.7 m,  77 travel ticks, arrives 78",
+    "  ridgeback_2  spawn (2.44, 8.63)  ->  9.0 m,  90 travel ticks, arrives 91",
+    "",
+    "so ridgeback_1 grasps at 79 and ridgeback_2 reaches for it at 92. The 13",
+    "ticks come from both the spawn offset and the pose each sampler drew in",
+    "the annulus, and they are deterministic for a fixed seed -- but they are",
+    "only 13 ticks. A shared spawn (every S1 layout is one: all nine robots",
+    "start within about a metre of each other) is what keeps the margin that",
+    "narrow.",
+    "",
+    "ridgeback_2 is standing in reach of the notebook when it is refused, and",
+    "that is the point: the refusal is not about where it is. _grasp checks in",
+    "the order arm -> may-lift -> already-held -> UNCLAIMED -> near",
+    "(symbolic_contention._grasp), so a robot that walked all the way there is",
+    "told the thing is taken rather than how far away it is.",
+    "",
+    "Run with coop2/team_layouts/s1/sets_3.json (9 robots) on v4_s1_v4_lh.",
+    "Expect:",
+    "  ridgeback_1  grasp(notebook.n.01_1)  -> success",
+    "  ridgeback_2  grasp(notebook.n.01_1)  -> PRE_CONDITION_ERROR:",
+    "     notebook.n.01_1 is currently held by ridgeback_1, so you cannot grasp",
+    "     it. Pick a different target, or ask them to release it."
+  ],
+
+  "ridgeback_1": [
+    {"task": "holding(notebook.n.01_1) -- 7.7 m away",
+     "actions": [{"action_type": "navigate_to", "target": "notebook.n.01_1"},
+                 {"action_type": "grasp", "target": "notebook.n.01_1"}]}
+  ],
+
+  "ridgeback_2": [
+    {"task": "holding(notebook.n.01_1) -- 9.0 m away",
+     "actions": [{"action_type": "navigate_to", "target": "notebook.n.01_1"},
+                 {"action_type": "grasp", "target": "notebook.n.01_1"}]}
+  ]
+}
