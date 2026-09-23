@@ -1809,9 +1809,13 @@ they found, in order:
   **4.445 rad/s for ever after**, on the root and on the body link, while its
   yaw, its position and all six virtual base joints do not change by a
   millimetre over 250 idle ticks, with or without gravity on the die, before
-  and after a hop. The number is a ghost of the fixed-joint solver, not a
-  motion. It is also why every drone grasp cost 501 ticks: the settle waited
-  for a velocity that never falls below 0.01.
+  and after a hop. It is also why every drone grasp cost 501 ticks: the settle
+  waited for a velocity that never falls below 0.01.
+
+  **This was read as "a ghost of the fixed-joint solver, not a motion", and
+  that was wrong** -- corrected 2026-09-23, see "The drone was not spinning,
+  and then it was" below. The probe asked only about *yaw*, and what was
+  moving was roll and pitch.
 * `support_of(drone)` answered "dice_154": the die welded under it lay in
   its footprint at its bottom. A robot has no support, and a support is at
   least as large as what rests on it.
@@ -1831,8 +1835,8 @@ Three changes came out of it, all in `symbolic_contention.py` /
   them. After the fix: 1.6 cm.
 * **A drone holds under its mount.** Upstream places a grasped object's centre
   at the eef link origin -- inside the suction mount's collision shape. The
-  die now hangs half a mount plus half a die below it. Harmless where the
-  spin turned out to be a ghost, correct regardless.
+  die now hangs half a mount plus half a die below it. Correct regardless of
+  what the angular velocity turned out to mean.
 
 The die beside the Jackal in the video (7.0-7.5 s, ticks 840-900) sits inside
 `load_onto`'s window; the scripted reproduction never puts it there, and no
@@ -1909,8 +1913,12 @@ digtag slots are `TeamBrain.reserved_system_prompt` and
 `reserved_task_observation`; empty strings add no tokens. `TEAM_ROLE` and
 `TEAM_ENV_DESCRIPTION` are gone as sources of truth; the latter survives as
 the concatenation of sections 2 and 3 so the shared-rule guard still works.
-The legacy single-robot prompts (`ENV_DESCRIPTION`, `build_system_prompt`)
-were not restructured; they are off the runtime path.
+The single-robot prompts (`ENV_DESCRIPTION`, `build_system_prompt`) were not
+restructured. Calling them "legacy" and "off the runtime path", as this said
+until 2026-09-23, was wrong: `llm_individual`, `llm_broadcast_chain` and
+`llm_centralized` all build their per-robot system prompt from
+`build_system_prompt(..., include_env_description=True)`. They are unrestructured,
+not unused, and a rewrite of the nine sections has to account for them.
 
 ## Three modes through the new prompt, and the S2/S3 port (2026-09-13)
 
@@ -2404,6 +2412,64 @@ of the 16 GB card at 0% utilisation.
 After all this the wall clock of a nine-robot episode is 84% the world frozen
 waiting for the model and 16% ticking, so `sweep_grid --parallel` is now the
 dominant lever. `PERFORMANCE.md` at the repo root has the full accounting.
+
+## The drone was not spinning, and then it was (2026-09-23)
+
+Reported as "the drone turns on its own while grasping". It took five GPU
+passes and two wrong answers of mine, and the shape of the mistake is worth
+more than the fix.
+
+**It does not spin, in yaw.** Measured three ways, which agree: the pose API
+reports a constant yaw on both the root and the body link over 60 held ticks;
+a recorded hold (scripted, drone grasps the die and stands still for 1200
+ticks) has consecutive frames differing by 0.14-0.59 of a grey level; and in
+the episode that prompted the report, consecutive frames differ by 0.03-0.45
+between teleports and by 18-47 *at* one. What looks like turning is
+`navigate_to` ending in a teleport to a pose **yawed to face its target** --
+right for an arm, whose workspace has to land on the thing, and meaningless
+for a drone, which grasps straight down from a belly mount.
+
+I got there twice by eye and was wrong both times: a zoomed strip of frames
+that happened to span a teleport reads exactly like continuous rotation, and I
+presented it as confirmed before measuring. The frame-to-frame difference is
+what settled it, and it took four numbers.
+
+**It does tilt, and that was the larger half.** `HolonomicBaseJointController`
+drives x, y and rz; **nothing drives rx and ry**, so a Crazyflie with a die
+welded under its belly is a free pendulum. Measured: roll -11 deg and pitch
++17 deg within 25 ticks of the grasp, creeping after. From a camera directly
+overhead a 20 deg tilt foreshortens the airframe into what reads as slow
+turning. So the 4.445 rad/s is **real**, and the 2026-09-13 reading of it as a
+solver ghost came from a probe that watched yaw while roll and pitch were what
+moved. Locking the two joints takes it to 0.005.
+
+`keep_still()` is not the fix: it zeroes the velocity for exactly one tick and
+the next tick restores 4.444 / 0.349 to the digit, every tick, however often it
+is called.
+
+Two changes, one per cause:
+
+* `symbolic_navigation._get_robot_pose_from_2d_pose` -- the one place every
+  teleport passes through, so the ring sampler, the edge band and
+  `navigate_to_room` are all covered -- gives a drone `(0, 0, its current rz)`
+  instead of `(rx, ry, the commanded yaw)`: it keeps its heading and arrives
+  level. Carriers are deliberately excluded; a Jackal's facing is equally
+  irrelevant, but a wheeled robot sliding sideways across a room looks wrong in
+  a way a hovering quadrotor does not.
+* `primitive_engine._level_drones`, after every `env.step`: zero rx and ry.
+  This is in keeping with a layer that teleports rather than drives and welds
+  rather than grips -- a quadrotor holds attitude, and nothing here models the
+  rotors that would do it.
+
+Measured over a whole route afterwards (navigate / grasp / place, 22 actions):
+roll, pitch and yaw 0.00 at every one, and LL still solves 10/10.
+
+**The method note.** Two of my three wrong turns came from trusting a reading
+without asking what it was a reading *of* -- the 2026-09-13 probe's yaw, and my
+own eyes on a strip of frames. The measurement that worked each time was the
+one that could have come out either way: frame-to-frame pixel differences
+against a static background, and roll/pitch/yaw printed side by side rather
+than yaw alone.
 
 ## Open defects
 
