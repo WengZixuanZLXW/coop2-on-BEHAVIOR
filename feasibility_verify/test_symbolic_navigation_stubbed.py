@@ -116,36 +116,38 @@ def _install_omnigibson_stubs():
     )
 
 
-def _register_geometry_cache():
-    """Put ``coop2.behavior_env.geometry_cache`` in sys.modules.
+def _register_real(*names):
+    """Put real ``coop2.behavior_env.<name>`` modules in sys.modules.
 
-    The module under test imports it by its package path. It is pure stdlib --
-    a dict of world AABBs valid for one tick -- so the real file is loaded
-    rather than stubbed; only the package namespace around it is faked, the
-    way this file fakes omnigibson.
+    The module under test imports these by their package path. Both are pure
+    stdlib -- ``geometry_cache`` is a dict of world AABBs valid for one tick,
+    ``carrier`` is a handful of getattr predicates -- so the real files are
+    loaded rather than stubbed; only the package namespace around them is
+    faked, the way this file fakes omnigibson.
     """
     import types
 
-    for name in ("coop2", "coop2.behavior_env"):
-        if name not in sys.modules:
-            package = types.ModuleType(name)
+    for package_name in ("coop2", "coop2.behavior_env"):
+        if package_name not in sys.modules:
+            package = types.ModuleType(package_name)
             package.__path__ = []
-            sys.modules[name] = package
-    name = "coop2.behavior_env.geometry_cache"
-    if name in sys.modules:
-        return
-    path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "coop2", "behavior_env", "geometry_cache.py",
-    )
-    spec = importlib.util.spec_from_file_location(name, path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
+            sys.modules[package_name] = package
+    for stem in names:
+        name = f"coop2.behavior_env.{stem}"
+        if name in sys.modules:
+            continue
+        path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "coop2", "behavior_env", f"{stem}.py",
+        )
+        spec = importlib.util.spec_from_file_location(name, path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
 
 
 def _load_module():
-    _register_geometry_cache()
+    _register_real("geometry_cache", "carrier")
     path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         "coop2",
@@ -493,7 +495,9 @@ def main() -> int:
     # Measured 1.200 -> 1.150 -> 1.100 -> 1.050 over three hops.
     fake_T = types.ModuleType("omnigibson.utils.transform_utils")
     seen = {}
-    fake_T.euler_intrinsic2mat = lambda e: seen.setdefault("eulers", list(e))
+    # Overwrite, not setdefault: this block calls the method more than once and
+    # a first-write-wins spy reports the first call's eulers for every later one.
+    fake_T.euler_intrinsic2mat = lambda e: seen.__setitem__("eulers", list(e))
     fake_T.mat2quat = lambda m: "quat-from-eulers"
     sys.modules["omnigibson.utils.transform_utils"] = fake_T
     drone = FakeRobot(scene, name="drone", position=(2.44, 7.23, 1.2))
@@ -506,6 +510,34 @@ def main() -> int:
     assert abs(float(pos[2]) - 1.2) < 1e-9, f"z came back as {float(pos[2])}, wanted the body's 1.2 not the joint's 1.15"
     assert seen["eulers"] == [0.0, 0.0, 0.5] and orn == "quat-from-eulers", (seen, orn)
     ok("holonomic: z is the body's world z (1.2), yaw comes from the command")
+    # ...unless the robot keeps its heading. A drone's suction mount is under
+    # its belly, so nothing it does is gated on facing, and the sampler's
+    # face-the-target yaw only makes its recorded frames snap to an unrelated
+    # angle at the end of every hop -- which is what got reported as the drone
+    # spinning. The yaw it already has (the rz joint, 0.3) is used instead of
+    # the commanded 0.5; x, y and z are unaffected.
+    drone.is_drone = True
+    drone.get_joint_positions = lambda: FakeVector([2.39, 7.18, 1.15, 0.11, -0.07, 0.3])
+    pos, orn = flyer._get_robot_pose_from_2d_pose(FakeVector([3.0, 4.0, 0.5]))
+    assert [float(pos[0]), float(pos[1])] == [3.0, 4.0], list(pos)
+    assert abs(float(pos[2]) - 1.2) < 1e-9, float(pos[2])
+    # rz kept (0.3, not the commanded 0.5) AND rx/ry levelled: the tilt joints
+    # are free on this base, so a body carrying a die arrives tipped, and the
+    # world yaw is the composition of all three. Pinning rz alone left the
+    # measured yaw walking 0 -> -8 -> -27 -> -19 deg over one route's hops;
+    # levelling too holds it inside +-5.7 deg for the whole route.
+    assert seen["eulers"] == [0.0, 0.0, 0.3], seen
+    ok("a drone arrives level and on the heading it had, not facing its target")
+    # And a robot that is not a drone is untouched by the same call, so the
+    # arms still arrive facing what they came for.
+    arm = FakeRobot(scene, name="ridgeback", position=(1.0, 1.0, 0.05))
+    arm.is_holonomic_base = True
+    arm.base_idx = [0, 1, 2, 3, 4, 5]
+    arm.get_joint_positions = lambda: FakeVector([1.0, 1.0, 0.05, 0.0, 0.0, 0.3])
+    Navigable(None, arm, require_traversable=False)._get_robot_pose_from_2d_pose(
+        FakeVector([3.0, 4.0, 0.5]))
+    assert seen["eulers"] == [0.0, 0.0, 0.5], seen
+    ok("an arm still arrives yawed to face its target")
     wheeled = FakeRobot(scene, name="cart", position=(0.0, 0.0, 0.05))
     wheeled.is_holonomic_base = False
     pos, orn = Navigable(None, wheeled, require_traversable=False)._get_robot_pose_from_2d_pose(FakeVector([1.0, 1.0, 0.0]))

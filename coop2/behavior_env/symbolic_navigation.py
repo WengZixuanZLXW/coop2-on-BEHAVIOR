@@ -225,6 +225,39 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
             for reproducing the old behaviour.
     """
 
+    def _keeps_heading(self) -> bool:
+        """Does a teleport leave @self.robot's heading alone?
+
+        True for a drone. The sampler yaws every pose to face its target
+        (`_facing_yaw_offset`), which is what puts an arm's workspace over the
+        thing it came for -- and a drone has no workspace to aim. Its suction
+        mount is under its belly (`bottom_suction_mount`), so it grasps
+        straight down and its heading means nothing to any primitive.
+
+        What the heading does affect is the picture. Navigation here is a
+        teleport, so a drone doing a route's ten short hops snaps to a new
+        facing at the end of each, and in a recording -- which samples every
+        4th tick -- consecutive frames show the body at unrelated angles. That
+        reads as a spinning drone. It is not a spin: the YAW does not drift at
+        all between teleports (measured three ways -- the pose API over 60
+        ticks, a recorded hold whose frames differ by 0.14-0.59 of a grey
+        level, and the episode itself, where consecutive frames differ by
+        0.03-0.45 between teleports and by 18-47 at one).
+
+        This fixes only the yaw. The body also TILTS, because rx and ry are
+        undriven and a hanging die swings them, and that turned out to be the
+        larger half of what the report was about; see
+        ``primitive_engine._level_drones``.
+
+        Carriers are deliberately NOT included. A Jackal's heading is just as
+        functionally irrelevant -- nothing it does is gated on facing -- but a
+        wheeled robot that slides across a room without turning to face the way
+        it is going looks wrong in a way a hovering quadrotor does not.
+        """
+        from coop2.behavior_env.carrier import is_drone  # noqa: PLC0415
+
+        return is_drone(self.robot)
+
     def _get_robot_pose_from_2d_pose(self, pose_2d):
         """(x, y, yaw) -> world pose, keeping the altitude the robot has *now*.
 
@@ -238,7 +271,10 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
 
         The right z for a teleport in the plane is the one the body already has.
         Orientation follows upstream (rx, ry from the joints, yaw from the
-        command).
+        command) -- except for a robot that keeps its heading, which takes the
+        yaw it already has. This is the one place every teleport passes
+        through, the ring sampler, the edge band and navigate_to_room alike,
+        so putting it here is what makes it hold for all three.
         """
         import importlib  # noqa: PLC0415
         import torch as th  # noqa: PLC0415
@@ -253,7 +289,18 @@ class NavigableSymbolicActionPrimitives(SymbolicSemanticActionPrimitives):
         q = self.robot.get_joint_positions()
         idx = [int(i) for i in self.robot.base_idx]          # x, y, z, rx, ry, rz
         pos = th.tensor([float(pose_2d[0]), float(pose_2d[1]), world_z], dtype=th.float32)
-        eulers = th.tensor([float(q[idx[3]]), float(q[idx[4]]), float(pose_2d[2])], dtype=th.float32)
+        if self._keeps_heading():
+            # Level, and pointing where it already pointed. Both halves are
+            # needed and only the first is obvious: rx and ry are FREE joints
+            # on this base (driven flags x y z rx ry rz = T T T F F T), so the
+            # body tilts under a hanging die, and the body's world yaw is the
+            # composition of all three -- pinning rz alone left the yaw walking
+            # 0 -> -8 -> -27 -> -19 deg across one route's hops. A quadrotor
+            # arriving level is also the right physical picture.
+            eulers = th.tensor([0.0, 0.0, float(q[idx[5]])], dtype=th.float32)
+        else:
+            eulers = th.tensor([float(q[idx[3]]), float(q[idx[4]]), float(pose_2d[2])],
+                               dtype=th.float32)
         orn = T.mat2quat(T.euler_intrinsic2mat(eulers))
         return pos, orn
 

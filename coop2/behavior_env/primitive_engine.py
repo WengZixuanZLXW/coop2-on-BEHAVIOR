@@ -486,6 +486,10 @@ class MultiAgentPrimitiveEngine:
         #: engine is built before it, and a failure without it is still
         #: readable, only in scene names.
         self.entity_id_of_name: Optional[Callable[[str], Optional[str]]] = None
+        #: ``[(drone, rx index, ry index)]`` for ``_level_drones``, worked out
+        #: on the first tick because the robots are not all built yet here.
+        #: None means "not yet"; an empty list means "no drones in this scene".
+        self._drone_tilt_idx: Optional[list] = None
 
         if enable_head_tracking:
             models = {robot.model for robot in self.robots}
@@ -775,6 +779,49 @@ class MultiAgentPrimitiveEngine:
             print(f"[engine] {agent_id} <- {primitive_name}({target_name})")
         return None
 
+    def _level_drones(self) -> None:
+        """Hold every drone flat, once per tick.
+
+        A holonomic base is six virtual joints and
+        ``HolonomicBaseJointController`` drives three of them -- x, y and rz.
+        Nothing drives rx and ry, so a Crazyflie with a die welded under its
+        belly is a free pendulum: measured, it swings to roll -11 deg and pitch
+        +17 deg within 25 ticks of the grasp and then creeps, and from the
+        camera directly overhead a 20 deg tilt foreshortens the airframe into
+        what reads as the drone slowly turning. That is the second half of the
+        "the drone spins" report; the first was navigation re-facing it at
+        every teleport, and pinning the teleport's yaw alone left this.
+
+        Zeroing the two joints each tick is in keeping with the rest of this
+        layer, which teleports rather than drives and welds rather than grips:
+        a quadrotor that holds attitude is what the real thing does, and
+        nothing here models the rotors that would do it. Only rx and ry are
+        touched -- x, y, z and rz stay the controller's.
+
+        Cheap by construction: it runs only for robots the layout declared
+        drones, and the index pair is worked out once per robot.
+        """
+        if self._drone_tilt_idx is None:
+            from coop2.behavior_env.carrier import is_drone  # noqa: PLC0415
+
+            self._drone_tilt_idx = []
+            # `or []` is wrong on both of these: `robots` and `base_idx` are
+            # tensors here, and bool() of a multi-element tensor raises.
+            robots = getattr(self.env, "robots", None)
+            for robot in ([] if robots is None else list(robots)):
+                if not is_drone(robot):
+                    continue
+                base_idx = getattr(robot, "base_idx", None)
+                base = [] if base_idx is None else [int(i) for i in base_idx]
+                if len(base) == 6:                      # x y z rx ry rz
+                    self._drone_tilt_idx.append((robot, base[3], base[4]))
+        for robot, rx, ry in self._drone_tilt_idx:
+            try:
+                robot.set_joint_positions(th.zeros(2), indices=[rx, ry])
+                robot.set_joint_velocities(th.zeros(2), indices=[rx, ry])
+            except Exception:  # noqa: BLE001 - a tilt is not worth an episode
+                pass
+
     def tick(self) -> Dict[str, PrimitiveOutcome]:
         """Advance exactly one ``env.step``.
 
@@ -833,6 +880,7 @@ class MultiAgentPrimitiveEngine:
                 outcomes[agent_id] = outcome
 
         obs, rewards, terminated, truncated, info = self.env.step(action)
+        self._level_drones()
         # Bodies have moved, so every cached world AABB is stale. Clearing
         # here is what makes the cache safe: it holds for exactly the tick it
         # was filled in.
