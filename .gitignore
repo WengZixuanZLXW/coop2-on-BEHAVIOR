@@ -9,8 +9,10 @@ outputs/
 
 __pycache__/
 .codex
+.claude
 .env
 experiment_log/
+experiment_log*.zip
 coop2_process_log.json
 
 log/
