@@ -1,6 +1,6 @@
 """Placeholder for ma_crafter's grid A* navigation, which is not ported.
 
-PORTING_PLAN drops this module entirely: crafter navigates a discrete grid,
+The port drops this module entirely: crafter navigates a discrete grid,
 while here NAVIGATE_TO is a primitive -- a cuRobo motion plan in the physical
 set, a filtered teleport in the symbolic one
 (:mod:`coop2.behavior_env.symbolic_navigation`). ``action.py`` still imports
@@ -18,7 +18,7 @@ __all__ = ["find_object_position", "get_move_towards_target", "is_near_target"]
 _MESSAGE = (
     "{name}() is ma_crafter's grid A*, which is not ported: navigation here is the "
     "NAVIGATE_TO primitive. If you reached this, an L2 controller still routes through "
-    "grid pathfinding and needs rewriting (PORTING_PLAN M5)."
+    "grid pathfinding and needs rewriting."
 )
 
 

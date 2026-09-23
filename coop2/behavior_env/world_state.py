@@ -5,7 +5,7 @@ type-local ids** (``apple#1``, not ``apple_agveuv_0``). Everything here exists
 because an LLM has to read it: crafter's 64x64 dense grid scan has no analogue
 worth porting, and raw BEHAVIOR object names are unreadable and unguessable.
 
-Design points that are load-bearing (PORTING_PLAN 3.1 / 4.5):
+Design points that are load-bearing:
 
 * **One shared** ``SceneGraphBuilder`` with ``full_obs=True`` and *every* robot
   name. ``full_obs=False`` routes through ``ObjectsInFOVOfRobot``, which needs
@@ -264,7 +264,7 @@ class BehaviorWorldState:
         #: Set by coop_env from the route file, when there is one.
         self.lift_rules: Dict[str, Tuple[str, ...]] = {}
         # Per-agent memory of rooms visited, so an agent keeps knowing about a
-        # room it has already been in (PORTING_PLAN 3.1).
+        # room it has already been in.
         self._seen_rooms: Dict[str, Set[str]] = {name: set() for name in self.robot_names}
 
     # -- setup ------------------------------------------------------------

@@ -319,7 +319,7 @@ coffee_table.n.01_1)`, `(die_4, bed.n.01_2)`, `(die_5, bed.n.01_1)` -- with the
 checkpoint cabinets declared alongside, so nothing holds at t=0
 (`unsatisfied: [0, 1, 2, 3, 4]` at load), the `allow_trivial_goal` switch is
 gone, and `terminated` is decided by the route tracker
-(`coop2/ROUTE_SUPERVISION_PLAN.md`, steps 1-3 done). The boxes still start on
+(the route tracker; see coop2/CLAUDE.md). The boxes still start on
 their stations' floors: COOHAVIOR's `initial_relation` says so, its staged box
 *prims* -- the coordinates the sampler pins to -- sit on the floor beside the
 fixtures, and only its spawn *markers* sit on them; the prim is what spawns.
@@ -350,7 +350,7 @@ invent one. `symbolic_contention._require_may_lift` refuses `grasp` and
 `unload_from` with `CANNOT_LIFT`, and `target_hints` withholds the verb --
 both sides, or the agent burns a plan learning it. No mark on the line: the
 system prompt says "the drone cannot lift the notebook" and the drone's header
-says `(drone)` (ROUTE_SUPERVISION_PLAN.md section 5.4).
+says `(drone)`; the rule itself lives in each route file's `lift` table.
 
 A side effect worth having: the notebook is 0.151 x 0.120 x 0.028, against the
 packing box's 0.380 x 0.468. All five HH cargoes now sit at V4's exact staged

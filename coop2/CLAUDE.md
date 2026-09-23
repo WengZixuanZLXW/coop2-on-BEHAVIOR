@@ -5,10 +5,12 @@ BEHAVIOR-1K. Goal: run **individual / broadcast_chain / centralized** topologies
 here with minimal changes to the COOP² code, then add **decentralized**.
 Repair is explicitly **not** ported.
 
-**Read `coop2/PORTING_PLAN.md` before designing anything.** It is the canonical
-design doc: seven-layer structure, the full environment-contract checklist that
-COOP²'s upper layers require, the BDDL multi-agent audit, and the trap list.
-This file is only the operational summary.
+The port's design doc (`PORTING_PLAN.md`) and the route-supervision design
+(`ROUTE_SUPERVISION_PLAN.md`) were deleted once both were built: everything in
+them that is still true is either in this file or in the docstring of the code
+that implements it. The layer table below, `PROMPTS.md`, `action.md` and
+`PORTING_COOHAVIOR.md` are what is left, and they describe what exists rather
+than what was planned.
 
 ## Layers
 
@@ -44,8 +46,7 @@ teams of three, run all three topologies without stalling.
 
 **In progress: route supervision.** A COOHAVIOR task is an *ordered* sequence
 of `ontop` sub-goals on one box, and BDDL can only state the last one -- which
-is why `v4_s1_v4_hl` ends at env_step 0. `coop2/ROUTE_SUPERVISION_PLAN.md` is
-the design; steps 1-3 are done (the `route.json` sidecar, its loader, LL's
+is why `v4_s1_v4_hl` ends at env_step 0. Steps 1-3 of that work are done (the `route.json` sidecar, its loader, LL's
 route, the `RouteTracker`, and the wiring that lets it decide `terminated` --
 see "The route file" and "Route supervision, wired" below), and the S1 part of
 steps 6-7: all four S1 tasks have route files and corrected, re-sampled BDDLs
@@ -58,8 +59,7 @@ layouts written ("Three modes through the new prompt, and the S2/S3 port");
 instances sampled per the log in that section. Read the plan before touching
 termination or the `YOUR TASK` block.
 
-**Two lines of work are open**, and neither is a milestone from
-PORTING_PLAN.md section 7:
+**Two lines of work are open**, and neither is one of the port's milestones:
 
 * **What the agent is shown.** The prompt is now scoped to the activity's own
   objects, carries the agent's plan history, and states the task in the ids it
@@ -89,8 +89,7 @@ defect class as the rest of that file.
 
 `coop_env` loads OmniGibson's `BehaviorTask` from the cached instance when
 `bddl_activity` is set, and `compiled_task.check_goal` is the **only** authority
-over `terminated`. M1-M6 and M9 passed; acceptance criteria are in
-PORTING_PLAN.md section 7.
+over `terminated`. M1-M6 and M9 passed.
 
 The two-apple task is on `Pomaria_1_int`/`living_room_0` because that is where
 the two-armchair + coffee-table layout exists. The earlier target was
@@ -1511,7 +1510,7 @@ facts. Read against it, the run went 2 apples at env_step 1961, 5 at 2536, 6 at
 
 ## The route file: what BDDL cannot say, said beside it (2026-09-12)
 
-Step 1 of ROUTE_SUPERVISION_PLAN.md. `coop2/behavior_env/route_spec.py` reads
+`coop2/behavior_env/route_spec.py` reads
 `activity_definitions/<activity>/route.json`, found the way BDDL finds
 `problem0.bddl`, and validates it against the parsed BDDL -- pure Python over
 `bddl.parsing`, so `test_route_spec_stubbed.py` loads the real file. An
@@ -1556,7 +1555,7 @@ place an unbindable support is visible before an episode is spent on it.
 
 ## Route supervision, wired (2026-09-12)
 
-Steps 2 and 3 of ROUTE_SUPERVISION_PLAN.md. For an activity with a route file,
+For an activity with a route file,
 `terminated` is now **every route complete**, judged on the world's state at
 each macro-step boundary; `check_goal` is kept as a cross-check and a
 `[route] BDDL check_goal disagrees` line is printed if the BDDL final state is

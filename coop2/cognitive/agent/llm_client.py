@@ -32,7 +32,7 @@ load_dotenv(_ENVIRONMENT_ROOT.parent / ".env", override=False)
 # ============================================================================
 # Structured output vocabulary -- BEHAVIOR-1K
 # ============================================================================
-# This is one third of M5's "three-piece" change (PORTING_PLAN 5): the Pydantic
+# This is one third of M5's "three-piece" change: the Pydantic
 # schema, the L2 controllers and action_outcome.effects have to agree. Structured
 # output *constrains* the model, so whatever is not expressible here is not
 # emittable at all -- and anything expressible but unknown to L2 becomes a

@@ -37,8 +37,8 @@ a measurable net loss (travel ticks burned, then a failure).
 Deliberately *not* a lock in the engine: the loser still burns a full navigate
 and still issues its GRASP, so contention stays visible to the cognitive layer
 as a wasted decision. A pre-assignment lock would hide the very signal the
-topology layer is being measured on. See PORTING_PLAN.md 3.4 / 4.2 and the
-"Deliberately not implemented" section of coop2/CLAUDE.md.
+topology layer is being measured on. See the "Deliberately not implemented"
+section of coop2/CLAUDE.md.
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """L1: ``CooperativeBehaviorEnv`` -- the seam COOP2's upper layers plug into.
 
 Replaces ma_crafter's ``macrafter.coop_env.CooperativeEnv``. The shape is fixed
-by what L2-L6 already expect (PORTING_PLAN 5.1/5.2) and is deliberately not
+by what L2-L6 already expect, and is deliberately not
 negotiable: a five-tuple of dicts from ``step``, and **``info[agent_id]`` as the
 real observation channel**. Agents never read ``obs`` -- in crafter it was RGB
 that ``observe()`` stored and nothing consumed -- so everything the LLM can see
@@ -394,7 +394,7 @@ class CooperativeBehaviorEnv:
         self.task_tracker = CoopTaskTracker(self.world, tasks)
         self.capability_history = self.task_tracker.capability_history
 
-        # Route supervision (ROUTE_SUPERVISION_PLAN.md). Found by the activity
+        # Route supervision. Found by the activity
         # name, the way the BDDL is; an activity without a route file is
         # unrouted and nothing below changes. A route file that fails
         # validation raises here, at build, rather than deciding termination

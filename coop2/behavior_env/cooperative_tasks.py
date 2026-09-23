@@ -3,8 +3,8 @@
 The metric containers are carried over from ma_crafter/macrafter verbatim
 -- TaskStatus, CapabilityChange, StepMetrics, StepTaskSummary,
 plot_metrics_timeline, convert_to_serializable and the two log savers.
-PORTING_PLAN.md 4 calls for exactly that: keep them unchanged and
-compute_constraint_metrics / build_results_table need no edits at all.
+They are kept unchanged on purpose, so that compute_constraint_metrics and
+build_results_table need no edits at all.
 Their field names are the contract -- compute_metrics.py reads
 metrics.constraint_changes.spatial.improved_tasks by path.
 

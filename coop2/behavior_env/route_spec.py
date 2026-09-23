@@ -7,8 +7,7 @@ of its goals is an initial condition. This module reads the part BDDL cannot
 carry, ``route.json``, found by the activity name beside ``problem0.bddl``. An
 activity without one behaves exactly as before.
 
-Design in ``coop2/ROUTE_SUPERVISION_PLAN.md`` section 5.1. The rules enforced
-here are the ones that fail *late* without it: a support the BDDL never
+The rules enforced here are the ones that fail *late* without it: a support the BDDL never
 declared is a support the scene may not have bound, and shows up as a task
 that is quietly unachievable; a destination that disagrees with the BDDL goal
 is the LL bug in COOHAVIOR's own files, where the BDDL says a bedroom floor and

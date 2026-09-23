@@ -1,7 +1,6 @@
 """COOP2 multi-agent cooperation architecture, ported to BEHAVIOR-1K.
 
-See ``coop2/PORTING_PLAN.md`` for the seven-layer design. Package layout
-mirrors ``coop2-llm-mas/ma_crafter`` so the two trees stay diffable:
+Seven layers, laid out below. Package layout mirrors ``coop2-llm-mas/ma_crafter`` so the two trees stay diffable:
 
     coop2/behavior_env/   L0-L1   env, world model, text observation,
                                   primitive execution, task tracking

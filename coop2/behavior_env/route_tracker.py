@@ -2,8 +2,8 @@
 
 COOHAVIOR records a checkpoint when its placement tool succeeds on the right
 marker. This tracker asks the world instead, at every macro-step boundary: is
-the cargo `ontop` the next node's support? Three reasons, from
-``ROUTE_SUPERVISION_PLAN.md`` section 4: our `place_on_top` teleports and welds,
+the cargo `ontop` the next node's support? Three reasons: our `place_on_top`
+teleports and welds,
 so the predicate *is* the ground truth once the object is kept awake; a state
 check covers every path that puts cargo on a support -- an arm's placement, a
 drone's release, an unload -- without instrumenting each verb; and it is the

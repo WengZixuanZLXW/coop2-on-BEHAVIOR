@@ -6,7 +6,7 @@ e.g. ``experiment_log/S1_all`` -- and prints one row per cell:
     CR  completion rate: the route's own progress, completed_nodes /
         required_nodes. This is what the activity asks for, in order; it is
         not check_goal, which cannot express "in this order" and is only a
-        cross-check (see coop2/ROUTE_SUPERVISION_PLAN.md).
+        cross-check.
     ES  the environment steps the episode used. The episode ends when the
         route completes, so for a finished run this is the completion step and
         for a failure it is how far it got -- both are reported (user,

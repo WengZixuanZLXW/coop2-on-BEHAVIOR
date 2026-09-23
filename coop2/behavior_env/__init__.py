@@ -1,6 +1,6 @@
 """L1 — the BEHAVIOR-1K side of the COOP2 port.
 
-Replaces ``ma_crafter/macrafter``. Sub-layers, per PORTING_PLAN.md:
+Replaces ``ma_crafter/macrafter``. Sub-layers:
 
 ==========================  ====================================================
 module                      layer

@@ -2,7 +2,7 @@
 
 ``target_hints`` is the single most important thing in this file. It is the
 **only** way the LLM learns which ids exist and which primitives apply to them
-(PORTING_PLAN 3.1). If a target is missing here the LLM cannot act on it; if a
+If a target is missing here the LLM cannot act on it; if a
 non-target appears here the LLM will try it and burn a decision on a
 precondition failure.
 

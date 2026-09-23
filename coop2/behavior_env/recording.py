@@ -7,7 +7,7 @@ several callbacks onto the one slot.
 
 Rendering is off in the normal headless configuration
 (``gm.RENDER_VIEWER_CAMERA = False``) because the symbolic runs never need
-pixels -- see PORTING_PLAN.md 4.5. :func:`enable_viewer_rendering` flips it
+pixels. :func:`enable_viewer_rendering` flips it
 back on, and must be called *before* ``og.Environment`` is constructed, since
 that is when the viewer camera is created.
 """
