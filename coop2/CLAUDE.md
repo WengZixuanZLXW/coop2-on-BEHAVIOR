@@ -17,7 +17,7 @@ than what was planned.
 | layer | package | status |
 |---|---|---|
 | L6 experiment (runners, grid, metrics) | `coop2/experiment/` | **all three runners GPU-verified against a real LLM**; `inspect_scene.py` loads a scene without an episode |
-| L5 comm_topology (individual/chain/centralized/tag/board) | `coop2/comm_topology/` | **the first three exercised at 9 and 12 robots**; `llm_team.py` makes a *team* the unit of every topology; `tag` (DIG-TAG's shared task graph, `llm_tag.py` over the vendored `coop2/dig_tag/`) is CPU-tested, no GPU run yet |
+| L5 comm_topology (individual/chain/centralized/tag/board) | `coop2/comm_topology/` | **all five GPU-exercised**; `llm_team.py` makes a *team* the unit of every topology; `tag` has 80 full GPU runs (S1/S2 x mixed/uniform) audited end to end, `board` 54 (see "Tag usage audited across the full sweep" and "`board`'s uniform condition" below) |
 | L4 cognitive/agent (FSM, memory, broker, prompts, LLM) | `coop2/cognitive/agent/` | **BDDL vocabulary aligned, FSM GPU-verified**; prompt scoped to the activity's objects, with plan history |
 | L3 cognitive/plan (plan lifecycle, PlanningEnvWrapper) | `coop2/cognitive/plan/` | **GPU-verified driving the facade** (2026-09-06) |
 | L2 cognitive/action (symbolic action → primitive) | `coop2/cognitive/action/behavior_action.py` | **rewritten, GPU-verified** (M5) |
@@ -2231,8 +2231,11 @@ where the graph refuses an action against a stale version. The prompt shows
 advantage the ablation is not supposed to be testing.
 
 Runner: `run_board.py` is `run_individual.main(topology="board")`, with the
-same `--notify-budget`; `sweep_grid` knows the name. No GPU episode has been
-run in this mode yet.
+same `--notify-budget`; `sweep_grid` knows the name. 52 GPU episodes ran the
+same day under `experiment_log/S1_board_{1,2,3}/` and `S1_board_clear_{1,2}/`
+(mixed-capability sets_1/3/5, the `v4_s1` family); two more against the
+`sets_3_uniform` / `sets_5_uniform` layouts were added 2026-10-22 -- see
+"`board`'s uniform condition, run for the first time" below for both.
 
 ## Two answers to "which room is it in", and the one the sampler gave (2026-09-13)
 
@@ -3200,3 +3203,154 @@ the cognitive layer — that waste is exactly what the centralized leader's
 allocation and the broadcast chain's proposals are measured on. A pre-
 assignment lock would hide the signal. `engine.held_objects()` exposes the
 cross-agent "who holds what" view for L1b's text observation to surface.
+
+## Tag usage audited across the full sweep (2026-10-29)
+
+80 `tag` runs have full output (`tag_rounds.json` + `tag.json`): the S1/S2
+mixed-capability families (`S1_all_{1,2,3}`, `S2_all_{1,2,3}`, 74 runs) and
+`S1_uniform_{1,2,3}` (6 runs, `sets_3_uniform`, hh/lh x 3 seeds), plus
+`tag_demo`. Read together rather than one run at a time, because no single
+run's `CLAUDE.md` entry above generalizes past its own seed.
+
+**The vocabulary is used, but only half of it.** 2695 actions total: `update`
+1900 (70.5 %), `open` 433 (16.1 %), `close` 330 (12.2 %), `edit` 17 (0.6 %),
+`attach` 15 (0.6 %) — and **`split`/`join`, zero, in all 80 runs.** Every
+route is tracked end to end as one identity from `open` to `close`; nothing
+ever got decomposed or merged on the graph, despite that being the one thing
+`split`/`join` exist for. **0 of 2695 actions were rejected** — the model
+never once acted on a version the graph had already branched past, so the
+versioning discipline the paper's bipartite-graph design calls for is
+actually being kept.
+
+**`attach` is rare but used right, and only visible while its version is
+current.** Sampled all 15: mostly a team recording a diagnosed physical dead
+end ("no free floor space... not caused by robot obstruction") so another
+team doesn't retry it, or confirming a duplicate claim should be dropped.
+`format_tag_observation` (`llm_tag.py`) indexes `evidence` by *version id*,
+not by task identity, and only prints it for `observed()`'s current
+versions — so a `payload` attached to `q19` shows up in every prompt while
+`q19` is the frontier, and silently stops once the task is `update`d past it
+(verified against `llm_calls.jsonl`: an attach at env_step 1386 in
+`S2_all_1/tag_s2_sets_3_v4_s2_v4_ll_..._seed0.../` appears verbatim in four
+more rounds' prompts through env_step 1803, then never again). It stays in
+`tag.json` forever; it just falls out of what any team is shown.
+
+**`notify` is not abandoned after round one** — the single first-GPU-episode
+read ("after the first round nobody notified anyone again," above) does not
+generalize. Across all 80 runs: 1186 `notify_sent`, **0 dropped** for
+exceeding the per-step budget, and 17.3 % of all 3319 recorded rounds
+requested one. Usage scales with team count (mixed-capability averages:
+sets_1 0, sets_3 10.6, sets_5 30.9 `notify_sent` per run) — more teams means
+more notifying, not less.
+
+## What drives task completion in `tag`, measured (2026-10-29)
+
+Same 80-run set, `Y_task`/`route_complete` from `route_progress.json`.
+
+* **Team count, independent of everything else.** Mixed-capability only:
+  sets_1 avg `Y_task` 0.936, 18/24 routes complete (75 %); sets_3 0.969,
+  20/24 (83 %, the best point); sets_5 0.864, **14/24 (58 %)**, with
+  `notify_sent` (30.9) and rounds (60.2) both roughly 3x sets_3's. More teams
+  is a superlinear rise in coordination volume and a drop in completion, with
+  no `uniform` condition involved.
+* **Forced cross-team dependency (`uniform`) is the strongest single
+  factor.** `S1_uniform` (same-kind teams, so no team can move cargo alone):
+  avg `Y_task` 0.583, **0/6 routes complete**, against mixed's 0.925 and
+  54/74 (73 %). Not a graph-protocol failure — 0 % rejected, and the `state`
+  text correctly names the exact robot needed (`TAG_MANUAL`'s "name the
+  exact robots" rule, added for exactly this case, is being followed: see
+  the worked example below). The graph has no way to make the *addressed*
+  team prioritize the ask; **6/80 runs ended with a version whose state is
+  literally `"unassigned; requires an arm..."`, and half of those 6 are from
+  the 6-run `uniform` family** (2/74 in mixed) — a need stated on the graph
+  and never picked up.
+* **`notify` volume is a symptom of difficulty, not its cause.** Comparing
+  completed vs incomplete runs: `route_complete=True` (54) averages
+  `notify_per_round` 0.266 and `Y_plan` 0.927; `route_complete=False` (26)
+  averages 0.306 and **0.865** — lower plan success, not higher chat volume,
+  is what tracks with failure. Both groups' close/open ratio is nearly
+  identical (0.60 vs 0.56), so "does the team clean up the graph" is not the
+  discriminator either.
+* Task difficulty tier (`hh`/`hl`/`lh`/`ll`) and the S1/S2 family both move
+  completion by a similar margin (`hh`/`lh` 44-56 % vs `hl`/`ll` 94 %; S1 79 %
+  vs S2 67 %) but `notify` volume does not track them cleanly — read as scene/
+  route difficulty, not a tag-usage effect.
+
+**A worked example of a cross-team ask, start to finish**
+(`S1_uniform_1/tag_s1_sets_3_uniform_v4_s1_v4_hh_gpt-5.6-terra_seed1_20260915_163035_171/tag_rounds.json`):
+seq 1, `team_2` (carriers only) opens a task — "requires an arm to grasp,
+load, unload, and place it" — and `notify`s `team_1` by name, interrupting it.
+seq 5, `team_1` (interrupted) answers: "the notification confirms... our
+existing division remains compatible." seq 7, `team_2` updates the task
+naming the exact robot: "team_1's ridgeback_2 should unload and place it."
+The ask, the interrupt, and the acknowledgment all worked exactly as
+designed — `uniform`'s 0/6 is not a failure to communicate the need.
+
+## `tag` vs `board`: same notify, measured head to head (2026-10-29)
+
+A claim worth correcting on sight: **`tag` already notifies explicitly** —
+`llm_board.py`'s own docstring says its round is "exactly as for the
+task-graph team," both being `notifying_team.NotifyingTeamBrain` subclasses
+sharing one `notify`/interrupt/budget implementation. The only difference is
+the shared space: a typed, version-rejecting graph (8 tools) vs an
+unstructured, never-rejected text log (1 tool, `write`).
+
+52 complete `board` runs (`S1_board_{1,2,3}`, `S1_board_clear_{1,2}`,
+mixed-capability, same `v4_s1` family as the `tag` sweep) give a matched
+comparison at equal team sizes:
+
+| team size | `tag` Y_task / complete | `board` Y_task / complete | `tag` notify_sent | `board` notify_sent |
+|---|---|---|---|---|
+| sets_1 | 0.936 / 75 % | 0.955 / 80 % | 0 | 0 |
+| sets_3 | **0.969 / 83 %** | 0.935 / 76 % | 10.6 | 14.4 |
+| sets_5 | 0.864 / 58 % | **0.920 / 67 %** | 30.9 | 36.7 |
+
+No systematic winner — `tag` is better at sets_3, `board` at sets_5, and
+`board`'s notify volume scales with team count at least as steeply as
+`tag`'s. **An explicit, named interrupt is not what either mode is missing**;
+neither can make the addressed team actually prioritize the ask once
+delivered.
+
+## `board`'s uniform condition, run for the first time (2026-10-29)
+
+No `board` run had ever used a same-kind-team layout. `sets_3_uniform.json`
+exists (`tag`'s); `sets_5_uniform.json` did not, so it was generated by the
+same transform `sets_3` -> `sets_3_uniform` used — same 15 robots, positions,
+scales and `_v4_prim`s as `sets_5.json`, regrouped into `team_1` = 5
+Ridgeback+UR5, `team_2` = 5 Jackal, `team_3` = 5 Crazyflie — and checked with
+`inspect_scene.py` before spending an episode on it (all 15 robots placed at
+0 drift). One episode each, `v4_s1_v4_hh`, `gpt-5.6-terra`, seed 0, 6000
+steps / 600 s, `--notify-budget 1` — identical parameters to the rest of the
+sweep, output under `experiment_log/S1_uniform_board_1/`:
+
+| layout | result | ended |
+|---|---|---|
+| `sets_3_uniform` (3 teams of 3) | `Y_task` 0.4, 4/10 nodes, not complete | **hit the 600 s wall-clock cap**, env_step 5974 |
+| `sets_5_uniform` (3 teams of 5) | `Y_task` **1.0**, 10/10, complete | finished at env_step 3317, well inside budget |
+
+Single seed each, so this is not a repeat-measures result. What it does show:
+
+* **`sets_3_uniform`'s first stall is physical crowding, not a communication
+  failure, and nobody asked anyone to move for it.** At env_step 1 — before
+  any team has had a round to react — `jackal_1`'s `navigate_to(notebook.n.01_4)`
+  fails: `"Robots occupying the space now: jackal_2, jackal_3, ridgeback_1,
+  ridgeback_2, ridgeback_3"`, because the layout spawns every robot of a kind
+  together and five of nine robots start on top of one notebook. The team's
+  actual fix was silent routing-around (`ridgeback_1`, already standing
+  there, grasps directly; `jackal_1`'s plan becomes a `wait`) — not a `write`
+  asking anyone to clear the space.
+* **A later, genuine "move away" request in the same run did work.** Around
+  env_step 4729-5974 (`board_rounds.json` seq 76-78), `team_1` writes
+  "`jackal_2`... blocks access to `armchair.n.01_1`; move it away enough for
+  `ridgeback_2` to navigate" and `notify`s `team_2`; `team_2` replies "jackal_2
+  is moving aside... then returning"; `team_1` confirms. One clean
+  ask-comply-confirm cycle — so the capability is there and used, just not
+  for the very first, pre-round-one pile-up.
+* **`sets_5_uniform` finished in fewer rounds than `sets_3_uniform`
+  (43 vs 86) and fewer `notify_sent` (31 vs 63)**, despite being the same 3
+  teams (coordination unit unchanged — one LLM call per team per round
+  either way) with more robots each. Going from 3 to 5 robots per kind adds
+  physical redundancy (more arms free to not be the one crowding a target)
+  without adding a fourth team's worth of coordination overhead — a different
+  axis from "more teams" above, which made things worse. One seed; worth a
+  repeat before trusting the direction.

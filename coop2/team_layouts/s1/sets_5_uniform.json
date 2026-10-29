@@ -1,0 +1,252 @@
+{
+  "_comment": [
+    "sets_5 regrouped: each team is one kind of robot, same transform sets_3 -> sets_3_uniform used (user, 2026-10-22).",
+    "team_1 is the five Ridgeback+UR5 arms, team_2 the five Jackal carriers, team_3 the five Crazyflies. Fifteen robots, Merom_1_int, all spawned together.",
+    "",
+    "Every robot is the one of the same name in sets_5 -- same model, same spawn position, same scale, same _v4_prim -- and only its team differs, so the pair is a clean A/B on grouping alone: V4 fives (arm + carrier + drone) against three single-kind teams of five.",
+    "",
+    "What that changes, on the S1 routes, is the same as sets_3_uniform at 5-per-team scale: no team can move cargo by itself, so every leg of a route needs a cross-team handoff (grasp -> load_onto a jackal -> drive -> unload_from -> place)."
+  ],
+  "robots": [
+    {
+      "name": "ridgeback_1",
+      "model": "v4_ridgeback_ur5",
+      "position": [
+        2.44,
+        7.98
+      ],
+      "team": "team_1",
+      "_v4_prim": "ridgeback_franka_s1_m5",
+      "_v4_staged_position": [
+        -1.1703,
+        0.4624
+      ],
+      "scale": 0.5,
+      "base_locked_while_holding": true
+    },
+    {
+      "name": "ridgeback_2",
+      "model": "v4_ridgeback_ur5",
+      "position": [
+        2.44,
+        8.63
+      ],
+      "team": "team_1",
+      "_v4_prim": "ridgeback_franka_s1_m3",
+      "_v4_staged_position": [
+        -2.2202,
+        5.5688
+      ],
+      "scale": 0.5,
+      "base_locked_while_holding": true
+    },
+    {
+      "name": "ridgeback_3",
+      "model": "v4_ridgeback_ur5",
+      "position": [
+        1.69,
+        7.34
+      ],
+      "team": "team_1",
+      "_v4_prim": "ridgeback_franka_s1_m2",
+      "_v4_staged_position": [
+        -0.3223,
+        7.4371
+      ],
+      "scale": 0.5,
+      "base_locked_while_holding": true
+    },
+    {
+      "name": "ridgeback_4",
+      "model": "v4_ridgeback_ur5",
+      "position": [
+        1.78,
+        8.84
+      ],
+      "team": "team_1",
+      "_v4_prim": "ridgeback_franka_s1_m1",
+      "_v4_staged_position": [
+        1.6935,
+        8.4945
+      ],
+      "scale": 0.5,
+      "base_locked_while_holding": true
+    },
+    {
+      "name": "ridgeback_5",
+      "model": "v4_ridgeback_ur5",
+      "position": [
+        2.44,
+        9.29
+      ],
+      "team": "team_1",
+      "_v4_prim": "ridgeback_franka_s1_m4",
+      "_v4_staged_position": [
+        2.2227,
+        0.7049
+      ],
+      "scale": 0.5,
+      "base_locked_while_holding": true
+    },
+    {
+      "name": "jackal_1",
+      "model": "v4_jackal",
+      "position": [
+        2.44,
+        7.23
+      ],
+      "team": "team_2",
+      "_v4_prim": "jackal_s1_m5",
+      "_v4_staged_position": [
+        -0.8904,
+        -0.035
+      ],
+      "scale": 0.7
+    },
+    {
+      "name": "jackal_2",
+      "model": "v4_jackal",
+      "position": [
+        1.69,
+        8.09
+      ],
+      "team": "team_2",
+      "_v4_prim": "jackal_s1_m3",
+      "_v4_staged_position": [
+        -1.9403,
+        5.0714
+      ],
+      "scale": 0.7
+    },
+    {
+      "name": "jackal_3",
+      "model": "v4_jackal",
+      "position": [
+        3.19,
+        8.79
+      ],
+      "team": "team_2",
+      "_v4_prim": "jackal_s1_m2",
+      "_v4_staged_position": [
+        -0.0424,
+        6.9397
+      ],
+      "scale": 0.7
+    },
+    {
+      "name": "jackal_4",
+      "model": "v4_jackal",
+      "position": [
+        3.29,
+        6.83
+      ],
+      "team": "team_2",
+      "_v4_prim": "jackal_s1_m1",
+      "_v4_staged_position": [
+        1.9734,
+        7.9971
+      ],
+      "scale": 0.7
+    },
+    {
+      "name": "jackal_5",
+      "model": "v4_jackal",
+      "position": [
+        2.44,
+        6.38
+      ],
+      "team": "team_2",
+      "_v4_prim": "jackal_s1_m4",
+      "_v4_staged_position": [
+        2.5026,
+        0.2075
+      ],
+      "scale": 0.7
+    },
+    {
+      "name": "drone_1",
+      "model": "v4_crazyflie_cf2x",
+      "position": [
+        2.44,
+        7.23,
+        1.2
+      ],
+      "team": "team_3",
+      "_v4_prim": "crazyflie_s1_m5",
+      "_v4_staged_position": [
+        -1.2314,
+        0.0176
+      ],
+      "scale": 2.0,
+      "drone": true
+    },
+    {
+      "name": "drone_2",
+      "model": "v4_crazyflie_cf2x",
+      "position": [
+        1.69,
+        8.09,
+        1.2
+      ],
+      "team": "team_3",
+      "_v4_prim": "crazyflie_s1_m3",
+      "_v4_staged_position": [
+        -2.2813,
+        5.124
+      ],
+      "scale": 2.0,
+      "drone": true
+    },
+    {
+      "name": "drone_3",
+      "model": "v4_crazyflie_cf2x",
+      "position": [
+        3.19,
+        8.79,
+        1.2
+      ],
+      "team": "team_3",
+      "_v4_prim": "crazyflie_s1_m2",
+      "_v4_staged_position": [
+        -0.3834,
+        6.9923
+      ],
+      "scale": 2.0,
+      "drone": true
+    },
+    {
+      "name": "drone_4",
+      "model": "v4_crazyflie_cf2x",
+      "position": [
+        3.29,
+        6.83,
+        1.2
+      ],
+      "team": "team_3",
+      "_v4_prim": "crazyflie_s1_m1",
+      "_v4_staged_position": [
+        1.6324,
+        8.0497
+      ],
+      "scale": 2.0,
+      "drone": true
+    },
+    {
+      "name": "drone_5",
+      "model": "v4_crazyflie_cf2x",
+      "position": [
+        2.44,
+        6.38,
+        1.2
+      ],
+      "team": "team_3",
+      "_v4_prim": "crazyflie_s1_m4",
+      "_v4_staged_position": [
+        2.1616,
+        0.2601
+      ],
+      "scale": 2.0,
+      "drone": true
+    }
+  ]
+}
